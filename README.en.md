@@ -162,6 +162,11 @@ Deployment instructions live in separate docs:
 
 ---
 
+## 📄 License
+
+This project is open-sourced under the [Apache License 2.0](./LICENSE).
+---
+
 ## 💻 Development
 
 ```bash
