@@ -1,20 +1,20 @@
 /**
- * Action UI Intent backend builder.
+ * M7.6 Card 125 — Action UI Intent backend builder.
  *
  * Pure derive-on-read translation layer: takes recent `event_log` rows
  * (the same shape `getInspectSnapshot()` already pulls into `trace[]`)
  * and produces a capped, schema-validated `ActionUiIntent[]` view that
- * 's frontend ActivityFeed consumes.
+ * Card 126's frontend ActivityFeed consumes.
  *
- * v1 invariants (per kanban + milestone red lines):
+ * v1 invariants (per kanban + M7.6 milestone red lines):
  *   - **No persisted intent event** — derived fresh on every inspect read.
- *     Avoids schema churn cascading into consumers (/119/121).
- *   - **No model-declared `@component`** — that's + P2; v1 only maps
+ *     Avoids schema churn cascading into M7.5 consumers (Card 117/119/121).
+ *   - **No model-declared `@component`** — that's M7.7+ P2; v1 only maps
  *     known event types to a fixed set of component names.
  *   - **Raw payload hidden by default** — generic cards include only
  *     event type / timestamp / taskId / short summary. Tool events do
  *     NOT carry full prompts, raw Discord bodies, raw provider payloads,
- *     or secrets through this surface.  will do per-tool richer
+ *     or secrets through this surface. Card 127 will do per-tool richer
  *     extraction with explicit sanitization.
  *   - **Raw `trace[]` unchanged** — intents are an INDEX, not a
  *     replacement.
@@ -26,7 +26,17 @@ export type ActionUiIntentType =
   | "agent.degradation"
   | "agent.pause"
   | "generic.tool_event"
-  | "generic.event";
+  | "generic.event"
+  // Card 127 — tool-specific intent types. Each upgrades a known tool
+  // event family into a dedicated panel with a whitelisted prop set.
+  | "tool.search_results"
+  | "tool.file_read"
+  | "tool.execution_result"
+  // Card 128 — workspace mutation intent. Recognizes write-shaped tool
+  // events (checkpoint writes + future tool.workspace.* prefix). Carries
+  // an optional file path through `placementHint.focusPath` so the
+  // frontend can ask the workspace file manager to open it.
+  | "tool.workspace_mutation";
 
 export type ActionUiIntentPriority = "primary" | "secondary" | "debug";
 
@@ -44,7 +54,15 @@ export type ActionUiIntent = {
   title: string;
   summary?: string;
   component: {
-    name: "DegradationCard" | "PauseCard" | "GenericToolEventCard" | "GenericEventCard";
+    name:
+      | "DegradationCard"
+      | "PauseCard"
+      | "GenericToolEventCard"
+      | "GenericEventCard"
+      | "SearchResultsPanel"
+      | "FilePreviewPanel"
+      | "ExecutionResultPanel"
+      | "WorkspaceChangePanel";
     props: Record<string, unknown>;
   };
   placementHint: {
@@ -118,7 +136,7 @@ function buildIntentId(row: ActionUiIntentSourceRow): string {
 }
 
 /**
- * Map `degradation.summary` rows for inspect/diagnostics. the operator clarified
+ * Map `degradation.summary` rows for inspect/diagnostics. Pat clarified
  * degradation/pause should remain conversation-first in the default user
  * flow, so v1 keeps these intents in the debug region rather than
  * top-pinning them into the future ActivityFeed shell.
@@ -175,7 +193,7 @@ function mapDegradationSummary(
 /**
  * Map pause-related lifecycle events for inspect/diagnostics. The
  * default user-facing pause/resume behavior remains conversational
- * (), not a forced visible web component.
+ * (Card 120), not a forced visible web component.
  */
 function mapPause(
   row: ActionUiIntentSourceRow,
@@ -229,7 +247,7 @@ function mapPause(
 }
 
 /**
- * Map any `tool.*` event to the generic tool event card.  will
+ * Map any `tool.*` event to the generic tool event card. Card 127 will
  * later add per-tool components for search/read/execution that supersede
  * this generic mapping for those specific event types.
  *
@@ -323,6 +341,312 @@ function mapGeneric(
   };
 }
 
+/**
+ * Card 127 — search-tool mapper. Recognizes `tool.content_search`
+ * (and any sibling search-flavored events). Whitelists ONLY the
+ * pre-truncated preview fields the tool already logged via Card 102's
+ * `slice(0, 80)` discipline; never forwards full query/path/payload.
+ *
+ * Result hits are NOT in the event_log payload (they go directly to
+ * the agent reply), so v1 SearchResultsPanel surfaces the call's
+ * intent (what was searched, in which source(s), with what strategy)
+ * rather than the result rows. If a future card persists hits as a
+ * `tool.content_search.ok` follow-up event we'd extend this mapper.
+ *
+ * Returns null if the payload doesn't look like a search call (caller
+ * falls back to `mapToolEvent` generic chrome).
+ */
+function mapSearchResults(
+  row: ActionUiIntentSourceRow,
+  parsed: Record<string, unknown> | null,
+  now: number,
+): ActionUiIntent | null {
+  if (!parsed) return null;
+  const queryPreview = strField(parsed, "queryPreview");
+  if (!queryPreview) return null;
+  const sourceId = strField(parsed, "sourceId");
+  const sourceIdsCount = typeof parsed.sourceIdsCount === "number" ? parsed.sourceIdsCount : null;
+  const mode = strField(parsed, "mode");
+  const strategy = strField(parsed, "strategy");
+  const pathPreview = strField(parsed, "pathPreview");
+  const maxResults = typeof parsed.maxResults === "number" ? parsed.maxResults : null;
+  const taskId = strField(parsed, "taskId");
+
+  const titleCore = `Search: ${queryPreview}`;
+  const titleT = truncate(titleCore, TITLE_CAP);
+  const summarySrc = sourceId
+    ? `in ${sourceId}${strategy ? ` · ${strategy}` : ""}`
+    : `${mode ?? "multi"}${sourceIdsCount !== null ? ` · ${sourceIdsCount} sources` : ""}${strategy ? ` · ${strategy}` : ""}`;
+  const summaryT = truncate(summarySrc, SUMMARY_CAP);
+
+  return {
+    id: buildIntentId(row),
+    taskId,
+    sourceEventType: row.event_type,
+    sourceEventAt: row.created_at,
+    type: "tool.search_results",
+    priority: "secondary",
+    title: titleT.text,
+    summary: summaryT.text,
+    component: {
+      name: "SearchResultsPanel",
+      props: {
+        queryPreview,
+        mode,
+        sourceId,
+        sourceIdsCount,
+        strategy,
+        pathPreview,
+        maxResults,
+      },
+    },
+    placementHint: {
+      region: "feed",
+      size: "medium",
+      focusPath: null,
+    },
+    safety: {
+      rawPayloadHidden: true, // raw tool payload stays in Inspect; props are whitelisted previews only
+      truncated: titleT.truncated || summaryT.truncated,
+    },
+    createdAt: now,
+  };
+}
+
+/**
+ * Card 127 — file-read mapper. Recognizes `tool.content_read` (and
+ * `tool.content_list` is intentionally excluded — listing is a
+ * navigation event, not a "the agent read this file" surface).
+ *
+ * The tool.content_read payload only logs path/sourceId/maxBytes —
+ * NOT the file content — so this panel shows the intent of the read
+ * (which file, in which source, how many bytes) rather than a preview.
+ * Returns null if essential fields missing.
+ */
+function mapFileRead(
+  row: ActionUiIntentSourceRow,
+  parsed: Record<string, unknown> | null,
+  now: number,
+): ActionUiIntent | null {
+  if (!parsed) return null;
+  const sourceId = strField(parsed, "sourceId");
+  const pathPreview = strField(parsed, "pathPreview");
+  if (!pathPreview || !sourceId) return null;
+  const maxBytes = typeof parsed.maxBytes === "number" ? parsed.maxBytes : null;
+  const taskId = strField(parsed, "taskId");
+
+  const titleCore = `File: ${pathPreview}`;
+  const titleT = truncate(titleCore, TITLE_CAP);
+  const summarySrc = `read from ${sourceId}${maxBytes !== null ? ` · cap ${maxBytes}b` : ""}`;
+  const summaryT = truncate(summarySrc, SUMMARY_CAP);
+
+  return {
+    id: buildIntentId(row),
+    taskId,
+    sourceEventType: row.event_type,
+    sourceEventAt: row.created_at,
+    type: "tool.file_read",
+    priority: "secondary",
+    title: titleT.text,
+    summary: summaryT.text,
+    component: {
+      name: "FilePreviewPanel",
+      props: {
+        sourceId,
+        pathPreview,
+        maxBytes,
+      },
+    },
+    placementHint: {
+      region: "feed",
+      size: "medium",
+      focusPath: pathPreview,
+    },
+    safety: {
+      rawPayloadHidden: true, // raw tool payload stays in Inspect; props are whitelisted previews only
+      truncated: titleT.truncated || summaryT.truncated,
+    },
+    createdAt: now,
+  };
+}
+
+/**
+ * Card 127 — execution mapper. Recognizes `tool.execute` (Tier 2
+ * codemode JS/TS via `@cloudflare/think/tools/execute`) and
+ * `tool.sandbox_exec` (Tier 4 OS shell via Cloudflare Sandbox
+ * container). Both already log a pre-truncated code/command preview
+ * + tier label.
+ *
+ * Result stdout/stderr/exit code is NOT in the event_log (returned
+ * directly to the agent), so v1 ExecutionResultPanel shows the call's
+ * intent (which tier, what code/command preview). Future card can
+ * persist `.ok` / `.error` follow-up events for richer rendering.
+ * Returns null if essential fields missing.
+ */
+function mapExecution(
+  row: ActionUiIntentSourceRow,
+  parsed: Record<string, unknown> | null,
+  now: number,
+): ActionUiIntent | null {
+  if (!parsed) return null;
+  const tier = typeof parsed.tier === "number" ? parsed.tier : null;
+  const codePreview = strField(parsed, "codePreview");
+  const commandPreview = strField(parsed, "command_preview");
+  const preview = codePreview ?? commandPreview;
+  if (!preview && tier === null) return null;
+  const reason = strField(parsed, "reason");
+  const sandboxId = strField(parsed, "sandbox_id");
+  const taskId = strField(parsed, "taskId");
+
+  const variant = row.event_type === "tool.sandbox_exec" ? "sandbox" : "execute";
+  const titleCore = variant === "sandbox" ? `Run (sandbox): ${preview ?? ""}` : `Run: ${preview ?? ""}`;
+  const titleT = truncate(titleCore, TITLE_CAP);
+  const summarySrc = `tier ${tier ?? "?"}${reason ? ` · ${reason}` : ""}${sandboxId ? ` · ${sandboxId}` : ""}`;
+  const summaryT = truncate(summarySrc, SUMMARY_CAP);
+
+  return {
+    id: buildIntentId(row),
+    taskId,
+    sourceEventType: row.event_type,
+    sourceEventAt: row.created_at,
+    type: "tool.execution_result",
+    priority: "secondary",
+    title: titleT.text,
+    summary: summaryT.text,
+    component: {
+      name: "ExecutionResultPanel",
+      props: {
+        variant,
+        tier,
+        preview,
+        reason,
+        sandboxId,
+      },
+    },
+    placementHint: {
+      region: "feed",
+      size: "medium",
+      focusPath: null,
+    },
+    safety: {
+      rawPayloadHidden: true, // raw tool payload stays in Inspect; props are whitelisted previews only
+      truncated: titleT.truncated || summaryT.truncated,
+    },
+    createdAt: now,
+  };
+}
+
+/**
+ * Card 128 — workspace mutation mapper. Recognizes write-shaped tool
+ * events that change persisted state, with two concrete sources today:
+ *
+ *   - `tool.write_checkpoint` — agent's own checkpoint write (the
+ *     checkpoint key is stored, not a workspace file path). v1 surfaces
+ *     it as a workspace-state mutation card; the focusPath is null
+ *     because a checkpoint key isn't a file path the workspace file
+ *     manager can open.
+ *   - `tool.workspace.<op>` (forward-compat) — when future cards
+ *     instrument `createWorkspaceTools` from `@cloudflare/think` to
+ *     emit per-op events, this mapper picks them up automatically.
+ *     The mapper looks for `path` / `pathPreview` / `filePath` fields
+ *     and uses whichever is present as the focusPath, enabling the
+ *     "Open in workspace" affordance in `WorkspaceChangePanel`.
+ *
+ * Returns null if the row isn't write-shaped or required fields are
+ * missing → caller falls back to `mapToolEvent` generic chrome.
+ */
+function mapWorkspaceMutation(
+  row: ActionUiIntentSourceRow,
+  parsed: Record<string, unknown> | null,
+  now: number,
+): ActionUiIntent | null {
+  if (!parsed) return null;
+  const taskId = strField(parsed, "taskId");
+
+  // Branch 1: checkpoint write (current concrete signal).
+  if (row.event_type === "tool.write_checkpoint") {
+    const key = strField(parsed, "key");
+    const checkpoint = strField(parsed, "checkpoint");
+    if (!key && !checkpoint) return null;
+    const titleCore = `Workspace: checkpoint ${key ?? "—"}`;
+    const titleT = truncate(titleCore, TITLE_CAP);
+    const summaryT = truncate(checkpoint ?? "checkpoint persisted", SUMMARY_CAP);
+    return {
+      id: buildIntentId(row),
+      taskId,
+      sourceEventType: row.event_type,
+      sourceEventAt: row.created_at,
+      type: "tool.workspace_mutation",
+      priority: "secondary",
+      title: titleT.text,
+      summary: summaryT.text,
+      component: {
+        name: "WorkspaceChangePanel",
+        props: {
+          mutationKind: "checkpoint",
+          key,
+          checkpoint,
+          path: null, // not a filesystem path
+        },
+      },
+      placementHint: {
+        region: "feed",
+        size: "compact",
+        // Checkpoint key isn't a file path → no focusPath. Frontend
+        // will not show the "Open in workspace" affordance.
+        focusPath: null,
+      },
+      safety: {
+        rawPayloadHidden: true, // raw workspace payload stays in Inspect; props are whitelisted previews only
+        truncated: titleT.truncated || summaryT.truncated,
+      },
+      createdAt: now,
+    };
+  }
+
+  // Branch 2: future tool.workspace.<op> events.
+  if (row.event_type.startsWith("tool.workspace.")) {
+    const op = row.event_type.slice("tool.workspace.".length).split(".")[0] || "mutation";
+    const path = strField(parsed, "path") ?? strField(parsed, "pathPreview") ?? strField(parsed, "filePath");
+    if (!path) return null;
+    const titleCore = `Workspace ${op}: ${path}`;
+    const titleT = truncate(titleCore, TITLE_CAP);
+    return {
+      id: buildIntentId(row),
+      taskId,
+      sourceEventType: row.event_type,
+      sourceEventAt: row.created_at,
+      type: "tool.workspace_mutation",
+      priority: "secondary",
+      title: titleT.text,
+      summary: undefined,
+      component: {
+        name: "WorkspaceChangePanel",
+        props: {
+          mutationKind: op,
+          path,
+          key: null,
+          checkpoint: null,
+        },
+      },
+      placementHint: {
+        region: "feed",
+        size: "medium",
+        // Real workspace file path → enables WorkspaceChangePanel's
+        // "Open in workspace" affordance via dispatchEvent.
+        focusPath: path,
+      },
+      safety: {
+        rawPayloadHidden: true, // raw workspace payload stays in Inspect; props are whitelisted previews only
+        truncated: titleT.truncated,
+      },
+      createdAt: now,
+    };
+  }
+
+  return null;
+}
+
 function classifyAndMap(
   row: ActionUiIntentSourceRow,
   now: number,
@@ -331,6 +655,29 @@ function classifyAndMap(
   if (row.event_type === "degradation.summary") return mapDegradationSummary(row, parsed, now);
   if (row.event_type === "loop.pause.needs_human" || row.event_type === "loop.pause.awaiting_resume") {
     return mapPause(row, parsed, now);
+  }
+  // Card 127 — tool-specific upgraded mappers. Each returns null when
+  // the payload lacks the whitelisted fields, so the caller falls back
+  // to `mapToolEvent` generic chrome rather than rendering an empty
+  // dedicated panel.
+  if (row.event_type === "tool.content_search") {
+    const intent = mapSearchResults(row, parsed, now);
+    if (intent) return intent;
+  }
+  if (row.event_type === "tool.content_read") {
+    const intent = mapFileRead(row, parsed, now);
+    if (intent) return intent;
+  }
+  if (row.event_type === "tool.execute" || row.event_type === "tool.sandbox_exec") {
+    const intent = mapExecution(row, parsed, now);
+    if (intent) return intent;
+  }
+  // Card 128 — workspace mutation upgrade. Catches `tool.write_checkpoint`
+  // today + `tool.workspace.<op>` forward-compat tomorrow. Falls through
+  // to `mapToolEvent` if payload doesn't match either branch.
+  if (row.event_type === "tool.write_checkpoint" || row.event_type.startsWith("tool.workspace.")) {
+    const intent = mapWorkspaceMutation(row, parsed, now);
+    if (intent) return intent;
   }
   if (row.event_type.startsWith("tool.")) return mapToolEvent(row, parsed, now);
   return mapGeneric(row, parsed, now);

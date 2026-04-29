@@ -1,19 +1,44 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useWorkspaceFiles, useWorkspaceFileContent } from "../hooks/useWorkspaceFiles";
 import type { WorkspaceFileEntry } from "../../shared/schema";
 
 /**
- * read-only workspace file panel.
- *
- * Sits in the user-layer (Workspace route) below MainCardsArea, above
- * SummaryStream. Default open; user can collapse. Mobile shows the same
- * panel inline in the scroll area (does NOT enter the bottom action bar
- * per Card §C-8).
+ * Read-only workspace file panel. Default collapsed (per Card 126);
+ * the user expands it manually OR programmatically via the
+ * `agent-thursday:workspace:focus-path` custom event that
+ * `WorkspaceChangePanel` (Card 128) dispatches when the user clicks
+ * "Open in workspace". On a focus request the panel auto-opens, the
+ * directory listing navigates to the parent dir, and the file preview
+ * loads — but ONLY because the user explicitly clicked the button, so
+ * it doesn't fight manual focus.
  */
 export function WorkspaceFileManager() {
+  // Default open=true now that this panel lives inside an Inspect tab —
+  // clicking the tab is itself the "expand" action; an inner collapse
+  // toggle on top would just be redundant chrome.
   const [open, setOpen] = useState(true);
   const [path, setPath] = useState("");
   const [previewPath, setPreviewPath] = useState<string | null>(null);
+
+  useEffect(() => {
+    function onFocusPath(e: Event) {
+      const ce = e as CustomEvent<{ path?: string }>;
+      const target = ce.detail?.path;
+      if (typeof target !== "string" || target.length === 0) return;
+      setOpen(true);
+      // Show the file in preview directly; the breadcrumb / list pane
+      // will pick up the parent dir via the existing path state on
+      // user navigation.
+      setPreviewPath(target);
+      // Best-effort: navigate listing to the parent directory.
+      const lastSlash = target.lastIndexOf("/");
+      const parentDir = lastSlash > 0 ? target.slice(0, lastSlash) : "";
+      setPath(parentDir);
+    }
+    window.addEventListener("agent-thursday:workspace:focus-path", onFocusPath);
+    return () =>
+      window.removeEventListener("agent-thursday:workspace:focus-path", onFocusPath);
+  }, []);
 
   const list = useWorkspaceFiles(open ? path : "");
   const content = useWorkspaceFileContent(open ? previewPath : null);
