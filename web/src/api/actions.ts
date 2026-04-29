@@ -2,7 +2,7 @@ import { postJson } from "./client";
 
 /**
  * Mutating action wrappers. Bodies mirror tui/App.tsx contracts verbatim
- * (Card 79 review constraint: don't invent shapes). The web identifies
+ * ( review constraint: don't invent shapes). The web identifies
  * itself as `web-user` instead of TUI's `tui-user`; otherwise the worker
  * cannot tell which surface a human-response came from.
  */

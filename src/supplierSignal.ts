@@ -1,7 +1,7 @@
 /**
- * M7.5 Card 116 — supplier-side degradation signal helpers.
+ * supplier-side degradation signal helpers.
  *
- * Card 102 (truthfulness gate) catches **user-facing claims** that don't
+ *  (truthfulness gate) catches **user-facing claims** that don't
  * match dispatched tools. This module catches the complementary failure:
  * **supplier-side anomalies** in the model/adapter path itself
  * (missing finish_reason, tool calls extracted but not dispatched, stream
@@ -30,7 +30,7 @@ export type SupplierStepSignal = {
   toolCallCount: number;
   toolResultCount: number;
   /**
-   * Card 117 — names extracted from `ctx.toolCalls` / `ctx.toolResults`.
+   * names extracted from `ctx.toolCalls` / `ctx.toolResults`.
    * Empty when the SDK didn't expose names (older versions, or shapes
    * the safe-access path couldn't resolve). Capped at the call site so
    * the persisted event payload stays compact and grep-friendly.
@@ -137,8 +137,8 @@ export function detectSupplierDegradation(t: SupplierTaskSignals): {
 
 /**
  * Render the user-facing warning marker. Chinese by default per kanban
- * §"Suggested marker text" — Pat's primary operating language for this
- * project is Chinese, and this aligns with the Card 102 warning style.
+ * §"Suggested marker text" — the operator's primary operating language for this
+ * project is Chinese, and this aligns with the  warning style.
  *
  * `reasons` go in as compact enum tokens (already grep-friendly), comma-
  * joined. We deliberately don't expand into natural language — the goal

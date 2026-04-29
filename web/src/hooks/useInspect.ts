@@ -11,7 +11,7 @@ type State = {
 
 /**
  * Polls `/api/inspect` only when `enabled` is true. Drawer passes `open` so
- * closed drawers don't waste cycles (Card 81 acceptance: "drawer 关闭后
+ * closed drawers don't waste cycles ( acceptance: "drawer 关闭后
  * useInspect 停止 polling"). 5s interval — slower than workspace, since
  * inspect data changes less critically.
  *

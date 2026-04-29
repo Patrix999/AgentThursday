@@ -1,20 +1,20 @@
 /**
- * M7.6 Card 125 — Action UI Intent backend builder.
+ * Action UI Intent backend builder.
  *
  * Pure derive-on-read translation layer: takes recent `event_log` rows
  * (the same shape `getInspectSnapshot()` already pulls into `trace[]`)
  * and produces a capped, schema-validated `ActionUiIntent[]` view that
- * Card 126's frontend ActivityFeed consumes.
+ * 's frontend ActivityFeed consumes.
  *
- * v1 invariants (per kanban + M7.6 milestone red lines):
+ * v1 invariants (per kanban + milestone red lines):
  *   - **No persisted intent event** — derived fresh on every inspect read.
- *     Avoids schema churn cascading into M7.5 consumers (Card 117/119/121).
- *   - **No model-declared `@component`** — that's M7.7+ P2; v1 only maps
+ *     Avoids schema churn cascading into consumers (/119/121).
+ *   - **No model-declared `@component`** — that's + P2; v1 only maps
  *     known event types to a fixed set of component names.
  *   - **Raw payload hidden by default** — generic cards include only
  *     event type / timestamp / taskId / short summary. Tool events do
  *     NOT carry full prompts, raw Discord bodies, raw provider payloads,
- *     or secrets through this surface. Card 127 will do per-tool richer
+ *     or secrets through this surface.  will do per-tool richer
  *     extraction with explicit sanitization.
  *   - **Raw `trace[]` unchanged** — intents are an INDEX, not a
  *     replacement.
@@ -118,7 +118,7 @@ function buildIntentId(row: ActionUiIntentSourceRow): string {
 }
 
 /**
- * Map `degradation.summary` rows for inspect/diagnostics. Pat clarified
+ * Map `degradation.summary` rows for inspect/diagnostics. the operator clarified
  * degradation/pause should remain conversation-first in the default user
  * flow, so v1 keeps these intents in the debug region rather than
  * top-pinning them into the future ActivityFeed shell.
@@ -175,7 +175,7 @@ function mapDegradationSummary(
 /**
  * Map pause-related lifecycle events for inspect/diagnostics. The
  * default user-facing pause/resume behavior remains conversational
- * (Card 120), not a forced visible web component.
+ * (), not a forced visible web component.
  */
 function mapPause(
   row: ActionUiIntentSourceRow,
@@ -229,7 +229,7 @@ function mapPause(
 }
 
 /**
- * Map any `tool.*` event to the generic tool event card. Card 127 will
+ * Map any `tool.*` event to the generic tool event card.  will
  * later add per-tool components for search/read/execution that supersede
  * this generic mapping for those specific event types.
  *

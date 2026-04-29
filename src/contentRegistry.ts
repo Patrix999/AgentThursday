@@ -1,10 +1,10 @@
 /**
- * M7.4 Card 107 — ContentHub registry data + pure listing logic.
+ * ContentHub registry data + pure listing logic.
  *
  * Pure module: no Workers/DO imports. Importable from Node smoke tests
  * (see `scripts/contentHub-smoke.ts`) and from the `ContentHubAgent` DO.
  *
- * Card 108 will replace the hardcoded array with dynamic DO state once
+ *  will replace the hardcoded array with dynamic DO state once
  * provider configuration moves out of build-time constants.
  */
 
@@ -24,7 +24,7 @@ const AGENT_THURSDAY_GITHUB_SOURCE: ContentSource = {
   authMode: "secret",
   defaultRef: "main",
   // Allow list = subtrees the agent should be able to read.
-  // Card 108 enforces this list before each network fetch.
+  //  enforces this list before each network fetch.
   allowedPaths: [
     "src/",
     "docs/",
@@ -45,7 +45,7 @@ const AGENT_THURSDAY_GITHUB_SOURCE: ContentSource = {
     "dist",
     "web/dist",
   ],
-  // M7.4 v2 Card 112 — explicit capability declaration. GitHub provider
+  // explicit capability declaration. GitHub provider
   // supports the full read/list/search/health quad (Cards 108 + 109).
   capabilities: {
     read: true,
@@ -55,9 +55,9 @@ const AGENT_THURSDAY_GITHUB_SOURCE: ContentSource = {
   },
 };
 
-// M7.4 v2 Card 112 — Local-fs / static docs ContentSource.
+// Local-fs / static docs ContentSource.
 //
-// Card 111 design (`docs/design/2026-04-28-m7.4-v2-provider-selection.md`)
+//  design (`docs/design/2026-04-28-m7.4-v2-provider-selection.md`)
 // chose Local-fs as the v2 first additional provider to validate
 // `ContentSourceConnector` abstraction with a non-GitHub I/O / auth /
 // revision model. Implementation: hardcoded fixture map shipped in
@@ -70,7 +70,7 @@ const AGENT_THURSDAY_GITHUB_SOURCE: ContentSource = {
 const AGENT_THURSDAY_LOCAL_FIXTURE_SOURCE: ContentSource = {
   id: "agent-thursday-local-fixture",
   provider: "local-fs",
-  label: "AgentThursday Local Fixture (M7.4 v2 abstraction validator)",
+  label: "AgentThursday Local Fixture (v2 abstraction validator)",
   scope: "fixture",
   access: "read",
   authMode: "none",
@@ -78,10 +78,10 @@ const AGENT_THURSDAY_LOCAL_FIXTURE_SOURCE: ContentSource = {
   // the worker source). deniedPaths kept empty since the fixture corpus
   // contains no secrets by construction. Path policy still rejects `..`,
   // `\\`, null bytes via the connector's normalizePath.
-  // M7.4 v2 Card 112 — Local-fs provider supports read + list + health
+  // Local-fs provider supports read + list + health
   // only. Search is explicitly false: `_doSearch` returns a fail-loud
   // "search not implemented for provider: local-fs" error rather than any
-  // silent fallback. Card 113 fan-out reads this field to skip local-fs.
+  // silent fallback.  fan-out reads this field to skip local-fs.
   capabilities: {
     read: true,
     list: true,
@@ -96,8 +96,8 @@ export const HARDCODED_REGISTRY: readonly ContentSource[] = [
 ];
 
 /**
- * v1 health is intentionally static — Card 107 ships no network call.
- * Card 108 replaces this with a real GitHub probe and switches `mode` to
+ * v1 health is intentionally static —  ships no network call.
+ *  replaces this with a real GitHub probe and switches `mode` to
  * `"live"` / `"degraded"`.
  */
 export function staticHealth(_source: ContentSource): ContentSourceHealth {
@@ -115,7 +115,7 @@ export type ListSourcesInput = {
 
 /**
  * Pure listing function used by `ContentHubAgent.getSources` and by the
- * Card 107 smoke test. v1 returns the hardcoded registry.
+ *  smoke test. v1 returns the hardcoded registry.
  *
  * @param input.includeHealth default `true`. Set `false` for cheap listing.
  * @param input.sourceId      optional filter; empty array if unmatched.

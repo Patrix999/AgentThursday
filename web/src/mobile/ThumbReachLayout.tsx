@@ -8,7 +8,7 @@ type Props = {
 };
 
 /**
- * M7.1 Card 80 — mobile thumb-reach shell.
+ * mobile thumb-reach shell.
  *
  * Layout (top → bottom):
  *   - top:    sticky header

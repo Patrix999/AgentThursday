@@ -1,8 +1,8 @@
 /**
- * M7.4 Card 108 — GitHub connector v1 (read + list).
+ * GitHub connector v1 (read + list).
  *
  * Pure module: no Workers DO imports. Imported by `ContentHubAgent` (DO),
- * by the Card 108 smoke (Node runtime), and by `server.ts` API routes.
+ * by the  smoke (Node runtime), and by `server.ts` API routes.
  *
  * Strategy (ADR §6 revision-pinned):
  *   1. Resolve user ref (branch/tag/sha) → concrete commit SHA via
@@ -44,7 +44,7 @@ export class GithubContentError extends Error {
       | "list-failed"
       | "not-a-directory"
       | "no-body"
-      // Card 109 — search-specific failures.
+      // search-specific failures.
       | "quota-exhausted"
       | "code-search-failed",
     public readonly status: number | null,
@@ -61,7 +61,7 @@ export type GithubRepo = {
   defaultRef: string;
 };
 
-// Card 108 hardcodes the source-id → repo mapping. Card 111+ moves this to
+//  hardcodes the source-id → repo mapping. + moves this to
 // per-source metadata (`source.providerConfig`) once OAuth providers land.
 const SOURCE_REPO_MAP: Readonly<Record<string, GithubRepo>> = {
   "agentthursday-github": { owner: "Patrix999", repo: "AgentThursday", defaultRef: "main" },
@@ -73,7 +73,7 @@ export function getRepoForSource(sourceId: string): GithubRepo | null {
 
 // ─── Path policy ─────────────────────────────────────────────────────────────
 // Enforces deny-list (precedence) + allow-list before any network call. ADR
-// §11 + Card 108 §scope: denied/unsafe paths must be rejected without
+// §11 +  §scope: denied/unsafe paths must be rejected without
 // touching the GitHub API, so the network is never used to enumerate
 // secrets or hidden config.
 
@@ -123,7 +123,7 @@ export function checkPath(source: ContentSource, rawPath: string): PathPolicyRes
 }
 
 // ─── Secret redaction ───────────────────────────────────────────────────────
-// ADR §11.6 + Card 108 §7: high-confidence patterns only. PEM private key
+// ADR §11.6 +  §7: high-confidence patterns only. PEM private key
 // blocks refuse the entire file content (kind="pem-block"). Other patterns
 // replace inline and return offsets of the placeholder in the rebuilt text.
 
@@ -161,7 +161,7 @@ export function redactSecrets(content: string): {
     p.re.lastIndex = 0;
     if (p.re.test(content)) {
       return {
-        content: "[REDACTED:pem-private-key — file refused per M7.4 ADR §11]",
+        content: "[REDACTED:pem-private-key — file refused per ADR §11]",
         redactions: [{ offset: 0, length: content.length, kind: "pem-block" }],
         refusedWholeFile: true,
       };
@@ -324,7 +324,7 @@ export async function fetchContentsList(
     if (r.status === 403) throw new GithubContentError("forbidden-or-rate-limited", 403, "GitHub forbidden / rate-limited");
     throw new GithubContentError("list-failed", r.status, `list failed (${r.status})`);
   }
-  // GitHub returns array for directories, object for single files. Card 108
+  // GitHub returns array for directories, object for single files. 
   // list is for directories only — fail loudly if a file path is passed.
   if (!Array.isArray(r.data)) {
     throw new GithubContentError("not-a-directory", null, `path ${cleanPath} is a file, not a directory`);
@@ -343,7 +343,7 @@ export async function fetchContentsList(
     });
 }
 
-// ─── Card 109 — GitHub Code Search ─────────────────────────────────────────
+// ─── GitHub Code Search ─────────────────────────────────────────
 
 type GhCodeSearchItem = {
   path: string;

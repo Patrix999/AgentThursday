@@ -3,7 +3,7 @@ import { useWorkspaceFiles, useWorkspaceFileContent } from "../hooks/useWorkspac
 import type { WorkspaceFileEntry } from "../../shared/schema";
 
 /**
- * M7.2 Card 82 — read-only workspace file panel.
+ * read-only workspace file panel.
  *
  * Sits in the user-layer (Workspace route) below MainCardsArea, above
  * SummaryStream. Default open; user can collapse. Mobile shows the same

@@ -5,7 +5,7 @@ import { InspectContent } from "../inspect/InspectContent";
 /**
  * Mobile-primary inspect surface. Always polling while the route is mounted
  * (the user navigated here intentionally). Desktop users normally use the
- * drawer (M7.1 surface decision); this route is also reachable from desktop.
+ * drawer (surface decision); this route is also reachable from desktop.
  */
 export function InspectRoute() {
   const { data, loading, error } = useInspect(true);

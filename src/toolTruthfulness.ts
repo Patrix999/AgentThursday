@@ -1,5 +1,5 @@
 /**
- * M7.3 Card 102 — Tool-Truthfulness Gate.
+ * Tool-Truthfulness Gate.
  *
  * Pure helpers to detect tool-call claims in assistant text and check them
  * against the authoritative `tool.*` event_log entries actually emitted
@@ -72,7 +72,7 @@ export function findToolClaims(text: string, knownTools: readonly string[]): Too
 }
 
 /**
- * Card 108a Track B — tagline-style claim detection.
+ *  Track B — tagline-style claim detection.
  *
  * Some models reply in a "report card" style instead of an explicit verb form,
  * e.g.  `✅ Probe 2 — recall ✅` followed by a `实际返回值：\n```json {...}` block.
@@ -96,36 +96,36 @@ function isNegation(window: string): boolean {
   // CN existing: 没调|没真调|没有调|未调|没有真调用|不会调|没有调用|没真正调用
   // CN self-correction existing: 心算了|错误声称|实际上没调|并未真调|没真正发起|fabricate/编造
   // EN existing: did not call|didn't call|did not invoke|didn't try|claimed but didn't|falsely claimed
-  // ── Card 102a (2026-04-29) — refusal/meta-claim patterns missed by the
+  // ──  (2026-04-29) — refusal/meta-claim patterns missed by the
   // existing regex when models say "I won't claim ..." / "在没有 X 的情况
   // 下声称调用了 Y" instead of the simple "我没调用" form. Real saga
-  // example (Card 116 case 4-bis): SOUL refusal text
+  // example ( case 4-bis): SOUL refusal text
   //   "在没有真实 dispatch 的情况下声称调用了 review_project_status"
   // The negation marker "没有" is too far from "调用" for the simple
   // adjacency regex to fire, so the existing path miscategorizes the
   // refusal as a fabricated claim.
   return /(?:没(?:有)?(?:真)?(?:正)?调(?:用)?|未(?:真)?调(?:用)?|没真调|不会调用|没尝试|没真正|心算了|错误声称|并未(?:真)?调|实际上(?:并)?没调|fabricate|编造)/i.test(window)
-    // Card 102a — explicit refusal-to-claim verbs ("不能/不会/不要/不可" + "声称/假装/假称/宣称/说我调/说自己调"):
+    // explicit refusal-to-claim verbs ("不能/不会/不要/不可" + "声称/假装/假称/宣称/说我调/说自己调"):
     //   "不能声称我调用了" / "不会假装调用" / "不要声称我执行" / "不可宣称"
     || /不(?:能|会|要|可)\s*(?:声称|假装|假称|宣称|说\s*(?:我|自己)?\s*调)/i.test(window)
-    // Card 102a — "并未/没/未 + 执行/运行/发起/做/跑" — covers tool verbs
+    // "并未/没/未 + 执行/运行/发起/做/跑" — covers tool verbs
     // that aren't "调":  "并未执行 X" / "没有运行任何工具" / "未发起 X".
     || /(?:并未|没(?:有)?|未)\s*(?:执行|运行|发起|做|跑)/i.test(window)
-    // Card 102a — "声称/假装 + (我/自己?)? + 调" — meta-claim language is
+    // "声称/假装 + (我/自己?)? + 调" — meta-claim language is
     // almost always refusal/discussion-of-claims, not actual claim. A real
     // fabrication says "我刚才调用了", not "我声称我调用了 X".
     || /(?:声称|假装|假称|宣称)\s*(?:我|自己)?\s*调(?:用)?(?:了|过|过的)?/i.test(window)
-    // Card 102a — explicit prohibition leading the sentence:
+    // explicit prohibition leading the sentence:
     //   "禁止...调用" / "拒绝声称调用" / "不允许假装调用".
     || /(?:禁止|拒绝|不允许)[^。\n]{0,60}(?:调|声称|假装)/i.test(window)
-    // Card 102a — "在没有/缺乏 (真实)? ... dispatch" English+CN mixed
-    // pattern, matches Card 116 case 4-bis verbatim shape.
+    // "在没有/缺乏 (真实)? ... dispatch" English+CN mixed
+    // pattern, matches  case 4-bis verbatim shape.
     || /(?:在\s*没有|缺乏|没\s*有)\s*(?:真实|实际|真正)?[^。\n]{0,30}\s*dispatch/i.test(window)
     || /\b(?:did\s*n['o]?t|didn['o]?t|never)\s+(?:call|invoke|run|try|use)\b/i.test(window)
-    // Card 102a — EN refusal-to-claim: cannot/won't/will not + claim/say/pretend/assert.
+    // EN refusal-to-claim: cannot/won't/will not + claim/say/pretend/assert.
     || /\b(?:cannot|can\s*not|won['o]?t|will\s+not|shall\s+not|must\s+not)\s+(?:claim|say|pretend|assert|state)\b/i.test(window)
     || /\bnot\s+claim\s+(?:that\s+I\s+(?:did|called|ran|invoked)|to\s+have)/i.test(window)
-    // Card 102a — EN explicit dispatch denial: "no tool was dispatched" /
+    // EN explicit dispatch denial: "no tool was dispatched" /
     // "no tool dispatched" / "without dispatching".
     || /\bno\s+tool\s+(?:was\s+)?dispatched\b/i.test(window)
     || /\bwithout\s+dispatching\b/i.test(window)

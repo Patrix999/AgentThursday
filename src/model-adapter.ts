@@ -112,7 +112,7 @@ class VerboseAdapter implements ModelAdapter {
         "  ○ DoD-4: 当前 model profile 元数据可感知 (provider/model/tier)。",
         "  ○ DoD-6: 全流程 event trace 可回放。",
         "",
-        "建议下一步开卡: Card 06 — 全流程 event trace 可回放 (DoD-6)。",
+        "建议下一步开卡: 全流程 event trace 可回放 (DoD-6)。",
       ].filter(Boolean).join("\n");
     } else {
       text = [

@@ -1,15 +1,15 @@
 /**
- * M7.5 Card 119 — per-task degradation summary.
+ * per-task degradation summary.
  *
  * Consumes:
- *   - Card 117 in-memory `SupplierTaskSignals` + truthfulness verdict
- *   - Card 118 `ModelProfile` registry (via `getModelProfile`)
+ *   -  in-memory `SupplierTaskSignals` + truthfulness verdict
+ *   -  `ModelProfile` registry (via `getModelProfile`)
  *   - final task lifecycle from `submitTask`
  *
  * Produces a single compact `TaskDegradationSummary` answering:
  *   "Is this task result usable, suspicious, blocked, or waiting for human?"
  *
- * v1 invariants (per kanban + M7.5 milestone red lines):
+ * v1 invariants (per kanban + milestone red lines):
  *   - state literal contract `/degraded/blocked/needs_human` preserved
  *   - `recommendedAction` is review-oriented prose; never an automatic
  *     routing instruction (no "switch to model X" / "retry with Y")

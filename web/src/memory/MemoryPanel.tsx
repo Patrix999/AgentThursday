@@ -3,7 +3,7 @@ import { useMemorySnapshot } from "../hooks/useMemorySnapshot";
 import type { MemoryEntry } from "../../shared/schema";
 
 /**
- * M7.2 Card 84 — compact agent memory summary in user layer.
+ * compact agent memory summary in user layer.
  *
  * Shows counts by type + most-recent active facts/instructions/events/tasks.
  * Collapsible like WorkspaceFileManager. No raw IDs in headlines (id only

@@ -10,7 +10,7 @@ type WorkspaceState = {
 };
 
 /**
- * Polls `/api/workspace` every 3s. Card 76 contract.
+ * Polls `/api/workspace` every 3s.  contract.
  * On 401, clears the stored secret and dispatches `agent-thursday:unauthorized` so
  * `SecretGate` re-prompts. Other errors stay inline.
  */

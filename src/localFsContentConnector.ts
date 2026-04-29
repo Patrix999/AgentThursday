@@ -1,7 +1,7 @@
 /**
- * M7.4 v2 Card 112 — Local-fs / static docs ContentSource connector.
+ * Local-fs / static docs ContentSource connector.
  *
- * Card 111 design (`docs/design/2026-04-28-m7.4-v2-provider-selection.md`)
+ *  design (`docs/design/2026-04-28-m7.4-v2-provider-selection.md`)
  * picked Local-fs as the v2 first additional provider. Implementation form:
  * a hardcoded fixture map shipped with the worker. The connector exists to
  * validate `ContentSourceConnector` abstraction (different I/O / auth /
@@ -12,9 +12,9 @@
  * limit (per design doc §二). v2 後續 connector must supply the missing
  * dimensions. This file does NOT pretend to validate those.
  *
- * Out of scope (per Card 112 §Out-of-scope and §Constraints):
+ * Out of scope (per  §Out-of-scope and §Constraints):
  *   - no write
- *   - no search (Card 113 will not include local-fs in fan-out by capability)
+ *   - no search ( will not include local-fs in fan-out by capability)
  *   - no OAuth / vault / refresh token
  *   - no Tier 0 workspace bridging (workspace remains agent-private; this
  *     connector serves a fixed in-process fixture, NOT the agent workspace)
@@ -43,7 +43,7 @@ const LOCAL_FS_FIXTURES: Readonly<Record<string, string>> = {
   "README.md": [
     "# AgentThursday Local Fixture (v2 abstraction validator)",
     "",
-    "This is the M7.4 v2 Card 112 Local-fs connector fixture corpus.",
+    "This is the v2  Local-fs connector fixture corpus.",
     "It exists to prove ContentSource abstraction works for a non-GitHub",
     "provider (no network, no token, no rate limit, content-hash revision).",
     "",
@@ -56,14 +56,14 @@ const LOCAL_FS_FIXTURES: Readonly<Record<string, string>> = {
   "samples/hello.txt": "Hello from the AgentThursday local fixture.\nLine 2.\nLine 3.\n",
   "samples/config.json": JSON.stringify({
     name: "agent-thursday-local-fixture",
-    purpose: "M7.4 v2 abstraction validator",
+    purpose: "v2 abstraction validator",
     revisionStrategy: "content-hash",
   }, null, 2) + "\n",
   "docs/local-fs-test.md": [
     "# Local-fs Test Doc",
     "",
     "If you can read this via `content_read({sourceId:\"" + LOCAL_FS_SOURCE_ID + "\", path:\"docs/local-fs-test.md\"})`,",
-    "the Card 112 Local-fs connector skeleton is working end-to-end.",
+    "the  Local-fs connector skeleton is working end-to-end.",
     "",
   ].join("\n"),
 };
@@ -91,7 +91,7 @@ export class LocalFsContentError extends Error {
 /** Normalize a request path: strip leading slash, drop empty segments, reject `..`. */
 function normalizePath(rawPath: string): string {
   if (rawPath === "" || rawPath === "/") return "";
-  // Reject backslash, null bytes, traversal — same posture as Card 108 path policy.
+  // Reject backslash, null bytes, traversal — same posture as  path policy.
   if (rawPath.includes("\\") || rawPath.includes("\0")) {
     throw new LocalFsContentError("denied", null, `unsafe path: ${rawPath}`);
   }
@@ -103,7 +103,7 @@ function normalizePath(rawPath: string): string {
 }
 
 /**
- * Synthesize a content-hash revision (Card 111 design §二/§三). Uses a
+ * Synthesize a content-hash revision ( design §二/§三). Uses a
  * lightweight FNV-1a 64-bit hash so we don't need WebCrypto; we don't need
  * cryptographic strength here, just stable per-content identity. Output is
  * 16 hex chars used both as `snapshotId` and as the short `revisionLabel`

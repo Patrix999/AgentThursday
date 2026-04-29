@@ -9,7 +9,7 @@ type ListState = {
 };
 
 /**
- * M7.2 Card 82 — workspace file directory listing.
+ * workspace file directory listing.
  *
  * Pulls `/api/workspace/files?path=<path>` once per `path` change. No polling
  * (file system changes are infrequent and the user navigates manually). On

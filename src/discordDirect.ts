@@ -1,12 +1,12 @@
 /**
- * M7.3 Card 91 — direct Discord adapter (pure helpers).
+ * direct Discord adapter (pure helpers).
  *
  * Cloudflare Worker constraint: no persistent Gateway WebSocket. So this
  * adapter:
  *   1. Receives via Discord **HTTP Interactions** (slash commands + button
  *      clicks) — with Ed25519 signature verification, no `X-AgentThursday-Secret`.
  *   2. Receives normal MESSAGE_CREATE-style events via an auth-gated test
- *      path `POST /api/channel/discord/direct` (same payload shape as Card 86
+ *      path `POST /api/channel/discord/direct` (same payload shape as 
  *      so future gateway-runners can post the same body).
  *
  * Pure helpers only here (verify / filter / normalize / splitter / button
@@ -61,9 +61,9 @@ export type DirectDiscordConfig = {
   ignoreNoMentionInGuild: boolean;
   allowBots: "none" | "mentions" | "all";
   /**
-   * Card 91 §A-1 conservative defaults: empty allowedUserIds /
+   *  §A-1 conservative defaults: empty allowedUserIds /
    * allowedChannelIds means DENY (not allow). Dev mode bypasses these so
-   * local smoke can run without a real allowlist. Reuses Card 77's
+   * local smoke can run without a real allowlist. Reuses 's
    * existing dev escape hatch (`AGENT_THURSDAY_ALLOW_INSECURE_DEV`); semantics are
    * orthogonal to auth (auth still requires `AGENT_THURSDAY_SHARED_SECRET` when set).
    */

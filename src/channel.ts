@@ -1,5 +1,5 @@
 /**
- * M7.3 Card 85 — ChannelHub helpers (provider-agnostic; conversation id
+ * ChannelHub helpers (provider-agnostic; conversation id
  * derivation, raw payload redaction). The actual storage / DO lives in
  * `src/channelHub.ts`. Keep this file pure so we can unit-test paths
  * without DO context if/when a test rig lands.
@@ -55,7 +55,7 @@ export function conversationIdForDiscordDm(input: {
 /**
  * Fallback DM id when bot user id is not configured. Discord assigns one
  * stable channel per DM pair so `channelId` alone is canonical. Used by
- * Card 86 bridge when `AGENT_THURSDAY_DISCORD_BOT_ID` env var is unset (Card 86 §D-19:
+ *  bridge when `AGENT_THURSDAY_DISCORD_BOT_ID` env var is unset ( §D-19:
  * missing optional bot id should not crash on DM path).
  */
 export function conversationIdForDiscordDmByChannel(input: {
@@ -84,7 +84,7 @@ export function conversationIdForEmailThread(input: {
 /**
  * Truncate caller-supplied raw payload reference / dump to `RAW_REF_MAX`
  * characters so a single hostile webhook can't bloat the inbox row size.
- * Card 85 §E-16 explicit: P0 stores compact pointer / first 200 chars only.
+ *  §E-16 explicit: P0 stores compact pointer / first 200 chars only.
  */
 export function clampRawRef(raw: string | null | undefined): string | null {
   if (raw === null || raw === undefined || raw === "") return null;

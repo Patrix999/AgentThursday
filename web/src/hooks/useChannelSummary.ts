@@ -9,7 +9,7 @@ type State = {
 };
 
 /**
- * M7.3 Card 89 — compact summary for the user-layer ChannelSummaryPanel.
+ * compact summary for the user-layer ChannelSummaryPanel.
  * 10s polling because change rate is low and we don't want to compete with
  * `useWorkspace`'s 3s polling for the same network slot.
  */

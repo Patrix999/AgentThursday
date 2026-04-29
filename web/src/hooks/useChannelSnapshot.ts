@@ -9,8 +9,8 @@ type State = {
 };
 
 /**
- * M7.3 Card 89 — full ChannelHub snapshot for the inspect tab.
- * `enabled=false` → no polling (mirrors `useInspect` lazy pattern from Card 81).
+ * full ChannelHub snapshot for the inspect tab.
+ * `enabled=false` → no polling (mirrors `useInspect` lazy pattern from ).
  * 5s interval — channel events arrive via webhook, faster polling buys little.
  */
 export function useChannelSnapshot(enabled: boolean, intervalMs = 5000): State {

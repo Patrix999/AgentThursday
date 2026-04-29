@@ -52,7 +52,7 @@ export function Workspace() {
         <InspectDrawer open={inspectOpen} onClose={() => setInspectOpen(false)} />
       </div>
 
-      {/* Mobile (Card 80) */}
+      {/* Mobile () */}
       <ThumbReachLayout
         top={
           <>

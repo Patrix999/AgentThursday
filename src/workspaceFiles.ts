@@ -1,5 +1,5 @@
 /**
- * M7.2 Card 82 — read-only workspace file API helpers.
+ * read-only workspace file API helpers.
  *
  * Wraps `@cloudflare/shell` `Workspace.readDir` / `readFile` / `stat` with:
  *   - path safety (no null byte, no `..`, no `\\`, no leading `/`)
@@ -33,7 +33,7 @@ export class FileError extends Error {
 /**
  * Normalize and validate a user-supplied path. Returns the SDK-friendly form.
  * Empty / "/" → "" (root). Any other leading "/" is an absolute path and is
- * rejected (Card 82 §A-3 forbids absolute paths; only "" and "/" denote root).
+ * rejected ( §A-3 forbids absolute paths; only "" and "/" denote root).
  * Throws `PathError` on any rejection.
  */
 export function safePath(input: string | null | undefined): string {
