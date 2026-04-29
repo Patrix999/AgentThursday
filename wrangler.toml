@@ -93,10 +93,15 @@ binding = "AI"
 # DISCORD_PUBLIC_KEY is non-token config, but keep it unset here until copied
 # from the Discord Developer Portal to avoid committing the wrong value.
 [vars]
-AGENT_THURSDAY_DISCORD_BOT_ID = "1498094661795975300"
-DISCORD_APPLICATION_ID = "1498094661795975300"
-DISCORD_ALLOWED_USERS = "785108405626994698,1484770321612542013"
-DISCORD_ALLOWED_CHANNELS = "1476029640522072206"
+# Discord identifiers must be filled in per deployment. See DEPLOY.md for
+# the Discord Developer Portal setup. Do NOT commit real Discord ids
+# back into git — they identify a specific bot/user/channel and are not
+# secrets in the cryptographic sense, but they are deployment-specific
+# and may be sensitive depending on context.
+AGENT_THURSDAY_DISCORD_BOT_ID = ""
+DISCORD_APPLICATION_ID = ""
+DISCORD_ALLOWED_USERS = ""
+DISCORD_ALLOWED_CHANNELS = ""
 DISCORD_IGNORE_NO_MENTION = "true"
 DISCORD_ALLOW_BOTS = "mentions"
 
