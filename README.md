@@ -163,6 +163,11 @@ AgentThursday 会把这类风险显式暴露出来：
 
 ---
 
+## 📄 开源协议
+
+本项目使用 [Apache License 2.0](./LICENSE) 开源。
+---
+
 ## 💻 开发
 
 ```bash
