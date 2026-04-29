@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* M7.1 Card 80 — mobile-friendly viewport sizing.
+   `100dvh` shrinks with the on-screen keyboard so the bottom action bar
+   moves up with the visible viewport; `100%` falls back for older browsers. */
+html, body, #root {
+  height: 100%;
+  height: 100dvh;
+}
+
+/* `--keyboard-inset` is set by ThumbReachLayout from visualViewport so the
+   bottom bar can compensate even on browsers that ignore interactive-widget. */
+:root {
+  --keyboard-inset: 0px;
+}

@@ -1,0 +1,131 @@
+name = "agent-thursday"
+main = "src/server.ts"
+compatibility_date = "2026-04-20"
+compatibility_flags = ["nodejs_compat"]
+
+# M7.1 Card 77 — single-user shared-secret auth (see docs/ops/auth.md).
+#
+#   AGENT_THURSDAY_SHARED_SECRET        : production secret. Set via:
+#                                  wrangler secret put AGENT_THURSDAY_SHARED_SECRET
+#                                Never write the value into this file.
+#   AGENT_THURSDAY_ALLOW_INSECURE_DEV   : dev-only escape hatch. Allowed ONLY in local
+#                                .dev.vars (gitignored). NEVER set in production
+#                                via wrangler.toml, [env.production], dashboard,
+#                                or `wrangler secret put` — worker will refuse
+#                                all traffic with 503 if SECRET unset and this
+#                                flag isn't "true".
+
+[observability]
+enabled = false
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = true
+persist = true
+head_sampling_rate = 1
+
+# M7.1 Card 78 — web SPA served as static assets.
+# Build: `npm run build:web` (root) emits to web/dist/.
+[assets]
+directory = "./web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[[durable_objects.bindings]]
+name = "AgentThursdayAgent"
+class_name = "AgentThursdayAgent"
+
+# M7.3 Card 85 — separate ChannelHubAgent DO for inbox/outbox/identity/conversation.
+# See docs/design/M7.3-review-notes.md §1 — kept separate from AgentThursdayAgent
+# from day 1 to avoid migration debt later.
+[[durable_objects.bindings]]
+name = "ChannelHubAgent"
+class_name = "ChannelHubAgent"
+
+# M7.4 Card 107 — separate ContentHubAgent DO for provider-agnostic content
+# source registry / future cache / future audit. Kept off AgentThursdayAgent so
+# external Content Source state never leaks into agent event_log or Tier 0
+# workspace storage. ADR: docs/adr/2026-04-28-m7.4-contenthub-source-connectors.md
+[[durable_objects.bindings]]
+name = "ContentHubAgent"
+class_name = "ContentHubAgent"
+
+# M7.5 Card 115 — Cloudflare-native Discord Gateway runner. Outgoing
+# WebSocket to gateway.discord.gg lives inside this DO instead of an
+# external host process. Host-side `scripts/discord-gateway-runner.ts`
+# remains shipped as a fallback per Card 115 §F.
+[[durable_objects.bindings]]
+name = "DiscordGatewayAgent"
+class_name = "DiscordGatewayAgent"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AgentThursdayAgent"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Sandbox"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["ChannelHubAgent"]
+
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["ContentHubAgent"]
+
+[[migrations]]
+tag = "v5"
+new_sqlite_classes = ["DiscordGatewayAgent"]
+
+[ai]
+binding = "AI"
+
+# M7.3 Card 91 — Discord direct adapter production config.
+# Secrets still must be set with `wrangler secret put` and are intentionally
+# not written here: AGENT_THURSDAY_SHARED_SECRET, DISCORD_BOT_TOKEN.
+# DISCORD_PUBLIC_KEY is non-token config, but keep it unset here until copied
+# from the Discord Developer Portal to avoid committing the wrong value.
+[vars]
+AGENT_THURSDAY_DISCORD_BOT_ID = "1498094661795975300"
+DISCORD_APPLICATION_ID = "1498094661795975300"
+DISCORD_ALLOWED_USERS = "785108405626994698,1484770321612542013"
+DISCORD_ALLOWED_CHANNELS = "1476029640522072206"
+DISCORD_IGNORE_NO_MENTION = "true"
+DISCORD_ALLOW_BOTS = "mentions"
+
+# M7.5 Card 120 — dialogue pause-loop gate.
+# Default OFF: diagnostics still log/surface `needs_human`, but the loop does not pause.
+# Set to "true" to enable conversational pause/resume on current-task
+# `degradation.summary.state === "needs_human"`.
+AGENT_THURSDAY_PAUSE_ON_NEEDS_HUMAN = "false"
+
+# npx wrangler secret put DISCORD_BOT_TOKEN
+# npx wrangler secret put DISCORD_PUBLIC_KEY
+
+# M7.2 Card 83 — Cloudflare Browser Rendering binding for the Tier 3 `browse` tool.
+# Routes via env.BROWSER.fetch("https://localhost/v1/devtools/browser") to open
+# a CDP WebSocket. Local `wrangler dev` cannot fully back this; remote deploy
+# (`wrangler deploy`) connects to the real Browser Rendering service.
+[browser]
+binding = "BROWSER"
+
+[[worker_loaders]]
+binding = "LOADER"
+
+# Tier 4: Cloudflare container sandbox — requires Cloudflare Containers beta access
+[[durable_objects.bindings]]
+name = "Sandbox"
+class_name = "Sandbox"
+
+[[containers]]
+class_name = "Sandbox"
+image = "./Dockerfile"
+instance_type = "lite"
+max_instances = 1
