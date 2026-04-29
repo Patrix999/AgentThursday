@@ -1,417 +1,174 @@
-# AgentThursday
+# Agent Thursday
+
+> **Why Thursday?**
+>
+> Lighter than Friday but way better than Monday.
 
 [中文版 / Chinese default](./README.md)
 
-**AgentThursday** is a serverless agent platform built on Cloudflare. It receives real chat messages, routes them through durable state, dispatches tools that actually execute, reads external sources with revision-pinned provenance, and exposes audit evidence so reviewers can reconstruct what happened.
+**AgentThursday** is the first open-source cloud-native serverless agent platform built on Cloudflare.
 
-AgentThursday is not a one-shot chatbot demo. It is a small cloud-native agent runtime: always reachable, stateful, tool-grounded, channel-aware, and inspectable.
-
----
-
-## Why AgentThursday is interesting
-
-AgentThursday demonstrates what a practical serverless agent can do when the platform is more than a prompt wrapper:
-
-- **Runs at the edge** with Cloudflare Workers.
-- **Keeps durable state** with Durable Objects.
-- **Uses real model/tool dispatch** instead of simulated tool claims.
-- **Talks through real channels** such as Discord, with inbox/outbox routing.
-- **Reads external content safely** through a typed ContentHub layer.
-- **Searches multiple sources** while preserving per-source success/failure.
-- **Leaves evidence behind** through trace, audit, and inspect endpoints.
-- **Fails honestly** when a capability is unsupported instead of pretending.
-
-The result is an agent that can be evaluated by behavior, not vibes: every important claim can be checked against tool events, content provenance, or audit rows.
+It is not a prompt demo with a chat box attached. It is an agent runtime that can stay online, connect to real channels, call real tools, read external sources, and leave an auditable evidence trail.
 
 ---
 
-## Cloudflare components used
+## 🟢 Highlights
 
-AgentThursday is intentionally Cloudflare-native.
+- **⚡️ Edge-native runtime**: runs on Cloudflare Workers, close to users and with minimal operations overhead.
+- **🧠 Durable state**: Durable Objects keep tasks, memory, workspace, channel, and content state alive across requests.
+- **📉 Model degradation awareness**: when model capability becomes unstable, tool calls are missing, or results look unreliable, AgentThursday can surface the risk instead of pretending everything is fine.
+- **🧩 Action-aware UI**: the web UI turns search, file reads, execution, and workspace changes into readable action cards so users can quickly understand what the agent is doing.
+- **🛠️ ToolHub**: tools are callable, auditable, traceable capabilities — not verbal promises inside a prompt.
+- **📡 ChannelHub**: multi-channel messages enter a durable inbox and replies leave through an outbox, with real routing and busy-state protection for group workflows.
+- **📚 ContentHub**: agents can read external sources such as GitHub while preserving revision, path, cache, permission, and provenance metadata.
+- **🔎 Inspect / Audit**: traces, tool events, content audit rows, and evidence summaries make behavior reviewable for demos, debugging, and evaluation.
+- **More features are under construction..**
 
-| Cloudflare component | How AgentThursday uses it |
+---
+
+## ☁️ Cloudflare components used
+
+| Cloudflare component | Purpose |
 |---|---|
-| **Workers** | Main HTTP/API entrypoint, web app serving, Discord interaction routes, tool and inspect APIs. |
-| **Durable Objects** | Long-lived agent state, channel routing state, content-source registry/cache/audit state. |
-| **Durable Object SQL storage** | Persistent event logs, inbox/outbox rows, content audit rows, task and memory state. |
-| **Workers AI** | Model inference binding for the agent reasoning loop. |
+| **Workers** | Main HTTP/API entrypoint, web app, Discord interactions, tool APIs, and inspect APIs. |
+| **Durable Objects** | Agent state, channel routing state, content registry/cache/audit state. |
+| **Durable Object SQL storage** | Persistent event logs, inbox/outbox rows, content audit rows, task state, and memory. |
+| **Workers AI** | Model binding for the agent reasoning loop. |
 | **Browser Rendering** | Headless browser capability for web inspection tasks. |
-| **Containers / Sandbox binding** | Isolated execution tier for heavier command/sandbox work. |
-| **Workers Assets** | Serves the web workspace UI from the same deployment. |
+| **Containers / Sandbox binding** | Heavier isolated execution layer. |
+| **Workers Assets** | Hosts the web workspace UI in the same deployment. |
 | **Wrangler** | Local development, secret management, and production deployment. |
-| **Worker secrets / environment bindings** | Stores channel credentials, shared API secret, source tokens, and runtime config without committing them. |
-
-This architecture keeps the agent deployable as a single serverless application while still giving it persistent memory, real tool use, external content access, and observable operations.
+| **Worker secrets / env bindings** | Stores channel credentials, API secrets, source tokens, and runtime config. |
 
 ---
 
-## Runtime architecture
+## 🚀 Capabilities
 
-AgentThursday is organized around three Durable Objects on one Worker.
+### 🧠 1. Durable task loop
 
-```text
-Discord / Web / API
-        │
-        ▼
-Cloudflare Worker
-        │
-        ├── Agent DO
-        │     ├── task lifecycle
-        │     ├── model + tool dispatch
-        │     ├── durable memory and workspace files
-        │     ├── event_log as canonical trace
-        │     └── truthfulness gate for outgoing text
-        │
-        ├── Channel Hub DO
-        │     ├── inbox / outbox
-        │     ├── addressed-message detection
-        │     ├── busy-safe routing
-        │     └── Discord bridge normalization and replies
-        │
-        ├── Content Hub DO
-        │     ├── source registry
-        │     ├── GitHub and local fixture connectors
-        │     ├── revision-pinned cache
-        │     ├── content audit log
-        │     └── evidence summary aggregation
-        │
-        └── Cloudflare AI / Browser / Sandbox bindings
-```
+AgentThursday can turn a chat message into a durable task. Task state, memory, workspace files, traces, tool records, and final replies remain in Durable Objects.
 
----
+> That makes it more than a short-memory Q&A bot: it can keep moving tasks forward, preserve context across requests, and let users inspect what happened after the fact.
 
-## Agent capabilities
+### 📡 2. Real channel collaboration
 
-### 1. Durable task loop
+AgentThursday treats Discord as a real work channel, not just a webhook:
 
-The agent does not forget everything between HTTP requests. Its Durable Object stores:
+- identifies who spoke and where
+- checks whether the message is actually addressed to the agent
+- records inbound messages in a durable inbox
+- avoids routing conflicts when the agent is busy
+- sends completed replies back through an outbox
 
-- task lifecycle
-- memory snapshots
-- workspace files
-- trace events
-- tool dispatch records
-- final assistant replies
+> This lets it work in real group conversations instead of only in a local console.
 
-This makes it possible to inspect a run after the fact and ask, “What did the agent actually do?”
+### 🛠️ 3. ToolHub: real tool capabilities
 
-### 2. Real chat-channel operation
+AgentThursday can actually use tools and leave evidence behind. It can:
 
-AgentThursday includes a channel layer instead of treating Discord as a simple webhook:
+- read and write workspace files
+- execute JavaScript/TypeScript snippets
+- run heavier isolated commands in a sandbox
+- use browser capabilities to inspect web pages
+- write and recall memory
+- search and read external content sources
 
-- inbound message normalization
-- trusted sender filtering
-- mention / addressed-message detection
-- durable inbox rows
-- route-pending flow
-- busy-safe handling
-- outbound reply queue
-- Discord reply delivery
+> The important part is not the tool list; it is that important tool actions are logged. If the model claims it did something, users can verify it with traces and tool events.
 
-A real Discord message can become a durable task, produce a model/tool run, and then return a reply to the same channel.
+### 📚 4. ContentHub: external content with provenance
 
-### 3. Tool-grounded execution
+AgentThursday can connect to external sources such as GitHub repositories or local fixture sources. It keeps the agent's scratch workspace separate from external sources to avoid “phantom reads”.
 
-The model can dispatch tools across several tiers:
+- list available sources and capabilities
+- browse directories
+- read files
+- search source content
+- run multi-source fan-out search
+- record provenance for every read
 
-- workspace file tools: `read`, `write`, `list`, `edit`
-- control/execution tools: JavaScript/TypeScript execution, sandbox command execution, browser actions
-- memory tools: remember / recall
-- external content tools through ContentHub
+Each successful read can carry source id, provider, path/object id, revision, fetched time, permission scope, and cache status. For the agent, this is evidence of what it actually saw; for users, it is a verifiable chain.
 
-The important part: tool calls are logged. If a model claims it used a tool but no matching tool event exists, the system can flag that mismatch.
+### 🔍 5. Multi-source search
 
-### 4. ContentHub: external source access with provenance
+AgentThursday can run one query across multiple sources without mixing everything into a vague flat list.
 
-ContentHub separates the agent’s scratch workspace from external sources. The agent should not claim it read a repository or document unless the read came from a real content tool result.
+It keeps results grouped by source:
 
-Implemented content tools:
+- which source succeeded
+- which source does not support search
+- what each source matched
+- latency and error code per source
 
-- `content_sources` — list available sources and declared capabilities
-- `content_list` — list files/directories from a source
-- `content_read` — read a file with provenance and redaction
-- `content_search` — literal search, including multi-source fan-out
+If one source fails, the others still return. That makes the result more useful in real scenarios.
 
-Implemented source providers:
+### 🧩 6. Action-aware UI
 
-- **GitHub connector** — read/list/search with path policy, revision labels, cache metadata, and secret redaction.
-- **Local fixture connector** — a non-network provider used to validate the connector abstraction and capability declarations.
+AgentThursday's web UI is more than a log panel. It turns key agent actions into readable activity cards:
 
-Every successful content result carries a `ContentRef` with:
+- search results: query, source, hit count, and path previews
+- file reads: source, path, truncation state, and focusable path
+- execution results: execution type, tier, preview, and sandbox info
+- workspace changes: changed object plus a safe open action when a path is available
+- repeated events: folded groups to prevent feed spam
+- new activity: a non-intrusive badge when the user has scrolled away
 
-- source id
-- provider
-- path or object id
-- revision
-- fetched time
-- permission scope
-- cache status
+This helps users clearly understand what the agent did and quickly see the results they care about.
 
-### 5. Multi-source search fan-out
+### 📉 7. Degradation awareness
 
-AgentThursday can run one literal query across multiple sources via `sourceIds`.
+Real models are not always equally reliable. Some models call tools cleanly; others degrade into text-only imitation; streaming and structured output can also vary.
 
-The response is intentionally grouped per source:
+AgentThursday can expose those risks:
 
-- each source has its own `ok` / `errorCode`
-- each source has its own hits and latency
-- one source failing does not hide another source’s results
-- unsupported search capability returns `capability-not-supported`
+- model capability profiles are visible
+- harness signals can be recorded and summarized
+- unreliable paths can be degraded or marked
+- warnings can be shown directly in the conversation
+- Inspect can show the relevant trace
 
-This matters for honest agent behavior. A local fixture source that cannot search is reported as unsupported; it is not silently skipped or mislabeled as a repository result.
+The goal is not to make the agent look smart at all times. The goal is to be honest when it is not reliable enough.
 
-### 6. Inspectable evidence trail
+### 🔎 8. Evidence / Inspect
 
-`/api/inspect` exposes both raw and aggregated evidence:
+`/api/inspect` is AgentThursday's black-box replay surface. It can show:
 
-- `trace` — agent event trace
-- `toolEvents` — model tool dispatch records
-- `contentAudit` — raw ContentHub audit rows
-- `contentEvidence` — aggregated evidence summary
+- trace events produced by the agent
+- tool calls the model actually made
+- content sources read through ContentHub
+- which sources each run touched
+- which evidence came from model-driven activity versus direct API smoke tests
 
-`contentEvidence` groups audit rows three ways:
+### ✅ 9. Truthfulness guard
 
-- **by trace id** — what sources did one agent run touch?
-- **by source id** — how was each source used?
-- **by operation** — how many `sources/list/read/search` operations happened?
+If the agent says “I called a tool” but the current run has no matching tool event, the system can flag the mismatch.
 
-It also distinguishes direct API smoke tests from model-driven activity, which is useful during judging and debugging.
-
-### 7. Truthfulness guard
-
-AgentThursday includes an outgoing-text truthfulness gate. If the assistant says it called a tool but the trace shows no matching tool event in that run, the reply can be annotated.
-
-This is a practical guard against one of the most common agent-demo failures: claiming work that never actually happened.
+> This is critical: do not judge only by how convincing the answer sounds; check whether the work actually happened. AgentThursday defaults toward verifiability.
 
 ---
 
-## Example evaluation flow
+## 🧪 Try it
 
-A judge can test AgentThursday like this:
-
-1. Mention the agent in Discord.
-2. Ask it to search two content sources.
-3. Confirm the Discord reply groups results by source.
-4. Open `/api/inspect`.
-5. Check the trace id for that run.
-6. Verify the content audit rows and evidence summary.
-7. Confirm no raw secrets or private raw content were exposed in the audit surface.
-
-This makes the demo auditable end to end: channel input → durable task → tool calls → source provenance → channel reply → inspect evidence.
+- https://agent-thursday.domain-4c7.workers.dev/
+- Contact me for an auth key.
 
 ---
 
-## Development
+## 🛫 Deployment
 
-Requirements:
+Deployment instructions live in separate docs:
 
-- Node.js 22+
-- npm
-- Cloudflare account
-- Wrangler via project dependencies
+- [Chinese deployment guide](./DEPLOY.md)
+- [English deployment guide](./DEPLOY.en.md)
 
-Install:
+---
+
+## 💻 Development
 
 ```bash
 npm install
 npm --prefix web install
-```
-
-Check and build:
-
-```bash
 npm run typecheck
 npm run build:web
-```
-
-Run locally:
-
-```bash
 npm run dev
-```
-
-Deploy:
-
-```bash
 npm run deploy
 ```
-
-Secrets are managed through Wrangler and local development var files. Do not paste tokens into chat, logs, README examples, task reports, or commits.
-
-
-## Deploy from zero to Cloudflare
-
-This section assumes you are starting from a fresh Cloudflare account and a fresh checkout of this repository.
-
-### 1. Prepare accounts and local tools
-
-1. Create or log in to a Cloudflare account.
-2. Install Node.js 22+ and npm.
-3. Clone the repository and enter the project directory.
-4. Install dependencies:
-
-```bash
-npm install
-npm --prefix web install
-```
-
-5. Log in to Cloudflare from Wrangler:
-
-```bash
-npx wrangler login
-npx wrangler whoami
-```
-
-### 2. Confirm Cloudflare capabilities
-
-The default deployment uses these Cloudflare capabilities:
-
-- Workers
-- Durable Objects with SQLite storage
-- Workers Assets
-- Workers AI
-- Browser Rendering
-- Containers / Sandbox binding
-
-If your Cloudflare account does not have Browser Rendering or Containers enabled, first deploy with those features disabled or request/enable access in the Cloudflare dashboard. Workers, Durable Objects, Assets, and Workers AI are the core path.
-
-### 3. Review `wrangler.toml`
-
-The deployment is defined in `wrangler.toml`:
-
-- Worker entrypoint: `src/server.ts`
-- Static assets: `web/dist`
-- Durable Objects: Agent, Channel Hub, Content Hub, Sandbox
-- AI binding: `AI`
-- Browser binding: `BROWSER`
-- Container image: `Dockerfile`
-- Discord and channel allowlist variables under `[vars]`
-
-Before a public demo, update the `[vars]` values for your own Discord app, allowed users, and allowed channels.
-
-### 4. Create external credentials
-
-For the full demo, prepare:
-
-- **Shared API secret** — any long random string used by the web/API auth gate.
-- **Discord application** — from the Discord Developer Portal:
-  - application id
-  - bot user id
-  - public key
-  - bot token
-  - invite the bot to the target server/channel
-- **GitHub token** — read-only token for the repository/content source you want the agent to inspect.
-
-For a minimal non-Discord demo, you can start with only the shared API secret and GitHub token, then add Discord later.
-
-Generate a shared secret locally, for example:
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-```
-
-### 5. Set Worker secrets
-
-Use Wrangler secrets. Do not write secret values into `wrangler.toml`, README examples, commits, or chat logs.
-
-```bash
-npx wrangler secret put AGENT_THURSDAY_SHARED_SECRET
-npx wrangler secret put GITHUB_TOKEN
-npx wrangler secret put DISCORD_PUBLIC_KEY
-npx wrangler secret put DISCORD_BOT_TOKEN
-```
-
-Optional truthfulness-gate/runtime flags can also be set as secrets or vars if your deployment enables them.
-
-### 6. Build locally
-
-```bash
-npm run typecheck
-npm run build:web
-```
-
-The web build must produce `web/dist`, because Workers Assets serves the UI from that directory.
-
-### 7. First deploy
-
-```bash
-npm run deploy
-```
-
-or directly:
-
-```bash
-npx wrangler deploy
-```
-
-On first deploy, Wrangler applies Durable Object migrations from `wrangler.toml`. If Containers are enabled, Wrangler also builds and uploads the sandbox image.
-
-A successful deploy prints a Worker URL and a Version ID.
-
-### 8. Smoke test the deployment
-
-Set your shared secret locally for curl tests:
-
-```bash
-export AGENT_THURSDAY_URL="https://<your-worker-url>"
-export AGENT_THURSDAY_SECRET="<your-shared-secret>"
-```
-
-Health check:
-
-```bash
-curl "$AGENT_THURSDAY_URL/health"
-```
-
-Inspect endpoint:
-
-```bash
-curl -H "X-AgentThursday-Secret: $AGENT_THURSDAY_SECRET" \
-  "$AGENT_THURSDAY_URL/api/inspect"
-```
-
-List content sources:
-
-```bash
-curl -H "X-AgentThursday-Secret: $AGENT_THURSDAY_SECRET" \
-  "$AGENT_THURSDAY_URL/api/content/sources?includeHealth=false"
-```
-
-Run a content read/search smoke after your source registry and token are configured:
-
-```bash
-curl -H "X-AgentThursday-Secret: $AGENT_THURSDAY_SECRET" \
-  -H "Content-Type: application/json" \
-  -X POST "$AGENT_THURSDAY_URL/api/content/search" \
-  -d '{"sourceId":"agentthursday-github","query":"AgentThursday","maxResults":5}'
-```
-
-### 9. Configure Discord for channel demo
-
-1. In the Discord Developer Portal, create an application and bot.
-2. Copy the application id, bot id, public key, and bot token.
-3. Update `wrangler.toml` `[vars]` for:
-   - bot id
-   - application id
-   - allowed user ids
-   - allowed channel ids
-4. Set the Discord public key and bot token with Wrangler secrets.
-5. Deploy again:
-
-```bash
-npm run deploy
-```
-
-6. Invite the bot to your server with the needed bot permissions.
-7. Mention the bot in the allowed channel and then check `/api/inspect` for trace/tool/content evidence.
-
-### 10. Common deployment issues
-
-- **401 on `/api/*`**: missing or wrong `X-AgentThursday-Secret` header.
-- **503 auth misconfigured**: shared API secret was not set in production.
-- **Discord message ignored**: sender/channel not in allowlist, bot not mentioned, or channel id mismatch.
-- **Content source has zero results**: check source token, source id, path policy, and provider capability.
-- **Browser or sandbox errors**: verify your Cloudflare account has Browser Rendering / Containers enabled.
-- **Durable Object migration errors**: confirm migrations in `wrangler.toml` have not been reordered or edited after deployment.
-
----

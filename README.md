@@ -1,4 +1,4 @@
-# AgentThursday
+# Agent Thursday
 
 > **Why Thursday?**
 >
@@ -7,26 +7,26 @@
 [English version](./README.en.md)
 
 
-**AgentThursday（AgentThursday）** 是一个构建在 Cloudflare 上的 serverless agent 平台。它能接收真实聊天消息，把任务路由进持久状态，调用真实执行的工具，带 provenance 读取外部资料，并通过 audit / inspect 让评审复盘它到底做了什么。
+**AgentThursday** 是首个构建在 Cloudflare 上的开源云原生 serverless agent 平台。
 
-它不是一次性聊天机器人，而是一个小型云原生 agent runtime：常驻、可持久化、能接渠道、能用工具、能查资料、能留下证据。
-
----
-
-## 核心亮点
-
-- **边缘运行**：基于 Cloudflare Workers。
-- **持久状态**：基于 Durable Objects 保存 agent、channel、content 状态。
-- **真实工具调用**：不是 prompt 里假装调用，而是有 tool event 可查。
-- **真实渠道接入**：Discord 消息进入 inbox，处理后从 outbox 回复。
-- **外部资料访问**：通过 ContentHub connector 读取 source，并保留 revision / path / cache / permission 信息。
-- **多 source 搜索**：同一 query 可 fan-out 到多个 source，结果和错误按 source 分组。
-- **可复核证据链**：trace、tool events、content audit、content evidence 都能被 inspect。
-- **诚实失败**：不支持的 capability 明确返回错误，不假装成功。
+它不是一个「套了聊天框的 prompt demo」，而是一套可以长期在线、接入真实渠道、调用真实工具、读取外部资料、留下证据链的 agent runtime。
 
 ---
 
-## 使用的 Cloudflare 组件
+## 🟢 核心亮点
+
+- **⚡️ 边缘运行**：部署在 Cloudflare Workers 上，天然 serverless、低运维、靠近用户。
+- **🧠 持久状态**：用 Durable Objects 保存任务、记忆、workspace、channel 和 content 状态；一次请求结束后 agent 不会“失忆”。
+- **📉 模型降智感知**：当模型能力不稳定、工具调用缺失或结果不可靠时，系统能把风险显式暴露出来，而不是假装一切正常。
+- **🧩 动作感知界面**：Web UI 会把搜索、文件读取、执行、workspace 变更等行为展示成可读的 action cards，让人一眼看懂 agent 正在做什么。
+- **🛠️ ToolHub**：工具不是 prompt 里的口头承诺，而是可调用、可审计、可追溯的能力层。
+- **📡 ChannelHub**：多渠道消息接入 durable inbox，处理后从 outbox 回复；支持真实群聊里的任务路由和忙碌态保护。
+- **📚 ContentHub**：agent 可以读取 GitHub 等外部 source，并保留 revision、path、cache、permission、provenance 信息。
+- **🔎 Inspect / Audit**：trace、tool events、content audit、evidence summary 都能复盘，适合 demo、评审和调试。
+- **更多功能正在建设中..**
+---
+
+## ☁️ 使用的 Cloudflare 组件
 
 | Cloudflare 组件 | 用途 |
 |---|---|
@@ -42,266 +42,128 @@
 
 ---
 
-## 能力说明
+## 🚀 能力说明
 
-### 持久任务循环
+### 🧠 1. 持久任务循环
 
-Agent 的 Durable Object 会保存任务生命周期、memory、workspace 文件、trace 事件和 tool dispatch 记录。一次 HTTP 请求结束后，状态不会消失。
+AgentThursday 可以把一次聊天消息变成一个可追踪的 durable task。任务的状态、记忆、workspace、trace、工具记录和最终回复都会留在 Durable Object 里。
 
-### Discord 渠道层
+> 这意味着它不是“问一句答一句”的短记忆机器人，而是能持续推进任务、事后复盘过程、跨请求保留上下文的云端 agent。
 
-Channel Hub 负责：
+### 📡 2. 真实渠道协作
 
-- 消息归一化
-- trusted sender 过滤
-- mention / addressed-message 判断
-- inbox/outbox 持久化
-- route-pending
-- busy-safe routing
-- Discord reply delivery
+AgentThursday 不把 Discord 当成简单 webhook，而是当成一个真实工作渠道：
 
-### 工具执行
+- 识别谁在说话、在哪个 channel 里说话
+- 判断消息是否真的在叫 agent
+- 把 inbound message 变成 durable inbox 记录
+- 忙的时候不乱抢任务，避免并发污染
+- 处理完成后从 outbox 回到原始对话
 
-模型可以调用多层工具：
+> 这让它可以在真实群聊里工作，而不是只在本地控制台里演示。
 
-- workspace 文件工具：`read` / `write` / `list` / `edit`
-- 执行工具：JS/TS execution、sandbox command、browser action
-- memory 工具：remember / recall
-- 外部资料工具：ContentHub 的 sources/list/read/search
+### 🛠️ 3. ToolHub：真实工具能力
 
-所有关键工具调用都会留下事件。模型说自己调用了工具，系统可以用 trace 校验它是否真的调用。
+AgentThursday 的工具调用是可执行、可观察、可复核的。它可以：
 
-### ContentHub 外部资料层
+- 读写 workspace 文件
+- 执行 JS/TS 代码片段
+- 进入 sandbox 做更重的隔离执行
+- 调用浏览器能力观察网页
+- 写入和读取 memory
+- 搜索、读取外部资料 source
 
-ContentHub 把 agent 的 scratch workspace 与外部 source 分开，避免“没读过却声称读过”。
+> 关键点不是“能列出很多工具”，而是每次重要工具行为都会留下事件。模型如果声称自己做了某件事，用户可以用 trace 和 tool events 去核对。
 
-已实现：
+### 📚 4. ContentHub：带 provenance 的外部资料访问
 
-- `content_sources`：列出 source 和 capability
-- `content_list`：列目录
-- `content_read`：读取内容，返回 provenance
-- `content_search`：literal search，支持 multi-source fan-out
+AgentThursday 可以连接外部资料源，例如 GitHub repository 或本地 fixture source。它会把 agent 自己的 scratch workspace 和外部 source 明确分开，避免“幻读”。
 
-每次成功读取都带：source id、provider、path/object id、revision、fetched time、permission scope、cache status。
+- 列出可用 source 和能力
+- 浏览目录
+- 读取文件内容
+- 搜索 source 内容
+- 多 source fan-out 搜索
+- 记录每次读取的 provenance
 
-### 多 source 搜索
+每次成功读取都会带上 source id、provider、path/object id、revision、fetched time、permission scope 和 cache status。对 agent 来说，这是“我真的看过哪里”的证据；对用户来说，这是可验证的链路。
 
-`content_search` 支持 `sourceIds`。结果不是混成一个列表，而是每个 source 单独返回：
+### 🔍 5. 多 source 搜索
 
-- `ok` / `errorCode`
-- hits
-- latency
-- source/provider
+AgentThursday 可以用一次 query 同时搜索多个 source，并且不会把结果混成一团。
 
-如果某个 source 不支持 search，会返回 `capability-not-supported`；其他 source 的结果不受影响。
+它会按 source 单独展示：
 
-### Evidence / Inspect
+- 哪个 source 成功
+- 哪个 source 不支持 search
+- 每个 source 命中了什么
+- 每个 source 的延迟和错误码
 
-`/api/inspect` 返回：
+如果一个 source 失败，其他 source 的结果仍然保留。这比“只返回一个模糊列表”更适合真实场景。
 
-- `trace`
-- `toolEvents`
-- `contentAudit`
-- `contentEvidence`
+### 🧩 6. 工具感知界面
 
-`contentEvidence` 会按三种维度聚合：
+AgentThursday 的 Web UI 不只是日志面板。它会把 agent 的关键行为转成更容易理解的 activity cards：
 
-- `byTraceId`：一轮 agent run 实际碰了哪些 source
-- `bySourceId`：每个 source 被怎样使用
-- `byOperation`：sources/list/read/search 各发生多少次
+- 搜索结果：显示 query、source、命中数量和路径预览
+- 文件读取：显示 source、path、截断状态和可聚焦路径
+- 执行结果：显示执行类型、tier、preview 和 sandbox 信息
+- workspace 变更：显示变更对象，并在有安全路径时提供打开入口
+- 高频事件：自动折叠成 group，避免 action feed 被刷屏
+- 新 activity：用户滚走时只显示提示，不强行跳回顶部
 
-它还区分 direct API smoke 与模型驱动的 agent activity，方便比赛评审和调试。
+这让用户不仅清晰的了解到agent做了什么，更能方便的看到需要的结果。
 
-### Truthfulness guard
+### 📉 7. 降智感知
 
-如果模型说“我调用了某工具”，但当前 run 里没有对应 tool event，系统可以标记这类不诚实输出。这能避免 agent demo 里常见的“说做了但实际没做”。
+现实里的模型能力并不总是稳定：有的模型 tool calling 可靠，有的会退化成文本假装，有的 streaming 或结构化输出不稳定。
+
+AgentThursday 会把这类风险显式暴露出来：
+
+- 模型能力 profile 可见
+- harness signal 可被记录和汇总
+- 不可靠路径可以被降级或标记
+- 对话里直接提示用户
+- inspect 里能看到相关 trace
+
+目标不是让 agent 永远显得聪明，而是在它不够可靠时诚实地告诉你。
+
+### 🔎 8. Evidence / Inspect
+
+`/api/inspect` 是 AgentThursday 的黑匣子回放入口。它可以查看：
+
+- agent 做过哪些 trace event
+- 模型实际发起过哪些 tool calls
+- ContentHub 读过哪些 source
+- 每轮 run 触达过哪些资料
+- 哪些 evidence 来自模型驱动，哪些来自 direct API smoke
+
+### ✅ 9. Truthfulness guard
+
+如果 agent 说“我调用了某工具”，但当前 run 里没有对应 tool event，系统可以标记这种不一致。
+
+> 这是非常关键的一点：不是看它说得像不像，而是看它有没有真的做。AgentThursday 默认站在“可验证”这一边。
 
 ---
 
-## 评审可以如何验证
+## 🧪 上手体验
 
-1. 在 Discord mention agent。
-2. 要求它对两个 source 做搜索。
-3. 看回复是否按 source/provider 分组。
-4. 打开 `/api/inspect`。
-5. 用 trace id 找到该轮任务。
-6. 检查 content audit 和 content evidence。
-7. 确认 audit 中没有 raw secret 或不该暴露的原始内容。
-
-这条链路覆盖：聊天输入 → durable task → 工具调用 → source provenance → 聊天回复 → inspect 证据。
+- https://agent-thursday.domain-4c7.workers.dev/
+- 联系我获取auth key
 
 
 ---
 
-## 从零部署到 Cloudflare
+## 🛫 部署
 
-下面假设你有一个全新的 Cloudflare 账号和一份全新的代码 checkout。
+部署说明已移到独立文档：
 
-### 1. 准备账号和本地环境
-
-1. 注册或登录 Cloudflare。
-2. 安装 Node.js 22+ 和 npm。
-3. clone 仓库并进入项目目录。
-4. 安装依赖：
-
-```bash
-npm install
-npm --prefix web install
-```
-
-5. 登录 Wrangler：
-
-```bash
-npx wrangler login
-npx wrangler whoami
-```
-
-### 2. 确认 Cloudflare 能力
-
-默认完整部署会用到：
-
-- Workers
-- Durable Objects + SQLite storage
-- Workers Assets
-- Workers AI
-- Browser Rendering
-- Containers / Sandbox binding
-
-如果账号暂时没有 Browser Rendering 或 Containers 权限，可以先关闭相关能力做最小部署；核心路径是 Workers、Durable Objects、Assets 和 Workers AI。
-
-### 3. 检查 `wrangler.toml`
-
-`wrangler.toml` 里定义了：
-
-- Worker 入口：`src/server.ts`
-- Web 静态资源目录：`web/dist`
-- Durable Objects：Agent、Channel Hub、Content Hub、Sandbox
-- AI binding：`AI`
-- Browser binding：`BROWSER`
-- Container image：`Dockerfile`
-- Discord bot id、allowed users、allowed channels 等 vars
-
-正式 demo 前，需要把 `[vars]` 中的 Discord app / bot / allowlist 改成自己的配置。
-
-### 4. 准备外部凭据
-
-完整 demo 需要：
-
-- **Shared API secret**：用于 `/api/*` 的鉴权。
-- **Discord application**：在 Discord Developer Portal 创建，拿到 application id、bot id、public key、bot token，并邀请 bot 进目标 server/channel。
-- **GitHub token**：只读 token，用于 ContentHub 读取/搜索外部代码 source。
-
-最小非 Discord demo 可以先只设置 shared API secret 和 GitHub token，后续再接 Discord。
-
-生成 shared secret 示例：
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-```
-
-### 5. 设置 Worker secrets
-
-用 Wrangler 设置 secrets，不要把 secret 写进 `wrangler.toml`、README、commit、任务报告或聊天记录。
-
-```bash
-npx wrangler secret put AGENT_THURSDAY_SHARED_SECRET
-npx wrangler secret put GITHUB_TOKEN
-npx wrangler secret put DISCORD_PUBLIC_KEY
-npx wrangler secret put DISCORD_BOT_TOKEN
-```
-
-如果部署启用了 truthfulness gate 或其它运行时 flag，也按项目配置继续设置。
-
-### 6. 本地构建检查
-
-```bash
-npm run typecheck
-npm run build:web
-```
-
-`build:web` 必须生成 `web/dist`，Workers Assets 会从这里服务 Web UI。
-
-### 7. 首次部署
-
-```bash
-npm run deploy
-```
-
-或直接：
-
-```bash
-npx wrangler deploy
-```
-
-首次部署时 Wrangler 会按 `wrangler.toml` 应用 Durable Object migrations。如果启用了 Containers，也会构建并上传 sandbox image。
-
-部署成功后会输出 Worker URL 和 Version ID。
-
-### 8. 冒烟测试
-
-本地设置测试变量：
-
-```bash
-export AGENT_THURSDAY_URL="https://<your-worker-url>"
-export AGENT_THURSDAY_SECRET="<your-shared-secret>"
-```
-
-健康检查：
-
-```bash
-curl "$AGENT_THURSDAY_URL/health"
-```
-
-Inspect：
-
-```bash
-curl -H "X-AgentThursday-Secret: $AGENT_THURSDAY_SECRET" \
-  "$AGENT_THURSDAY_URL/api/inspect"
-```
-
-列 content sources：
-
-```bash
-curl -H "X-AgentThursday-Secret: $AGENT_THURSDAY_SECRET" \
-  "$AGENT_THURSDAY_URL/api/content/sources?includeHealth=false"
-```
-
-配置好 source registry 和 token 后，可测搜索：
-
-```bash
-curl -H "X-AgentThursday-Secret: $AGENT_THURSDAY_SECRET" \
-  -H "Content-Type: application/json" \
-  -X POST "$AGENT_THURSDAY_URL/api/content/search" \
-  -d '{"sourceId":"agentthursday-github","query":"AgentThursday","maxResults":5}'
-```
-
-### 9. 配置 Discord 演示
-
-1. 在 Discord Developer Portal 创建 application 和 bot。
-2. 复制 application id、bot id、public key、bot token。
-3. 更新 `wrangler.toml` 的 bot id、application id、allowed users、allowed channels。
-4. 用 Wrangler secrets 设置 Discord public key 和 bot token。
-5. 重新部署：
-
-```bash
-npm run deploy
-```
-
-6. 邀请 bot 到 server，并确保它有发消息权限。
-7. 在 allowlist channel mention bot，然后通过 `/api/inspect` 查看 trace、tool events、content audit 和 content evidence。
-
-### 10. 常见问题
-
-- **`/api/*` 返回 401**：缺少或填错 `X-AgentThursday-Secret`。
-- **返回 503 auth misconfigured**：production 没设置 shared API secret。
-- **Discord 消息被 ignored**：sender/channel 不在 allowlist、没 mention bot、或 channel id 不匹配。
-- **Content source 没结果**：检查 source token、source id、path policy、provider capability。
-- **Browser / sandbox 报错**：确认 Cloudflare 账号已启用 Browser Rendering / Containers。
-- **Durable Object migration 报错**：确认 `wrangler.toml` 中 migrations 没在部署后被重排或改写。
+- [中文部署指南](./DEPLOY.md)
+- [English deployment guide](./DEPLOY.en.md)
 
 ---
 
-## 开发
+## 💻 开发
 
 ```bash
 npm install
@@ -311,5 +173,3 @@ npm run build:web
 npm run dev
 npm run deploy
 ```
-
-Secrets 通过 Wrangler 和本地开发变量管理。不要把 token 放进聊天、日志、README 示例、任务报告或 commit。
