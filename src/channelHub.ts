@@ -1,11 +1,11 @@
 /**
- * M7.3 Card 85 — `ChannelHubAgent` Durable Object.
+ * `ChannelHubAgent` Durable Object.
  *
  * Owns inbox / outbox / identity / conversation tables. Provider-agnostic.
  * No Discord/email adapter wiring in this card — only schema, storage, and
  * idempotent ingestion. Cards 86+ wire actual transports.
  *
- * Boundary rationale (M7.3 review notes §1): kept as its own DO from day 1
+ * Boundary rationale (review notes §1): kept as its own DO from day 1
  * so AgentThursdayAgent's event_log isn't shared with channel events, and webhook
  * traffic patterns can scale independently of agent task patterns.
  */
@@ -65,7 +65,7 @@ type AgentThursdayAgentRPC = {
   }>;
   submitTask(task: string): Promise<{ ok: boolean; taskId: string; loopTriggered: boolean; replyText: string }>;
   approvePendingTool(toolCallId: string, approved: boolean): Promise<{ ok: boolean }>;
-  // M7.3 Card 94 — explicit channel-ingress readiness predicate.
+  // explicit channel-ingress readiness predicate.
   getChannelIngressReadiness(): Promise<{
     canAccept: boolean;
     reason: string;
@@ -74,7 +74,7 @@ type AgentThursdayAgentRPC = {
   }>;
 };
 
-const AGENT_THURSDAY_INSTANCE_NAME = "agent-thursday-dev-fresh-108a-1";
+const AGENT_THURSDAY_INSTANCE_NAME = "agent-thursday-dev";
 
 type InboxRow = {
   id: string;
@@ -91,7 +91,7 @@ type InboxRow = {
   status: string;
   created_at: number;
   updated_at: number;
-  // Card 87 — additive route metadata; nullable on rows ingested before migration.
+  // additive route metadata; nullable on rows ingested before migration.
   route_action: string | null;
   route_reason: string | null;
   routed_at: number | null;
@@ -208,7 +208,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       )
     `;
 
-    // Card 87 — additive route metadata on channel_inbox. Idempotent via
+    // additive route metadata on channel_inbox. Idempotent via
     // PRAGMA table_info check (mirrors the kanban_mutations migration in
     // AgentThursdayAgent.onStart). Existing rows get NULL until they're routed.
     const inboxCols = this.sql<{ name: string }>`PRAGMA table_info(channel_inbox)`;
@@ -225,7 +225,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       this.sql`ALTER TABLE channel_inbox ADD COLUMN handoff_task_id TEXT`;
     }
 
-    // Card 88 — additive outbox kind + approval link.
+    // additive outbox kind + approval link.
     const outboxCols = this.sql<{ name: string }>`PRAGMA table_info(channel_outbox)`;
     if (!outboxCols.some(c => c.name === "kind")) {
       this.sql`ALTER TABLE channel_outbox ADD COLUMN kind TEXT NOT NULL DEFAULT 'text'`;
@@ -234,7 +234,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       this.sql`ALTER TABLE channel_outbox ADD COLUMN approval_id TEXT`;
     }
 
-    // Card 88 — channel_approvals state machine. Single-resolution semantics
+    // channel_approvals state machine. Single-resolution semantics
     // enforced by the `status` field plus the resolve callable. Payload hash
     // is stored so a payload mutation invalidates a pending approval.
     this.sql`
@@ -263,7 +263,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * Idempotent inbound persist. Card 85 §E-15:
+   * Idempotent inbound persist.  §E-15:
    *  - first insert → `{ inserted: true, id }`
    *  - duplicate `(provider, provider_message_id)` → `{ inserted: false, id }`
    *  - per-conversation pending cap exceeded → status `deferred`
@@ -356,10 +356,10 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * Route up to `limit` pending `received` inbox rows. Card 87 §B + Card 93 §B.
+   * Route up to `limit` pending `received` inbox rows.  §B +  §B.
    * For `process` action, RPCs AgentThursdayAgent.submitTask. Active-task guard runs
    * via `AgentThursdayAgent.getStatus()` before any submit so we never overwrite work.
-   * Card 93: when the guard fires on an addressed/trusted row, the decision
+   * : when the guard fires on an addressed/trusted row, the decision
    * is `busy-skip` and the row STAYS `received` (not deferred) so the next
    * route attempt can pick it up when the agent is free.
    * Idempotent: only `received` rows are picked up (others have already been
@@ -395,7 +395,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
 
     // Read AgentThursdayAgent state once per batch — cheap RPC and avoids racing
     // with our own submits within this loop.
-    // Card 94 — explicit readiness instead of inferring from `currentTask` string.
+    // explicit readiness instead of inferring from `currentTask` string.
     const readiness = await this.fetchAgentThursdayReadiness();
     const agentThursdayBusy = !readiness.canAccept;
     const decisions: Array<{
@@ -414,7 +414,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       // converts unknown + addressed → wait, which is the safe default.
       const role = await this.lookupSenderRole(item.provider, item.senderProviderUserId);
       const decision = decideRoute(item, { activeTaskBusy: agentThursdayBusy, senderRole: role });
-      // Card 94 — when the policy fired busy-skip, append the concrete
+      // when the policy fired busy-skip, append the concrete
       // readiness reason so operators can see WHICH busy condition won
       // (waitingForHuman / blocked / active task lifecycle / RPC failure).
       if (decision.action === "busy-skip") {
@@ -426,7 +426,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       let handoffTaskId: string | null = null;
 
       if (decision.action === "busy-skip") {
-        // Card 93 invariant: the row is NOT consumed. status stays 'received',
+        //  invariant: the row is NOT consumed. status stays 'received',
         // route_action / route_reason are NOT written (so it doesn't look
         // routed in inspect). Aggregate-level `busySkipped` counter signals
         // to the caller that this batch had busy-skipped rows.
@@ -460,7 +460,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
           decision.reason = `${decision.reason} | submit failed: ${String(e instanceof Error ? e.message : e).slice(0, 200)}`;
         }
 
-        // Card 96 — auto-reply: enqueue assistant text to outbox + deliver.
+        // auto-reply: enqueue assistant text to outbox + deliver.
         // Isolated try/catch so outbound failure does NOT unwind lifecycle;
         // inbox row stays `handled`, agent task stays `completed`. The
         // outbox row carries its own `failed` state for retry. Only attempts
@@ -529,7 +529,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * Card 94 — replaces the old `isAgentThursdayBusy()` which incorrectly treated any
+   * replaces the old `isAgentThursdayBusy()` which incorrectly treated any
    * non-null `currentTask` STRING as busy. Returns the AgentThursdayAgent's explicit
    * `canAccept` verdict + the concrete predicate `reason` so a busy-skip
    * decision can name WHICH busy condition fired.
@@ -576,7 +576,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     return "unknown";
   }
 
-  // ── Card 88 — outbound + approval cards ───────────────────────────────
+  // ── outbound + approval cards ───────────────────────────────
 
   @callable()
   async enqueueOutboundText(input: EnqueueOutboundTextRequest): Promise<EnqueueOutboundResult> {
@@ -584,7 +584,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     const now = Date.now();
     const allowProactive = input.allowProactive === true;
 
-    // Card 88 §D-21: proactive outbound (no reply target) is gated. Without
+    //  §D-21: proactive outbound (no reply target) is gated. Without
     // an existing conversation OR replyToProviderMessageId we treat this as
     // proactive and refuse unless caller explicitly opted in.
     if (input.replyToProviderMessageId == null && !allowProactive) {
@@ -695,7 +695,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
 
     const bridgeUrl = this.env.AGENT_THURSDAY_OPENCLAW_BRIDGE_URL;
     const bridgeSecret = this.env.AGENT_THURSDAY_OPENCLAW_BRIDGE_SECRET;
-    // Card 91 — bridge mode now also reflects direct Discord. Delegate to the
+    // bridge mode now also reflects direct Discord. Delegate to the
     // single-source-of-truth helper instead of hard-coding here.
     const bridgeMode = this.bridgeMode();
 
@@ -729,7 +729,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       let finalStatus: ChannelOutboxStatus = "sent";
       let errorOut: string | null = null;
 
-      // Card 91 — direct Discord delivery takes precedence over OpenClaw bridge
+      // direct Discord delivery takes precedence over OpenClaw bridge
       // when DISCORD_BOT_TOKEN is configured AND the row is for the discord
       // provider. Other providers (when they land) still go through bridge/dry-run.
       const useDirectDiscord = row.provider === "discord" && Boolean(this.env.DISCORD_BOT_TOKEN);
@@ -823,7 +823,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
    * return the prior resolution; payload-hash mismatch invalidates;
    * expiration auto-denies. For `kind=tool` resolutions, calls the existing
    * `AgentThursdayAgent.approvePendingTool` so we do not create a parallel approval
-   * authority (Card 88 §C-20).
+   * authority ( §C-20).
    */
   @callable()
   async resolveApproval(input: ApprovalResolveRequest): Promise<ApprovalResolveResult> {
@@ -923,7 +923,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       WHERE id = ${row.id}
     `;
 
-    // Downstream side-effect — Card 88 §C-20: route tool-kind approvals
+    // Downstream side-effect —  §C-20: route tool-kind approvals
     // through the existing AgentThursdayAgent surface, do not create a parallel path.
     let downstream: ApprovalResolveResult["downstream"] = null;
     if (row.kind === "tool" && row.target_tool_call_id) {
@@ -953,7 +953,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * Card 91 — minimal lookup used by the /discord/interactions button
+   * minimal lookup used by the /discord/interactions button
    * handler to fetch the canonical payload hash for an approval, so the
    * resolve call can echo it back as `payloadHashEcho`. Returns null if the
    * approval row doesn't exist (e.g. expired and pruned in the future).
@@ -973,9 +973,9 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * Card 87 helper — set identity role so the router can promote a sender
+   *  helper — set identity role so the router can promote a sender
    * from `unknown` to `trusted` (or back). Minimal seam needed to actually
-   * exercise the `process` path; Card 89 will surface this in the UI.
+   * exercise the `process` path;  will surface this in the UI.
    */
   @callable()
   async setIdentityRole(input: {
@@ -1103,7 +1103,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * Card 89 — compact, leak-safe counts for the default user-layer panel.
+   * compact, leak-safe counts for the default user-layer panel.
    * No row data, no ids, no payloads — just what the user needs to see.
    */
   @callable()

@@ -19,7 +19,7 @@ type Props = {
 
 /**
  * Tab structure shared by InspectDrawer (desktop) and InspectRoute (mobile).
- * Card 89 added the Channel tab. ChannelHub state is fetched lazily — only
+ *  added the Channel tab. ChannelHub state is fetched lazily — only
  * when the Channel tab is active — same pattern as `useInspect(open)`.
  * RecoverActions sits below the tabs so it's always reachable.
  */

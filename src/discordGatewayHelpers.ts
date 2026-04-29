@@ -1,11 +1,11 @@
 /**
- * M7.5 Card 115 — pure helpers for the Cloudflare-native Discord Gateway DO.
+ * pure helpers for the Cloudflare-native Discord Gateway DO.
  *
  * Worker-safe duplicate of `scripts/discord-gateway-runner-helpers.ts`. The
  * worker tsconfig (`tsconfig.json`) only includes `src/**`; the host-side
  * runner's helpers live under `scripts/` and can't be imported directly.
  * Functions are byte-identical to the host helpers; if either side changes,
- * keep both in sync until consolidation. Card 115 §B endorses this temporary
+ * keep both in sync until consolidation.  §B endorses this temporary
  * duplication while the host runner remains the documented fallback.
  *
  * No I/O here. Pure helpers so dry-run, self-check, and the live DO all

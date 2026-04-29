@@ -1,10 +1,10 @@
 import { z } from "zod";
 
 /**
- * M7.1 Card 76 — Unified Object Model Schema and Worker Contract
+ * Unified Object Model Schema and Worker Contract
  *
- * Single source of truth for the data the new Web shell (Card 78),
- * Current Task View (Card 79), and inspect surface (Card 81) consume.
+ * Single source of truth for the data the new Web shell (),
+ * Current Task View (), and inspect surface () consume.
  * Built so 76 → 77/78 → 79 → 80/81 do not have to invent shapes.
  *
  * Legacy → new mapping (kept here so future readers can navigate):
@@ -13,23 +13,23 @@ import { z } from "zod";
  *   ---------------------------------|------------------------|-------------------------------------
  *   taskObject (TaskObject)          | M2 task lifecycle      | TaskView
  *   cliSession (CliSession)          | M3 cli session         | SessionView
- *   lastActionResult (ActionResult)  | M1.3 action result     | ArtifactView (kind="actionResult")
+ *   lastActionResult (ActionResult)  | action result     | ArtifactView (kind="actionResult")
  *   developerLoopReview              | M2 reviewer            | summary text → MessageView (kind="summary")
  *                                    |                        | + traces → TraceEvent[] (inspect)
- *   pendingToolApproval              | M5.1 tool approval     | ApprovalView (kind="tool")
+ *   pendingToolApproval              | tool approval     | ApprovalView (kind="tool")
  *   pendingKanbanMutations[]         | M2 mutation            | ApprovalView (kind="mutation")
- *   debugTrace.recentToolEvents[]    | M5.1 trace             | ToolEvent[] (inspect only)
- *   debugTrace.lastLadderTier        | M6.1 ladder            | TaskView.ladderTier + .ladderReason
- *   debugTrace.lastAssistantSummary  | M5.1                   | MessageView (kind="assistant")
+ *   debugTrace.recentToolEvents[]    | trace             | ToolEvent[] (inspect only)
+ *   debugTrace.lastLadderTier        | ladder            | TaskView.ladderTier + .ladderReason
+ *   debugTrace.lastAssistantSummary  |                   | MessageView (kind="assistant")
  *   deliverableGate.deliverable      | M2 deliverable         | ArtifactView (kind="deliverable")
  *
- * Card 79 user-layer reads only:
+ *  user-layer reads only:
  *   session, currentTask, summaryStream, pendingApproval, replyNeed, latestResult
- * Card 81 inspect-layer reads only:
+ *  inspect-layer reads only:
  *   inspectEntry (presence flags) + GET /api/inspect (full data)
  *
  * The /cli/* legacy endpoints stay live for TUI; a follow-up cleanup card
- * will retire them after Card 79 ships.
+ * will retire them after  ships.
  */
 
 export const SessionViewSchema = z.object({
@@ -117,8 +117,8 @@ export const WorkspaceSnapshotSchema = z.object({
 export type WorkspaceSnapshot = z.infer<typeof WorkspaceSnapshotSchema>;
 
 /**
- * Inspect surface shapes — the real data producer arrives in Card 81.
- * Card 76 only declares the contract and ships a stub returning empty arrays.
+ * Inspect surface shapes — the real data producer arrives in .
+ *  only declares the contract and ships a stub returning empty arrays.
  */
 
 export const TraceEventSchema = z.object({
@@ -147,7 +147,7 @@ export const ToolEventSchema = z.object({
 });
 export type ToolEvent = z.infer<typeof ToolEventSchema>;
 
-// Card 110 — ContentHub audit events surfaced via /api/inspect. Field shape
+// ContentHub audit events surfaced via /api/inspect. Field shape
 // is intentionally permissive (`payload: z.unknown()`) because the producer
 // (ContentHubAgent.logAudit) already capped/redacted before persisting; the
 // inspect surface just relays. `type` is one of `content.sources`,
@@ -160,8 +160,8 @@ export const ContentAuditEventSchema = z.object({
 });
 export type ContentAuditEvent = z.infer<typeof ContentAuditEventSchema>;
 
-// Card 114 — ContentHub evidence pack (aggregated audit summary). Sits next
-// to Card 110's raw `contentAudit` rows, NOT replacing them. Three pivot
+// ContentHub evidence pack (aggregated audit summary). Sits next
+// to 's raw `contentAudit` rows, NOT replacing them. Three pivot
 // views answer the reviewer's recurring questions:
 //   - byTraceId: in this agent round, what did it touch?
 //   - bySourceId: what's the cumulative usage of this source?
@@ -224,7 +224,7 @@ export const ContentAuditSummarySchema = z.object({
 });
 export type ContentAuditSummary = z.infer<typeof ContentAuditSummarySchema>;
 
-// M7.5 Card 121 — degradation diagnostics surface compact view schemas.
+// degradation diagnostics surface compact view schemas.
 // These mirror the JSON payloads emitted by Cards 117/119/102 events.
 // `.passthrough()` lets the panel ride forward when those payloads grow;
 // it does NOT promote unknown fields into the typed view, just keeps them
@@ -282,7 +282,7 @@ export const DegradationDiagnosticsSchema = z.object({
 });
 export type DegradationDiagnostics = z.infer<typeof DegradationDiagnosticsSchema>;
 
-// M7.6 Card 125 — Action UI Intent backend view-model schemas. Mirror
+// Action UI Intent backend view-model schemas. Mirror
 // the types in `src/actionUiIntents.ts`; both kept in sync. The
 // component.props field is `z.unknown()` because each component name
 // has its own loose shape (DegradationCard sees a different prop set
@@ -328,26 +328,26 @@ export const InspectSnapshotSchema = z.object({
   trace: z.array(TraceEventSchema),
   toolEvents: z.array(ToolEventSchema),
   debugRaw: z.unknown(),
-  // Card 110 — most-recent ContentHub audit events. Newest-first. Empty
+  // most-recent ContentHub audit events. Newest-first. Empty
   // array when ContentHub has not been touched in the visible window.
   contentAudit: z.array(ContentAuditEventSchema).optional(),
-  // Card 114 — aggregated evidence-pack view computed by ContentHubAgent
+  // aggregated evidence-pack view computed by ContentHubAgent
   // over the same audit rows. Best-effort: cross-DO fetch failures leave
   // this field undefined without breaking the rest of the snapshot.
   contentEvidence: ContentAuditSummarySchema.optional(),
-  // M7.5 Card 121 — read-only degradation diagnostics. Indexed view of
+  // read-only degradation diagnostics. Indexed view of
   // events Cards 117/119/102 already log into event_log. Optional so a DO
   // with no degradation events yet returns clean.
   degradationDiagnostics: DegradationDiagnosticsSchema.optional(),
-  // M7.6 Card 125 — Action UI Intent index for Action-aware Gen UI.
+  // Action UI Intent index for Action-aware Gen UI.
   // Derived on read from event_log; capped at 30 newest-first. Optional
-  // so older clients ignore the field; Card 126 frontend will consume.
+  // so older clients ignore the field;  frontend will consume.
   actionUiIntents: z.array(ActionUiIntentSchema).optional(),
 });
 export type InspectSnapshot = z.infer<typeof InspectSnapshotSchema>;
 
 /**
- * M7.2 Card 82 — workspace file manager (read-only).
+ * workspace file manager (read-only).
  * Maps `@cloudflare/shell` `Workspace.readDir` / `readFile` / `stat` outputs
  * into a stable contract the web client consumes. Hidden paths
  * (`.dev.vars`, `.env`, `.wrangler`, `node_modules`, `.git`) are filtered
@@ -378,7 +378,7 @@ export const WorkspaceFileContentSchema = z.object({
 export type WorkspaceFileContent = z.infer<typeof WorkspaceFileContentSchema>;
 
 /**
- * M7.2 Card 83 — Tier 3 headless browser tool contract.
+ * Tier 3 headless browser tool contract.
  *
  * The agent (and the smoke endpoint) sends `BrowserRunRequest` and gets back
  * `BrowserRunResult`. SSRF defenses + size caps live in `src/browser.ts`.
@@ -413,7 +413,7 @@ export const BrowserRunResultSchema = z.object({
 export type BrowserRunResult = z.infer<typeof BrowserRunResultSchema>;
 
 /**
- * M7.2 Card 84 — Agent Memory v1.
+ * Agent Memory v1.
  * See docs/design/agent-memory-v1.md for the full design.
  *
  * Taxonomy mirrors Cloudflare's Agent Memory blog (2026-04-17): facts,
@@ -451,7 +451,7 @@ export type MemoryRecallMatch = z.infer<typeof MemoryRecallMatchSchema>;
 /**
  * GET /api/memory snapshot. Compact, leak-free shape for Web user layer.
  * Counts by type + recent active facts/instructions/events/tasks.
- * Card 84 §F-18: "show active facts/instructions and recent events/tasks".
+ *  §F-18: "show active facts/instructions and recent events/tasks".
  */
 export const MemorySnapshotSchema = z.object({
   counts: z.object({
@@ -469,11 +469,11 @@ export const MemorySnapshotSchema = z.object({
 export type MemorySnapshot = z.infer<typeof MemorySnapshotSchema>;
 
 /**
- * M7.3 Card 85 — ChannelHub envelopes & storage row schemas.
+ * ChannelHub envelopes & storage row schemas.
  *
  * Provider-agnostic. Discord-first but no schema field is Discord-specific.
- * See `docs/milestones/M7.3-multi-channel-communication-middle-layer.md`
- * and `docs/design/M7.3-review-notes.md`.
+ * See `docs/milestones/-multi-channel-communication-middle-layer.md`
+ * and `docs/design/-review-notes.md`.
  *
  * v1 P0 outbound is text-only — no `presentation.blocks/tone` (premature
  * pollution per review §5). Approval is reserved as a future `kind`
@@ -527,7 +527,7 @@ export const ChannelMessageEnvelopeSchema = z.object({
 export type ChannelMessageEnvelope = z.infer<typeof ChannelMessageEnvelopeSchema>;
 
 /**
- * Outbound discriminated union. P0 has `text` (Card 85) + `approval` (Card 88).
+ * Outbound discriminated union. P0 has `text` () + `approval` ().
  * No generic `presentation.blocks/tone` (review notes §5).
  */
 const DeliveryPolicySchema = z.object({
@@ -548,11 +548,11 @@ const OutboundTextMessageSchema = z.object({
 });
 
 /**
- * Card 88 — Hermes-style approval card. Rendered to Discord as a text
+ * Hermes-style approval card. Rendered to Discord as a text
  * fallback + structured `approval` block so the bridge can attach buttons
  * if its surface supports them. Scope buttons mirror Hermes:
  * once / session / always / deny. `always` is gated behind an env flag
- * (Card 88 §C-13); when gating is on, the bridge should hide/disable that
+ * ( §C-13); when gating is on, the bridge should hide/disable that
  * button and the resolve endpoint downgrades it to "session".
  */
 export const ApprovalScopeSchema = z.enum(["once", "session", "always", "deny"]);
@@ -595,7 +595,7 @@ export const OutboundChannelMessageSchema = z.discriminatedUnion("kind", [
 export type OutboundChannelMessage = z.infer<typeof OutboundChannelMessageSchema>;
 
 /**
- * Card 93: `busy-skip` is distinct from `wait` — `wait` consumes the row
+ * : `busy-skip` is distinct from `wait` — `wait` consumes the row
  * (status → deferred) because we need explicit human clarification; `busy-skip`
  * leaves the row at `received` so a later route attempt can pick it up when
  * the agent is free. The user's message must NOT be consumed just because
@@ -632,7 +632,7 @@ export const ChannelInboxItemSchema = z.object({
   status: ChannelInboxStatusSchema,
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
-  // Card 87 — route metadata; null when row hasn't been routed yet.
+  // route metadata; null when row hasn't been routed yet.
   routeAction: z.enum(["process", "ignore", "wait", "escalate"]).nullable(),
   routeReason: z.string().nullable(),
   routedAt: z.number().int().nullable(),
@@ -654,7 +654,7 @@ export const ChannelOutboxItemSchema = z.object({
   attemptCount: z.number().int(),
   createdAt: z.number().int(),
   sentAt: z.number().int().nullable(),
-  // Card 88 — kind and approval link.
+  // kind and approval link.
   kind: z.enum(["text", "approval"]),
   approvalId: z.string().nullable(),
 });
@@ -751,7 +751,7 @@ export const ChannelRoutePendingResultSchema = z.object({
   ok: z.boolean(),
   scanned: z.number().int(),
   /**
-   * Card 93: number of rows whose decision was `busy-skip` — i.e. would
+   * : number of rows whose decision was `busy-skip` — i.e. would
    * have processed but the agent was busy. These rows remain `received`
    * (not consumed) and will be reconsidered by the next routePending call.
    */
@@ -768,7 +768,7 @@ export const ChannelRoutePendingResultSchema = z.object({
 export type ChannelRoutePendingResult = z.infer<typeof ChannelRoutePendingResultSchema>;
 
 /**
- * Card 88 — outbound enqueue / deliver / approval-resolve API contracts.
+ * outbound enqueue / deliver / approval-resolve API contracts.
  */
 
 export const EnqueueOutboundTextRequestSchema = z.object({
@@ -841,10 +841,10 @@ export const ApprovalResolveResultSchema = z.object({
 export type ApprovalResolveResult = z.infer<typeof ApprovalResolveResultSchema>;
 
 // ============================================================================
-// M7.4 Card 107 — ContentHub: provider-agnostic content source layer.
+// ContentHub: provider-agnostic content source layer.
 //
-// Card 107 ships schemas + a hardcoded `agentthursday-github` registry entry only.
-// Card 108/109 fill in real GitHub network reads/list/search.
+//  ships schemas + a hardcoded `agentthursday-github` registry entry only.
+// /109 fill in real GitHub network reads/list/search.
 //
 // Design constraints (ADR §3, §4):
 //   - `ContentRevision` is a discriminated union from day 1, never a bare
@@ -897,10 +897,10 @@ export type ContentSourceScope = z.infer<typeof ContentSourceScopeSchema>;
 export const ContentSourceAuthModeSchema = z.enum(["public", "secret", "oauth", "mcp", "browser", "none"]);
 export type ContentSourceAuthMode = z.infer<typeof ContentSourceAuthModeSchema>;
 
-// M7.4 v2 Card 112 — explicit per-source capability declaration. Forward
+// explicit per-source capability declaration. Forward
 // compatible: undefined `capabilities` on existing v1 sources is permitted
 // and treated as "all true" by callers that haven't adopted the field yet.
-// Card 113 fan-out search will filter sources by `capabilities.search:true`
+//  fan-out search will filter sources by `capabilities.search:true`
 // instead of provider-name matching, so honest declarations matter.
 export const ContentSourceCapabilitiesSchema = z.object({
   read: z.boolean(),
@@ -927,7 +927,7 @@ export type ContentSource = z.infer<typeof ContentSourceSchema>;
 
 export const ContentSourceHealthSchema = z.object({
   ok: z.boolean(),
-  // v1 = "registry-only" (no network probe). Card 108/109 will add "live"
+  // v1 = "registry-only" (no network probe). /109 will add "live"
   // (real GitHub probe) and "degraded" (rate-limited / partial).
   mode: z.enum(["registry-only", "live", "degraded"]),
   latencyMs: z.number().int().nonnegative().optional(),
@@ -947,7 +947,7 @@ export const ContentSourcesResponseSchema = z.object({
 });
 export type ContentSourcesResponse = z.infer<typeof ContentSourcesResponseSchema>;
 
-// File entry for list results — used by Card 108+.
+// File entry for list results — used by +.
 export const ContentFileEntrySchema = z.object({
   name: z.string(),
   pathOrId: z.string(),
@@ -966,7 +966,7 @@ export type ContentRedaction = z.infer<typeof ContentRedactionSchema>;
 
 export const ContentReadResultSchema = z.object({
   ref: ContentRefSchema,
-  content: z.string(),                    // v1 utf-8 text only; binary path is v1.5+ (Card 115)
+  content: z.string(),                    // v1 utf-8 text only; binary path is v1.5+ ()
   contentType: z.string(),
   size: z.number().int().nonnegative(),
   truncated: z.boolean().optional(),
@@ -998,11 +998,11 @@ export type ContentSearchMode = z.infer<typeof ContentSearchModeSchema>;
 export const ContentSearchCoverageSchema = z.enum(["full", "partial"]);
 export type ContentSearchCoverage = z.infer<typeof ContentSearchCoverageSchema>;
 
-// Card 108 — request/response envelopes for content_list and content_read.
+// request/response envelopes for content_list and content_read.
 // Discriminated `{ ok: true, result } | { ok: false, error }` shape so both
 // the API endpoint and the LLM tool wrapper can forward without exception
-// machinery. `error.code` enumerates the structured failure modes Card 108
-// produces; the list grows in Card 109+.
+// machinery. `error.code` enumerates the structured failure modes 
+// produces; the list grows in +.
 
 export const ContentErrorCodeSchema = z.enum([
   // Path policy
@@ -1026,18 +1026,18 @@ export const ContentErrorCodeSchema = z.enum([
   "list-failed",
   "not-a-directory",
   "no-body",
-  // Card 109 — search
+  // search
   "quota-exhausted",
   "code-search-failed",
   "search-failed",
-  // Card 113 — multi-source fan-out
+  // multi-source fan-out
   "capability-not-supported",
   // Generic fallback
   "internal",
 ]);
 export type ContentErrorCode = z.infer<typeof ContentErrorCodeSchema>;
 
-// Card 113 — per-source result/error state for multi-source fan-out.
+// per-source result/error state for multi-source fan-out.
 // Each entry carries provenance even on failure so the agent can tell which
 // source succeeded and which didn't, without a single source's failure
 // silently swallowing another source's hits. `ok:true` populates `hits` (+
@@ -1065,7 +1065,7 @@ export const ContentSearchResultSchema = z.object({
   searchCoverage: ContentSearchCoverageSchema.optional(),
   searchedPaths: z.array(z.string()).optional(),
   omittedReason: z.string().optional(),
-  // Card 113 — multi-source fan-out result. Present iff the request used
+  // multi-source fan-out result. Present iff the request used
   // `sourceIds`. In that mode top-level `hits` is an empty array and the
   // agent MUST consume `perSource[]` for grouped results — flat aggregation
   // would lose source-level provenance, which the audit and ContentRef
@@ -1080,7 +1080,7 @@ export const ContentErrorSchema = z.object({
   sourceId: z.string().optional(),
   path: z.string().optional(),
   status: z.number().int().nullable().optional(),
-  // Card 109 §7.1 — quota / upstream-failure errors carry an explicit
+  //  §7.1 — quota / upstream-failure errors carry an explicit
   // fallback hint so the caller can opt in to `strategy: "bounded-local"`.
   // Only set on search errors; other endpoints leave these undefined.
   fallbackAvailable: z.boolean().optional(),
@@ -1115,16 +1115,16 @@ export const ContentListRequestSchema = z.object({
 });
 export type ContentListRequest = z.infer<typeof ContentListRequestSchema>;
 
-// Card 109 — request/response envelopes for content_search. Mirrors the
-// Card 108 read/list discriminated-union pattern so clients forward errors
+// request/response envelopes for content_search. Mirrors the
+//  read/list discriminated-union pattern so clients forward errors
 // without exception machinery. Default strategy is `api-search` (fail-loud
 // on quota); `bounded-local` is opt-in degraded grep over the connector's
 // list+read path, always carries `searchCoverage:"partial"`.
 export const ContentSearchRequestSchema = z.object({
-  // Card 113 — `sourceId` and `sourceIds` are mutually exclusive, fail-loud:
+  // `sourceId` and `sourceIds` are mutually exclusive, fail-loud:
   //  - exactly one must be provided
   //  - presenting both, or neither, is a 400 at the request boundary
-  // Single-source mode (`sourceId`) keeps Card 109 behavior unchanged.
+  // Single-source mode (`sourceId`) keeps  behavior unchanged.
   // Multi-source mode (`sourceIds`) returns a `perSource` array; top-level
   // `hits` is empty stub to preserve schema shape.
   sourceId: z.string().min(1).optional(),
@@ -1147,7 +1147,7 @@ export const ContentSearchResponseSchema = z.discriminatedUnion("ok", [
 export type ContentSearchResponse = z.infer<typeof ContentSearchResponseSchema>;
 
 // Connector contract — TS interface, not zod (it's an internal shape, not
-// API-surface JSON). Card 108 adds the GitHub implementation.
+// API-surface JSON).  adds the GitHub implementation.
 export interface ContentSourceConnector {
   readonly meta: ContentSource;
 

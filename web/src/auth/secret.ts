@@ -1,5 +1,5 @@
 /**
- * M7.1 Card 78 — web client side of Card 77's `X-AgentThursday-Secret` contract.
+ * web client side of 's `X-AgentThursday-Secret` contract.
  *
  * Stored in localStorage so a refresh keeps you logged in. Cleared on 401.
  */

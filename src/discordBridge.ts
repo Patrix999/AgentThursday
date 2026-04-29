@@ -1,15 +1,15 @@
 /**
- * M7.3 Card 86 — Discord/OpenClaw bridge inbound adapter.
+ * Discord/OpenClaw bridge inbound adapter.
  *
  * Accepts a narrow, OpenClaw-friendly Discord payload (NOT raw Discord JSON
  * as our canonical schema), normalizes it into `ChannelMessageEnvelope`, and
- * computes addressed signals before persistence. Per Card 86 §A-3, raw
+ * computes addressed signals before persistence. Per  §A-3, raw
  * Discord JSON is not the contract — only this documented shape.
  *
  * What this file does NOT do:
- *  - direct Discord gateway / webhook signature verification (Card 86 §F)
- *  - routing to AgentThursdayAgent (Card 87)
- *  - outbound delivery (Card 88)
+ *  - direct Discord gateway / webhook signature verification ( §F)
+ *  - routing to AgentThursdayAgent ()
+ *  - outbound delivery ()
  */
 
 import { z } from "zod";
@@ -160,7 +160,7 @@ function classifyAttachmentKind(
 }
 
 /**
- * Normalize an OpenClaw Discord payload into the Card 85 envelope.
+ * Normalize an OpenClaw Discord payload into the  envelope.
  * Bot id may be null (env unset); §D-19 guarantees graceful behavior.
  */
 export async function normalizeOpenClawPayload(

@@ -1,7 +1,7 @@
 import { authHeaders, clearSecret } from "../auth/secret";
 
 /**
- * M7.1 Card 79 — single POST helper for all mutating actions.
+ * single POST helper for all mutating actions.
  *
  * - Always attaches `X-AgentThursday-Secret` (via authHeaders())
  * - On 401: clearSecret + dispatch `agent-thursday:unauthorized` so SecretGate re-prompts

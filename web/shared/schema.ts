@@ -1,7 +1,7 @@
 /**
- * M7.1 Card 76 — re-export of the unified schema for the web workspace.
+ * re-export of the unified schema for the web workspace.
  *
- * `web/` is created by Card 78; this file is a stable import path so 78 can
+ * `web/` is created by ; this file is a stable import path so 78 can
  * wire `import { WorkspaceSnapshotSchema, type WorkspaceSnapshot } from "../shared/schema"`
  * (or wherever 78's vite config places it) without reaching into worker code paths.
  *

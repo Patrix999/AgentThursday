@@ -6,7 +6,7 @@ import { NeedReplyCard } from "../cards/NeedReplyCard";
 
 type Props = {
   snapshot: WorkspaceSnapshot | null;
-  /** Card 80: mobile branch sets this true so PendingApprovalCard doesn't
+  /** : mobile branch sets this true so PendingApprovalCard doesn't
    *  render its in-card Approve/Reject — MobileComposer hoists them. */
   hideApprovalActions?: boolean;
 };

@@ -1,12 +1,12 @@
 /**
- * M7.5 Card 115 — Cloudflare-native Discord Gateway runner.
+ * Cloudflare-native Discord Gateway runner.
  *
  * Migrates `scripts/discord-gateway-runner.ts` (host-side Node WebSocket)
  * into a Durable Object that holds the outgoing Gateway connection inside
- * Cloudflare. The host runner remains shipped as a fallback per Card 115 §F;
+ * Cloudflare. The host runner remains shipped as a fallback per  §F;
  * see Completion Report for invocation.
  *
- * Lifecycle / billing honesty (Card 115 §Constraints):
+ * Lifecycle / billing honesty ( §Constraints):
  *   - Discord Gateway is an OUTGOING WebSocket. Cloudflare DO WebSocket
  *     hibernation primarily applies to server-side accepted WebSockets.
  *     We do NOT assume this DO hibernates while the gateway socket is open.
@@ -17,7 +17,7 @@
  *   - Heartbeat ACK watchdog forces reconnect on missed ACK to avoid a fake-
  *     online state that would silently drop messages.
  *
- * Out of scope (Card 115):
+ * Out of scope ():
  *   - no multi-bot fleet manager
  *   - no attachment byte download
  *   - no UI (control via JSON API only)
@@ -61,7 +61,7 @@ type StatusRow = {
   reconnect_count: number;
   last_error_preview: string | null;
   started_at: number | null;
-  // Card 115 patch — persisted so the alarm-driven watchdog can reconnect
+  //  patch — persisted so the alarm-driven watchdog can reconnect
   // after DO hibernation without re-deriving the worker URL from a request.
   worker_origin: string | null;
 };
@@ -130,13 +130,13 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
       )
     `;
     this.sql`INSERT OR IGNORE INTO gateway_state (rowid) VALUES (1)`;
-    // Card 115 patch — idempotent column add for tables created before
+    //  patch — idempotent column add for tables created before
     // worker_origin existed in the schema. SQLite throws "duplicate column"
     // when the column already exists; safe to swallow.
     try { this.sql`ALTER TABLE gateway_state ADD COLUMN worker_origin TEXT`; }
     catch { /* column already present */ }
 
-    // Card 115 patch — alarm-driven watchdog. DO outgoing WebSocket dies
+    //  patch — alarm-driven watchdog. DO outgoing WebSocket dies
     // silently when the DO hibernates (close handler doesn't fire on the
     // dead instance), so we need an alarm that survives hibernation to
     // notice and reconnect. `scheduleEvery` is idempotent per the Agent
@@ -152,7 +152,7 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * Card 115 patch — periodic watchdog. Called every 20s by Agent's alarm
+   *  patch — periodic watchdog. Called every 20s by Agent's alarm
    * scheduler (survives DO hibernation). If desired_state is "running" but
    * we don't have a live WebSocket, reconnect.
    *
@@ -399,7 +399,7 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
         } else if (t === "MESSAGE_CREATE") {
           const event = frame.d as DiscordMessageCreate;
           // Fire-and-forget: forwarding errors are logged via recordError but
-          // never block the gateway dispatch loop. Card 115 §D backoff is
+          // never block the gateway dispatch loop.  §D backoff is
           // expressed by Worker-side route returning quickly; if the Worker
           // is genuinely unreachable, the next message logs the same kind of
           // error and we don't tight-loop.

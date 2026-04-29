@@ -61,7 +61,7 @@ export type CliResultData = {
 
 export const WORKER_URL = process.env["AGENT_THURSDAY_WORKER_URL"] ?? "http://localhost:8787";
 
-// M7.1 Card 77 — single-user shared-secret auth.
+// single-user shared-secret auth.
 // Read once at module load. The TUI does not support hot-reload of the secret;
 // restart the process if you rotate it.
 const WORKER_SECRET = process.env["AGENT_THURSDAY_SHARED_SECRET"] ?? "";
@@ -130,11 +130,11 @@ export const useCloudStatus = makePollHook<CliStatusData>("/cli/status");
 export const useCloudResult = makePollHook<CliResultData>("/cli/result");
 
 /**
- * M7.1 Card 76 — unified workspace snapshot poller.
+ * unified workspace snapshot poller.
  *
- * Sourced from `GET /api/workspace`; `WorkspaceSnapshot` is the contract Card 78+
- * is built against. App.tsx is intentionally not migrated in Card 76 — it keeps
+ * Sourced from `GET /api/workspace`; `WorkspaceSnapshot` is the contract +
+ * is built against. App.tsx is intentionally not migrated in it keeps
  * using `useCloudStatus` until a follow-up card retires the legacy view. This
- * hook is exported so Card 81 (TUI demotion) can adopt it without re-plumbing.
+ * hook is exported so  (TUI demotion) can adopt it without re-plumbing.
  */
 export const useWorkspaceSnapshot = makePollHook<WorkspaceSnapshot>("/api/workspace");

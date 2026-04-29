@@ -9,7 +9,7 @@ type State = {
 };
 
 /**
- * M7.2 Card 84 — poll `/api/memory` every 10s. Slower than workspace because
+ * poll `/api/memory` every 10s. Slower than workspace because
  * memory changes are rare. On 401 mirrors `useWorkspace`: clearSecret +
  * dispatch `agent-thursday:unauthorized` so SecretGate re-prompts.
  */

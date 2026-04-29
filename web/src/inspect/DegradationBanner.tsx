@@ -1,11 +1,11 @@
 import type { InspectSnapshot } from "../../shared/schema";
 
 /**
- * M7.5 Card 121 — small banner showing the latest task's degradation
+ * small banner showing the latest task's degradation
  * summary above the inspect tabs. Read-only: renders state, reasons,
  * model profile, evidenceRefs, and recommendedAction. No interactivity,
  * no behavior change. State color-codes are visual only — they don't
- * trigger any pause/retry/switch in v1 (Card 120 will own that).
+ * trigger any pause/retry/switch in v1 ( will own that).
  */
 export function DegradationBanner({
   diagnostics,

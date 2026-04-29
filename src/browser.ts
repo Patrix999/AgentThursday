@@ -1,5 +1,5 @@
 /**
- * M7.2 Card 83 — Tier 3 headless browser tool.
+ * Tier 3 headless browser tool.
  *
  * Connects to the Cloudflare Browser Rendering binding (env.BROWSER) over
  * CDP via WebSocket, navigates, extracts title/text/links/screenshot, and

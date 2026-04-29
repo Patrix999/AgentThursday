@@ -3,14 +3,14 @@ import type { ChannelSnapshot, ChannelInboxItem, ChannelOutboxItem, ChannelAppro
 type Props = { data: ChannelSnapshot | null; loading: boolean; error: string | null };
 
 /**
- * M7.3 Card 89 — Channel inspect tab.
+ * Channel inspect tab.
  *
  * Sections (top → bottom):
  *   1. counts row (inbox / outbox / approvals / conversations / identities)
  *   2. recent timeline — interleaved inbox / outbox / approval entries by time
  *
- * Designed for inspect surface only (Card 81 lazy hook). Default `/` user
- * layer never mounts this; the leak guard blacklist (Card 81 + Card 89
+ * Designed for inspect surface only ( lazy hook). Default `/` user
+ * layer never mounts this; the leak guard blacklist ( + 
  * extension) ensures no stray `providerMessageId/payloadHash` appears there.
  */
 export function ChannelTimeline({ data, loading, error }: Props) {

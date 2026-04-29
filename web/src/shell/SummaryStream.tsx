@@ -5,9 +5,9 @@ type Props = { snapshot: WorkspaceSnapshot | null };
 
 /**
  * Renders only `summaryStream[]` — strings already humanized by the worker.
- * Card 76 guarantees no `event_payload` / raw tool JSON appears here.
+ *  guarantees no `event_payload` / raw tool JSON appears here.
  *
- * Card 79 §B-5: newest at the bottom (the worker emits ascending order),
+ *  §B-5: newest at the bottom (the worker emits ascending order),
  * with auto-scroll on new entries so users see the latest line.
  */
 export function SummaryStream({ snapshot }: Props) {

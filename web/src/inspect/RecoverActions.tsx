@@ -2,7 +2,7 @@ import { useState } from "react";
 import { clearStaleState, forceContinue } from "../api/inspectActions";
 
 /**
- * Card 81 §B-7 — recovery actions for the debug surface.
+ *  §B-7 — recovery actions for the debug surface.
  * Only "real" endpoints that exist on the worker today are wired:
  *   - Clear stale state → POST /cli/clear-stale-state
  *   - Force continue    → POST /cli/continue (debug-flavored label)

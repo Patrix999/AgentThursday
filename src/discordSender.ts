@@ -1,5 +1,5 @@
 /**
- * M7.3 Card 91 — Discord REST sender. Mockable via `DISCORD_API_BASE_URL`
+ * Discord REST sender. Mockable via `DISCORD_API_BASE_URL`
  * (defaults to the real Discord API). Returns a sanitized result; never
  * surfaces the bot token or full provider response in errors.
  */

@@ -10,7 +10,7 @@ import {
 
 /**
  * Shared composer logic — used by `Composer` (desktop) and `MobileComposer`
- * (Card 80) so the action body shapes (Card 79) stay in one place.
+ * () so the action body shapes () stay in one place.
  *
  * The composer surfaces the user's two essential interactions: submit a new
  * task, and approve/reject the current pending mutation/tool. The

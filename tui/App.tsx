@@ -363,7 +363,7 @@ export default function App(): React.ReactElement {
 
       {/* HEADER */}
       <Box borderStyle="single" paddingX={1} flexDirection="column">
-        {/* M7.1 Card 81: TUI demoted to debug surface — Web is the primary product surface. */}
+        {/* : TUI demoted to debug surface — Web is the primary product surface. */}
         <Box>
           <Text bold color="yellow">[AGENT_THURSDAY DEBUG SURFACE]</Text>
           <Text dimColor>  Web (/) is the primary product surface; this TUI is debug/inspect only.</Text>

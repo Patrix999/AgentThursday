@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* M7.1 Card 80 — mobile-friendly viewport sizing.
+/* mobile-friendly viewport sizing.
    `100dvh` shrinks with the on-screen keyboard so the bottom action bar
    moves up with the visible viewport; `100%` falls back for older browsers. */
 html, body, #root {

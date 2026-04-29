@@ -1,15 +1,15 @@
 /**
- * M7.3 Card 87 — channel route policy. Card 93 split the active-task case.
+ * channel route policy.  split the active-task case.
  *
  * Pure function: takes an inbox row + minimal context and returns a
  * `ChannelRouteDecision`. No SQL, no RPC — keeps the policy testable and
  * makes it easy to swap rules later without touching ChannelHub.
  *
- * P0 policy (per Card 87 §A-4 + Card 93 §B-2):
+ * P0 policy (per  §A-4 +  §B-2):
  *   - DM/mention/reply from trusted + agent idle      → process
  *   - DM/mention/reply from trusted + agent BUSY      → busy-skip
  *     (DO NOT consume the row — keep status='received' so a later route
- *      attempt picks it up. Card 93 invariant: busy means do not consume
+ *      attempt picks it up.  invariant: busy means do not consume
  *      the user's message.)
  *   - addressed but sender role=unknown               → wait (consumes;
  *     we need explicit human clarification before acting)
@@ -18,7 +18,7 @@
  *   - everything else (casual chatter)                → ignore
  *
  * `memoryPolicy` is left at "none" by default — channel messages are NOT
- * memory candidates (review notes §4 + Card 84 SOUL prompt). The agent
+ * memory candidates (review notes §4 +  SOUL prompt). The agent
  * itself decides to remember after a turn.
  */
 
@@ -72,7 +72,7 @@ export function decideRoute(row: ChannelInboxItem, ctx: RouteContext): ChannelRo
     };
   }
 
-  // 5. Trusted + addressed + agent busy → busy-skip. Card 93 §B invariant:
+  // 5. Trusted + addressed + agent busy → busy-skip.  §B invariant:
   // do NOT consume the user's message just because the agent is mid-task.
   // The row stays at `received` and the next routePending picks it up when
   // the agent is free.
@@ -117,6 +117,6 @@ export function buildTaskPromptFromInbox(row: ChannelInboxItem): string {
     ``,
     row.text,
     ``,
-    `(This message arrived via the channel layer. Respond by addressing the sender; do not speak as the human Pat. Do not include secrets in any reply or memory entry.)`,
+    `(This message arrived via the channel layer. Respond by addressing the sender; do not speak as the human operator. Do not include secrets in any reply or memory entry.)`,
   ].join("\n");
 }

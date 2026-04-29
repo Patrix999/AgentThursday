@@ -1,5 +1,5 @@
 /**
- * M7.1 Card 77 — Single-User Shared-Secret Auth Layer.
+ * Single-User Shared-Secret Auth Layer.
  *
  * Validates `X-AgentThursday-Secret` header against `env.AGENT_THURSDAY_SHARED_SECRET`.
  * Behavior matrix (also in docs/ops/auth.md):

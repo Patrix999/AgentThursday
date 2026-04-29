@@ -107,9 +107,9 @@ export { ChannelHubAgent };
 export { ContentHubAgent };
 export { DiscordGatewayAgent };
 
-const SOUL = `你是 AgentThursday Agent —— Pat 的云原生工作 agent。
+const SOUL = `你是 AgentThursday Agent —— 一个云原生工作 agent。
 你运行在 Cloudflare Durable Objects 上，具备跨 hibernate 的持久 identity 与 session 连续性。
-你的首要目标是协助 Pat 推进 AgentThursday 项目，保持工作的连续性与可回放性。
+你的首要目标是协助操作员推进 AgentThursday 项目，保持工作的连续性与可回放性。
 在模型水平较低时（safer mode），你只推进最优先的单一下一步，不承诺超出当前能力的目标。
 
 ## 工具调用规则（强制）
@@ -120,9 +120,9 @@ const SOUL = `你是 AgentThursday Agent —— Pat 的云原生工作 agent。
 - 读写 workspace 文件 → 必须调用 read / write / edit 工具
 不调用工具而只用文字汇报"已执行"是错误行为。
 
-**两条更严格的子规则**（Card 97 — 真实性）：
+**两条更严格的子规则**（真实性）：
 - 任何 tool call 之后，**必须再产一段 assistant 文本**综合 tool 的结果（哪怕一句话），然后才能结束本轮。结束时 last assistant message 不能是"正在调用 X..."这种 progress 文本——那会让 channel 层把过期 progress 当成最终回复发出去。如果 tool 失败、无结果可综合，也要明确说明失败 + 你的下一步打算。
-- 你**不得**伪造 tool 调用：不得在没真发起 tool dispatch 的情况下用 *"我刚才调用了 X..."* / *"调用 X 失败"* 这种声明。如果你打算调，就真调；如果你没调，就别说。系统在 channel 层有 truthfulness gate 会自动 cross-validate（Card 102），fabrication 会被 ⚠️ 标出来。
+- 你**不得**伪造 tool 调用：不得在没真发起 tool dispatch 的情况下用 *"我刚才调用了 X..."* / *"调用 X 失败"* 这种声明。如果你打算调，就真调；如果你没调，就别说。系统在 channel 层有 truthfulness gate 会自动 cross-validate（），fabrication 会被 ⚠️ 标出来。
 
 ## 长期记忆规则（Agent Memory v1）
 你有四个 memory 工具：remember / recall / list_memories / forget。
@@ -134,7 +134,7 @@ const SOUL = `你是 AgentThursday Agent —— Pat 的云原生工作 agent。
 - **不要** 把 secret / 临时 noise / 大段 raw log 写进 memory
 - checkpoint 与 review_note 是任务进度日志，与 memory 不同：memory 是可检索的命题；checkpoint/note 是过程记录。
 
-## Content Sources vs Workspace（M7.4 affordance）
+## Content Sources vs Workspace（affordance）
 
 Tier 0 workspace 是**你自己的**活跃工作区——scratch、drafts、任务输出、你显式创建的 artifacts。它**不会**自动同步 AgentThursday 源码、GitHub repos、OneDrive/Dropbox 文件夹、协作文档、邮件附件或网页内容。
 
@@ -173,9 +173,9 @@ Tier 0 workspace 是**你自己的**活跃工作区——scratch、drafts、任�
 
 旧本地 bridge（exec-node）已废弃，禁止通过任何路径调用。`;
 
-const DEMO_INSTANCE = "agent-thursday-dev-fresh-108a-1";
+const DEMO_INSTANCE = "agent-thursday-dev";
 
-// M7.3 Card 102 — tool names the truthfulness gate watches for in assistant
+// tool names the truthfulness gate watches for in assistant
 // text. Must stay aligned with `getTools()` registration; if a new tool is
 // added, add its name here so claims about it are validated. Workspace tools
 // (read/write/list/edit) come from `createWorkspaceTools` and are addressed
@@ -196,11 +196,11 @@ const KNOWN_TOOL_NAMES: readonly string[] = [
   "write",
   "list",
   "edit",
-  // M7.4 Card 108 — ContentHub external source tools.
+  // ContentHub external source tools.
   "content_sources",
   "content_list",
   "content_read",
-  // M7.4 Card 109 — ContentHub literal search.
+  // ContentHub literal search.
   "content_search",
 ];
 const DOGFOOD_TASK = "如何使用新构建的 agent 开发当前项目？";
@@ -262,7 +262,7 @@ function buildWorkspaceSnapshot(input: {
       : null;
 
   // summaryStream: only human-readable text. Never include raw event_payload
-  // or tool call JSON — those are inspect-layer responsibilities (Card 81).
+  // or tool call JSON — those are inspect-layer responsibilities ().
   const summaryStream: MessageView[] = [];
   if (debugTrace.lastAssistantSummary) {
     summaryStream.push({
@@ -489,11 +489,11 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   private _taskTok = { taskId: null as string | null, in: 0, out: 0, total: 0 };
   private _lastStepModel: { provider: string; modelId: string } | null = null;
   private _lastStepIn: number | null = null;
-  // M7.5 Card 116 — supplier-side degradation signal collector for the
+  // supplier-side degradation signal collector for the
   // current submitTask round. Reset at the top of submitTask, populated by
   // onStepFinish + onError, read at reply finalization.
   private _currentTaskSupplierSignals: SupplierTaskSignals = emptySupplierTaskSignals();
-  // M7.5 Card 117 — Card 102 truthfulness verdict for the same round, so
+  //  truthfulness verdict for the same round, so
   // the `supplier.signal.summary` event_log row can include
   // `truthfulnessViolationSeen` + `truthfulnessCategory` without changing
   // applyTruthfulnessGate's user-visible behavior. Reset at submitTask top.
@@ -502,10 +502,10 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   };
   // Tier 2: pre-bundled npm modules for the codemode sandbox. null = not yet initialized.
   // Each value uses the explicit-type Module shape `{ js: source }` so the
-  // Workers Loader accepts bare specifier keys like `"zod"` (Card 105).
+  // Workers Loader accepts bare specifier keys like `"zod"` ().
   private _bundledModules: Record<string, { js: string }> | null = null;
 
-  // Card 105 — Workers Loader requires module-map keys to either end in
+  // Workers Loader requires module-map keys to either end in
   // `.js`/`.py` (string-form, type inferred by extension) OR be an object
   // that names the type explicitly (`{ js: source }`, `{ cjs: source }`,
   // etc.). Bare string keys with bare-string values fail with TypeError:
@@ -544,10 +544,10 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     }
     if (ctx.model) this._lastStepModel = { provider: ctx.model.provider, modelId: ctx.model.modelId };
 
-    // M7.5 Card 116 — capture supplier-side step signal for the current
+    // capture supplier-side step signal for the current
     // submitTask round. Wrapped in try/catch so a malformed StepContext
     // shape never breaks the main step loop (kanban: fail-soft).
-    // Card 117 extends this with optional tool-call / tool-result names so
+    //  extends this with optional tool-call / tool-result names so
     // the persisted summary event has grep-friendly identifiers, not just
     // counts. Names are capped at the call site to keep payload bounded.
     try {
@@ -576,7 +576,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     } catch { /* fail-soft: never block the step loop on signal collection */ }
   }
 
-  // M7.5 Card 116 — capture stream-truncated / finish_reason regression
+  // capture stream-truncated / finish_reason regression
   // errors raised by the model adapter. The saga's specific symptom on
   // the Llama family was workers-ai-provider's flush() rejecting on
   // missing finish_reason. We never store the raw error string in state —
@@ -602,7 +602,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       }
     } catch { /* fail-soft */ }
 
-    // Preserve Agent/Think default error semantics. Card 116 detection must
+    // Preserve Agent/Think default error semantics.  detection must
     // be fail-soft, but it must not accidentally swallow unrelated server or
     // websocket errors.
     return arguments.length >= 2
@@ -634,7 +634,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
 
   private get agentThursdayState(): AgentThursdayState { return this.getConfig() ?? this.defaultAgentThursdayState; }
   private setAgentThursdayState(s: AgentThursdayState): void { this.configure(s); }
-  // M7.4 Card 108a — model dispatch discriminator.
+  // model dispatch discriminator.
   // Findings so far:
   // - gpt-oss 120b/20b, GLM, Kimi, and Llama Scout can emit raw/inline function JSON.
   // - Fresh DO with Llama Scout still fabricated inline execute JSON instead of framework tool_call.
@@ -711,7 +711,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
           tools: createWorkspaceTools(this.workspace),
           executor: new DynamicWorkerExecutor({
             loader: this.env.LOADER,
-            // Card 105: bundledModules uses Module-object form `{ js: ... }`
+            // : bundledModules uses Module-object form `{ js: ... }`
             // (the explicit-type form Workers Loader requires for keys without
             // `.js`/`.py` extension). DynamicWorkerExecutor's TS signature is
             // narrowed to `Record<string,string>`, but at runtime it forwards
@@ -723,7 +723,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return { ...base, execute: async (input: any, opts: any) => {
           const tier = (this._bundledModules && Object.keys(this._bundledModules).length > 0) ? 2 : 1;
-          // Card 108a Track B-3 — capped code preview for trace analysis.
+          //  Track B-3 — capped code preview for trace analysis.
           // CodeInput shape is `{ code: string }` per `@cloudflare/codemode/shared`.
           const codePreview = typeof input?.code === "string" ? (input.code as string).slice(0, 200) : null;
           this.logEvent("tool.execute", {
@@ -747,7 +747,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
           return { stdout: result.stdout, stderr: result.stderr, exit_code: result.exitCode, success: result.success };
         },
       }),
-      // ── M7.2 Card 84 — Agent Memory v1 (model-facing) ─────────────────────
+      // ── Agent Memory v1 (model-facing) ─────────────────────
       remember: tool({
         description: "Store a durable memory (fact / instruction / event / task). Use for stable knowledge worth recalling later (e.g. 'project uses GraphQL', 'when X, do Y'). Provide `key` for facts/instructions to enable supersession on update. DO NOT store secrets or transient noise. See docs/design/agent-memory-v1.md.",
         inputSchema: z.object({
@@ -772,7 +772,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
           return this.recallMemory(input);
         },
       }),
-      // M7.4 Card 108a mitigation 1: temporarily hide low-priority
+      //  mitigation 1: temporarily hide low-priority
       // memory management tools from the LLM tool spec to test the Kimi
       // tool-count/description-size threshold hypothesis. DO callables
       // remain available for API/inspect paths; only model-facing tools
@@ -799,11 +799,11 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
           }
         },
       }),
-      // ── M7.4 Card 108 — ContentHub external source tools ──────────────
+      // ── ContentHub external source tools ──────────────
       // These are NOT Tier 0 workspace tools. They access **external**
       // Content Sources (currently only `agentthursday-github`) via the
-      // ContentHubAgent DO. Card 106 SOUL prompt covers usage rules;
-      // Card 109 will add `content_search`.
+      // ContentHubAgent DO.  SOUL prompt covers usage rules;
+      //  will add `content_search`.
       content_sources: tool({
         description: "List the external Content Sources currently registered (e.g. agentthursday-github). Use this when you need to discover which sources are available before reading. NOT a Tier 0 workspace tool — for your own scratch files use `read`/`list`.",
         inputSchema: z.object({
@@ -815,7 +815,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
             this.env.ContentHubAgent as unknown as AgentNamespace<ContentHubAgent>,
             CONTENT_HUB_INSTANCE,
           );
-          // Card 110b — propagate the current task id as audit trace id so
+          // propagate the current task id as audit trace id so
           // ContentHubAgent.audit_log rows can be correlated with the
           // AgentThursdayAgent event_log task.submitted entry that triggered them.
           const traceId = this.agentThursdayState.currentTaskObject?.id ?? null;
@@ -857,7 +857,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
           return await stub.read({ sourceId: input.sourceId, path: input.path, ref: input.ref, maxBytes: input.maxBytes }, traceId);
         },
       }),
-      // ── M7.4 Card 109 — ContentHub literal search ────────────────────
+      // ── ContentHub literal search ────────────────────
       // Default `api-search` strategy uses GitHub Code Search and is
       // fail-loud on quota exhaustion: error.code="quota-exhausted" with
       // fallbackAvailable=true and a hint to retry with `bounded-local`.
@@ -865,7 +865,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       // explicitly with `strategy:"bounded-local"` if it wants partial
       // coverage from cached/listed content.
       content_search: tool({
-        description: "Search Content Source(s) for a literal pattern. Provide EITHER `sourceId` (single source, hits in `result.hits[]`) OR `sourceIds: string[]` (Card 113 multi-source fan-out, results grouped in `result.perSource[]` with per-source `ok/hits/errorCode/latencyMs`; top-level `hits` is empty stub in this mode). Sources whose `capabilities.search` is not true (e.g. `local-fs`) return per-source `errorCode:\"capability-not-supported\"` rather than silently skipping. Default strategy `api-search` uses GitHub Code Search (fail-loud on quota — see error.fallbackHint). Pass `strategy:'bounded-local'` for a degraded grep over cached/listed content; the result then carries `searchMode:'degraded-grep'` + `searchCoverage:'partial'` + `searchedPaths` + `omittedReason` and MUST NOT be cited as authoritative. Hits include path, revision, line (when known), and a preview snippet.",
+        description: "Search Content Source(s) for a literal pattern. Provide EITHER `sourceId` (single source, hits in `result.hits[]`) OR `sourceIds: string[]` ( multi-source fan-out, results grouped in `result.perSource[]` with per-source `ok/hits/errorCode/latencyMs`; top-level `hits` is empty stub in this mode). Sources whose `capabilities.search` is not true (e.g. `local-fs`) return per-source `errorCode:\"capability-not-supported\"` rather than silently skipping. Default strategy `api-search` uses GitHub Code Search (fail-loud on quota — see error.fallbackHint). Pass `strategy:'bounded-local'` for a degraded grep over cached/listed content; the result then carries `searchMode:'degraded-grep'` + `searchCoverage:'partial'` + `searchedPaths` + `omittedReason` and MUST NOT be cited as authoritative. Hits include path, revision, line (when known), and a preview snippet.",
         inputSchema: z.object({
           sourceId: z.string().min(1).optional().describe("Single-source mode: id of the Content Source (e.g. 'agentthursday-github'). Mutually exclusive with `sourceIds`."),
           sourceIds: z.array(z.string().min(1)).min(1).max(10).optional().describe("Multi-source fan-out mode: list of source ids to query in parallel. Mutually exclusive with `sourceId`. Results grouped by source in `result.perSource[]`."),
@@ -978,7 +978,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
         created_at INTEGER NOT NULL
       )
     `;
-    // M7.2 Card 84 — Agent Memory v1. Additive, idempotent. See
+    // Agent Memory v1. Additive, idempotent. See
     // docs/design/agent-memory-v1.md. Profile boundary = this DO.
     this.sql`
       CREATE TABLE IF NOT EXISTS agent_memories (
@@ -1051,8 +1051,8 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return `${full.slice(0, maxLen)} …(+${full.length - maxLen} chars)`;
   }
 
-  // Card 96 — full last-assistant text for outbound delivery. No truncation
-  // suffix (would corrupt user-visible Discord reply); Card 88's
+  // full last-assistant text for outbound delivery. No truncation
+  // suffix (would corrupt user-visible Discord reply); 's
   // splitForDiscord2000 handles the 2000-char chunk limit downstream.
   private getLastAssistantTextFull(): string {
     const msgs = this.getMessages();
@@ -1062,8 +1062,8 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return textPart?.text ?? "";
   }
 
-  // Card 98 — aggregate ALL new assistant texts produced during this
-  // submitTask round, in order. Replaces Card 96's "last assistant text"
+  // aggregate ALL new assistant texts produced during this
+  // submitTask round, in order. Replaces 's "last assistant text"
   // strategy which lost results when the model produced a `progress + tool
   // call` round 1 and didn't synthesize a round 2 — the user-visible reply
   // ended up being stale progress text instead of the actual tool result
@@ -1087,7 +1087,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return collected.join("\n\n");
   }
 
-  // Card 102 — truthfulness gate. Looks at the assistant text, finds
+  // truthfulness gate. Looks at the assistant text, finds
   // tool-call claims, and cross-validates against `tool.*` events emitted
   // during this submitTask round. Returns the (possibly annotated)
   // user-visible reply.
@@ -1112,7 +1112,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       const after = row.event_type.slice("tool.".length);
       const segments = after.split(".");
       let bareName = segments[0] ?? "";
-      // Card 108a Track B-1 — `tool.memory.<verb>` events use the "memory"
+      //  Track B-1 — `tool.memory.<verb>` events use the "memory"
       // channel prefix but the model-facing tool name is the verb itself.
       // Map back so a real `recall` / `remember` dispatch correlates with
       // the matching claim in KNOWN_TOOL_NAMES.
@@ -1128,7 +1128,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       if (bareName) actualToolNames.add(bareName);
     }
 
-    // Card 108a Track B-4 — inline-JSON detection. A model that emits
+    //  Track B-4 — inline-JSON detection. A model that emits
     // ```json blocks in plain text but never dispatches a tool is producing
     // a fabricated tool result outside the tool-call frame. Count fenced
     // JSON blocks so /api/inspect can classify the round even when the
@@ -1145,8 +1145,8 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     const category: string = verdict.fabricated.length > 0 ? "fabricated-claim" : "inline-json-without-dispatch";
     this.logEvent("tool.truthfulness.violation", {
       taskId,
-      // Card 108a Track B-4 — `category` lets reviewers split fabricated
-      // tool-call claims (the original Card 102 case) from inline-JSON
+      //  Track B-4 — `category` lets reviewers split fabricated
+      // tool-call claims (the original  case) from inline-JSON
       // fabrications that slip past claim detection entirely.
       category,
       claimedTools: verdict.claims.map(c => c.tool),
@@ -1159,7 +1159,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       mode: effectiveMode,
     });
 
-    // M7.5 Card 117 — share verdict with the per-turn supplier summary
+    // share verdict with the per-turn supplier summary
     // event without changing user-visible behavior. Set BEFORE the early
     // returns below so log-only mode also persists the cross-link in
     // supplier.signal.summary.
@@ -1172,7 +1172,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return `${warning}\n\n${text}`;
   }
 
-  // M7.5 Card 116 — supplier-side degradation marker. Reads the per-task
+  // supplier-side degradation marker. Reads the per-task
   // signal collector populated by onStepFinish + onError, asks the pure
   // helper for a verdict, prepends a ⚠️ line if degraded. Fail-soft per
   // kanban: any throw inside detection/render returns the input text
@@ -1189,7 +1189,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     }
   }
 
-  // M7.5 Card 117 — persist a single per-turn `supplier.signal.summary`
+  // persist a single per-turn `supplier.signal.summary`
   // event_log row so reviewers can grep / inspect tool-decision path
   // signals after the fact. No prompts, no raw provider payloads, no
   // secrets, no raw error strings — only counts, enums, and bounded
@@ -1211,7 +1211,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       }));
       this.logEvent("supplier.signal.summary", {
         taskId,
-        // M7.5 Card 110b convention — current task id doubles as cross-DO
+        //  convention — current task id doubles as cross-DO
         // trace id elsewhere; keep null until a separate carrier exists.
         traceId: null,
         model: this._lastStepModel?.modelId ?? null,
@@ -1241,11 +1241,11 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
 
   @callable()
   async submitTask(task: string): Promise<{ ok: boolean; taskId: string; loopTriggered: boolean; replyText: string }> {
-    // M7.5 Card 120 — conversational resume from a prior `needs_human`
+    // conversational resume from a prior `needs_human`
     // pause. While paused, only explicit resume intents ("继续" /
     // "proceed" / "resume" / ...) may advance the current loop. Other
     // text receives a reminder and does NOT create a new task or call the
-    // model, preserving Pat's "resume via conversation" requirement.
+    // model, preserving the operator's "resume via conversation" requirement.
     const wasWaitingForHuman = !!this.agentThursdayState.waitingForHuman;
     const isExplicitResume = wasWaitingForHuman && isResumeIntent(task);
     const prevTaskObj = this.agentThursdayState.currentTaskObject;
@@ -1285,19 +1285,19 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       });
     }
     this.logEvent("task.submitted", { task, taskId: taskObject.id, isResubmit });
-    // M7.3 Card 98 — snapshot message-log length BEFORE saveMessages so we
+    // snapshot message-log length BEFORE saveMessages so we
     // can collect ALL new assistant texts produced during this round, not
-    // just the "last assistant message" (Card 96's strategy lost results
+    // just the "last assistant message" ('s strategy lost results
     // when the model produced progress + tool call but no synthesis turn).
     const prevMsgLen = this.getMessages().length;
-    // M7.3 Card 102 — truthfulness gate prep: snapshot timestamp BEFORE
+    // truthfulness gate prep: snapshot timestamp BEFORE
     // saveMessages so we can scope the "what tools actually dispatched in
     // THIS round" query to events emitted during the loop.
     const truthfulnessStartTs = Date.now();
-    // M7.5 Card 116 — reset supplier-side signal collector for this round.
+    // reset supplier-side signal collector for this round.
     // Populated by onStepFinish + onError during saveMessages.
     this._currentTaskSupplierSignals = emptySupplierTaskSignals();
-    // M7.5 Card 117 — reset truthfulness verdict for this round so a stale
+    // reset truthfulness verdict for this round so a stale
     // value from a previous turn never leaks into the supplier summary.
     this._currentTaskTruthfulnessVerdict = { violationSeen: false, category: null };
     const result = await this.saveMessages([{
@@ -1305,18 +1305,18 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       role: "user",
       parts: [{ type: "text", text: task }],
     }]);
-    // M7.3 Card 98 — aggregate all assistant texts produced during this
-    // submitTask round (replaces Card 96's `getLastAssistantTextFull()`).
-    // Card 96 still in code as a fallback for inspect surfaces.
+    // aggregate all assistant texts produced during this
+    // submitTask round (replaces 's `getLastAssistantTextFull()`).
+    //  still in code as a fallback for inspect surfaces.
     const rawReplyText = this.getNewAssistantTextsSince(prevMsgLen);
-    // M7.3 Card 102 — tool-truthfulness gate. Detect tool-call claims in the
+    // tool-truthfulness gate. Detect tool-call claims in the
     // assistant text and cross-validate against `tool.*` events actually
     // logged during this round. Fabricated claims (claim without event) get
     // a warning line prepended to the user-visible reply + a structured
     // `tool.truthfulness.violation` event for inspect. Mode controlled by
     // env.AGENT_THURSDAY_TRUTHFULNESS_GATE: "warn" (default) | "log-only" | "off".
     const gatedReplyText = this.applyTruthfulnessGate(rawReplyText, truthfulnessStartTs, taskObject.id);
-    // M7.5 Card 116 — supplier-side degradation marker. Coexists with Card
+    // supplier-side degradation marker. Coexists with Card
     // 102 (catches a different layer of failure: model/adapter signals
     // rather than user-facing claims). When both fire, the supplier marker
     // sits ABOVE the truthfulness marker so reviewers see the broader
@@ -1324,13 +1324,13 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     // "this claim looks fabricated" line. Detection is fail-soft: any
     // throw inside detection/render returns the gated text unchanged.
     let replyText = this.applySupplierDegradationMarker(gatedReplyText);
-    // M7.5 Card 117 — persist per-turn supplier signal summary into
+    // persist per-turn supplier signal summary into
     // event_log so reviewers can grep / inspect tool-decision path
     // signals later without re-deploying diag endpoints. Fail-soft: the
     // helper swallows any throw so a logging glitch can't break the turn.
     this.logSupplierSignalSummary(taskObject.id);
-    // M7.3 Card 95 — finalize currentTaskObject.status. Without this the
-    // object stays "active" forever, Card 94 readiness reports
+    // finalize currentTaskObject.status. Without this the
+    // object stays "active" forever,  readiness reports
     // `lifecycle=active`, ChannelHub auto-route permanently busy-skips.
     // Map: completed/skipped → completed (the call returned cleanly);
     // anything else → failed (conservative; unknown is suspicious).
@@ -1357,10 +1357,10 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       saveMessagesStatus: result.status,
       stomped: latest.currentTaskObject?.id !== taskObject.id,
     });
-    // M7.5 Card 119 — derive + persist per-task degradation summary.
+    // derive + persist per-task degradation summary.
     // Pure function call + single logEvent. Wrapped in try/catch so a
     // logging glitch can never break submitTask.
-    // M7.5 Card 120 — when summary state === "needs_human" AND the
+    // when summary state === "needs_human" AND the
     // `AGENT_THURSDAY_PAUSE_ON_NEEDS_HUMAN` runtime gate is enabled, pause the
     // loop conversationally: append the pause message to replyText, set
     // waitingForHuman + lifecycle="waiting" so /status / continueTask
@@ -1379,7 +1379,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
         now: Date.now(),
       });
       this.logEvent("degradation.summary", summary);
-      // Card 120 — read config at decision time so `wrangler secret put`
+      // read config at decision time so `wrangler secret put`
       // takes effect on the next turn without redeploying code.
       const pauseEnabled = isPauseEnabled(this.env as { AGENT_THURSDAY_PAUSE_ON_NEEDS_HUMAN?: string });
       if (shouldPauseForNeedsHuman(pauseEnabled, summary, taskObject.id)) {
@@ -1389,7 +1389,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
           : pauseMessage;
         // Reuse existing waitingForHuman + status="waiting" machinery so
         // /status, continueTask (Force continue at line ~1427 checks
-        // `!s.waitingForHuman`), and Card 121 banner all reflect pause
+        // `!s.waitingForHuman`), and  banner all reflect pause
         // coherently. Override the just-finalized lifecycle.
         const stateNow = this.agentThursdayState;
         const pausedTaskObject = stateNow.currentTaskObject?.id === taskObject.id
@@ -1419,7 +1419,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return { ok: true, status: result.status };
   }
 
-  // M7.3 Card 103 — codemode self-probe. Bypasses the model loop entirely;
+  // codemode self-probe. Bypasses the model loop entirely;
   // calls the executor directly with a trivial input. Returns ground truth
   // about whether `execute` is registered + actually functional in this
   // deployment, so reviewers don't have to trust the agent's word about
@@ -1611,7 +1611,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   }
 
   @callable()
-  // M7.5 Card 121 — index recent degradation events into a compact view
+  // index recent degradation events into a compact view
   // for the inspect panel. Read-only: queries existing event_log rows
   // emitted by Cards 117 / 119 / 102, parses payload as JSON, and tolerates
   // shape drift via fail-soft per-row try/catch. Cap recentSummaries to
@@ -1675,8 +1675,8 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   }
 
   getInspectSnapshot(): InspectSnapshot {
-    // M7.1 Card 81 — real producer for /api/inspect.
-    // No new storage; pulls from event_log + DO state. Card 76 schema is canonical.
+    // real producer for /api/inspect.
+    // No new storage; pulls from event_log + DO state.  schema is canonical.
 
     // ladder: history of tier-bearing tool events, newest first
     const ladderRows = this.sql<EventLogRow>`
@@ -1736,12 +1736,12 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     // debugRaw: the existing debugTrace dump preserved for deep-dive debugging
     const debugRaw = this.getDebugTrace();
 
-    // M7.5 Card 121 — index latest degradation events into a compact view
+    // index latest degradation events into a compact view
     // for the inspect panel. Read-only over existing event_log; null fields
     // when no degradation events have been logged yet.
     const degradationDiagnostics = this.getDegradationDiagnostics();
 
-    // M7.6 Card 125 — derive Action UI Intents from the same traceRows
+    // derive Action UI Intents from the same traceRows
     // (newest-first event_log slice) the trace[] / toolEvents views are
     // already built from. Pure builder, capped at 30 newest intents.
     // Wrapped in try/catch so a malformed row never breaks /api/inspect.
@@ -2066,7 +2066,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return this.workspace.getWorkspaceInfo();
   }
 
-  // M7.2 Card 82 — read-only workspace file API. Bound here because the
+  // read-only workspace file API. Bound here because the
   // SDK lives on the DO; src/workspaceFiles.ts holds path safety + filtering.
   @callable()
   async listWorkspaceFiles(rawPath: string | null | undefined): Promise<WorkspaceFileList> {
@@ -2078,7 +2078,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return readWorkspaceFile(this.workspace, rawPath);
   }
 
-  // ── M7.2 Card 84 — Agent Memory v1 ──────────────────────────────────────
+  // ── Agent Memory v1 ──────────────────────────────────────
   // See docs/design/agent-memory-v1.md. Profile boundary = this DO.
 
   @callable()
@@ -2300,7 +2300,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   }
 
   /**
-   * M7.3 Card 94 — explicit channel-ingress readiness predicate.
+   * explicit channel-ingress readiness predicate.
    *
    * Replaces ChannelHub's previous heuristic `currentTask !== null` (which
    * misfired when `currentTask` was a stale string but the actual loop was
@@ -2574,7 +2574,7 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-// Card 108a A.2 — diagnostic endpoint helpers. Lets reviewers capture the
+//  A.2 — diagnostic endpoint helpers. Lets reviewers capture the
 // raw `env.AI.run()` output for the four models in the dispatch saga, so we
 // can tell whether tool_calls land where workers-ai-provider expects them.
 const DIAG_MODEL_ALLOWLIST = [
@@ -2587,7 +2587,7 @@ const DIAG_MODEL_ALLOWLIST = [
 const DiagDispatchRequestSchema = z.object({
   model: z.enum(DIAG_MODEL_ALLOWLIST),
   prompt: z.string().min(1).max(2000),
-  // Card 108a A.2-stream — opt into streaming mode. When set, the endpoint
+  //  A.2-stream — opt into streaming mode. When set, the endpoint
   // calls env.AI.run(..., {stream: true}) and returns an SSE-chunk summary.
   stream: z.boolean().optional(),
 });
@@ -2654,7 +2654,7 @@ function summarizeDiagOutput(output: unknown): {
   };
 }
 
-// Card 108a A.2-stream — read SSE chunks from a Workers AI streaming response,
+//  A.2-stream — read SSE chunks from a Workers AI streaming response,
 // parse line-buffered `data: {...}` events, and return a summary of where
 // tool_calls (and content) appear across chunks. Bypasses workers-ai-provider's
 // own parser so we can tell whether tool_calls are dropped at the network
@@ -2794,13 +2794,13 @@ function summarizeDiagStreamChunks(chunks: unknown[]): {
   };
 }
 
-// M7.3 Card 93 — auto-route helper. After a successful inbound INSERT, the
+// auto-route helper. After a successful inbound INSERT, the
 // ingest endpoint calls this so addressed/trusted messages flow into the
 // AgentThursdayAgent loop without requiring a manual /api/channel/route-pending POST.
 // - bounded limit (5) keeps latency tight
 // - duplicate ingest skips this entirely (caller passes inserted=false)
 // - errors are swallowed; the ingest response still succeeds
-// - busy-skipped rows stay `received` (Card 93 invariant: do not consume the
+// - busy-skipped rows stay `received` ( invariant: do not consume the
 //   user's message just because the agent is busy)
 type AutoRouteSummary = {
   scanned: number;
@@ -2842,7 +2842,7 @@ async function autoRouteAfterIngest(
   }
 }
 
-// M7.2 Card 83 — map BrowserError to stable HTTP shapes; same message-prefix
+// map BrowserError to stable HTTP shapes; same message-prefix
 // reasoning as workspaceFileError (DO RPC erases JS class identity).
 function browserError(e: unknown): Response {
   const msg = String(e instanceof Error ? e.message : e);
@@ -2858,7 +2858,7 @@ function browserError(e: unknown): Response {
   return json({ code: "internal", message: msg }, 500);
 }
 
-// M7.2 Card 82 — map workspace file errors to HTTP shapes the web client knows.
+// map workspace file errors to HTTP shapes the web client knows.
 // Pattern-match by message because errors thrown inside @callable() DO methods
 // lose their JS class identity when serialized across the RPC boundary; the
 // stable contract is the `path:*` / `file:*` message prefixes set in
@@ -2938,7 +2938,7 @@ function homePage(): Response {
   <a href="/demo/status">/demo/status</a>
 </div>
 
-<h2>M4 TUI WORKFLOW DEMO (Card 47)</h2>
+<h2>M4 TUI WORKFLOW DEMO ()</h2>
 <div id="m4-tui-demo-box" class="review-box loop-no-task">
   <div class="stage-label" id="m4-demo-ready">loading...</div>
   <div id="m4-demo-stage">—</div>
@@ -2948,10 +2948,10 @@ function homePage(): Response {
 <h2>M3 CLI SESSION (M3)</h2>
 <pre id="cli-session">(no session yet)</pre>
 
-<h2>M3 CLI RESULT VIEW (Card 41)</h2>
+<h2>M3 CLI RESULT VIEW ()</h2>
 <pre id="cli-result-view">(submit a task and run doWork to see result view)</pre>
 
-<h2>M3 END-TO-END LOOP DEMO (Card 42)</h2>
+<h2>M3 END-TO-END LOOP DEMO ()</h2>
 <div id="m3-loop-demo-box" class="review-box loop-no-task">
   <div class="stage-label" id="m3-demo-ready">loading...</div>
   <div id="m3-demo-stage">—</div>
@@ -2982,7 +2982,7 @@ function homePage(): Response {
   <div id="gate-reason" style="margin-top:.5rem;color:#8b949e;">—</div>
 </div>
 
-<h2>M1.5 MUTATION REVIEW</h2>
+<h2>MUTATION REVIEW</h2>
 <div id="mutation-review-box" class="review-box mut-no-mutation">
   <div class="stage-label" id="mut-review-stage">loading...</div>
   <div id="mut-review-ready">—</div>
@@ -2990,14 +2990,14 @@ function homePage(): Response {
   <div id="mut-review-summary" style="margin-top:.5rem;color:#8b949e;">—</div>
 </div>
 
-<h2>M1.2 RECOVERY REVIEW</h2>
+<h2>RECOVERY REVIEW</h2>
 <div id="recovery-review-box" class="review-box stage-normal">
   <div class="stage-label" id="review-stage">loading...</div>
   <div id="review-ready">—</div>
   <div id="review-summary" style="margin-top:.5rem;color:#8b949e;">—</div>
 </div>
 
-<h2>M1.4 REAL ACTION REVIEW</h2>
+<h2>REAL ACTION REVIEW</h2>
 <div id="real-action-review-box" class="review-box real-no-execution">
   <div class="stage-label" id="real-review-stage">loading...</div>
   <div id="real-review-ready">—</div>
@@ -3005,7 +3005,7 @@ function homePage(): Response {
   <div id="real-review-summary" style="margin-top:.5rem;color:#8b949e;">—</div>
 </div>
 
-<h2>M1.3 EXECUTION REVIEW</h2>
+<h2>EXECUTION REVIEW</h2>
 <div id="execution-review-box" class="review-box exec-no-action">
   <div class="stage-label" id="exec-review-stage">loading...</div>
   <div id="exec-review-ready">—</div>
@@ -3031,7 +3031,7 @@ function homePage(): Response {
 <h2>COMMITTED NEXT ACTION</h2>
 <pre id="committed-action">Loading...</pre>
 
-<h2>REAL ACTION POLICY (M1.4)</h2>
+<h2>REAL ACTION POLICY ()</h2>
 <pre id="real-action-policy">Loading...</pre>
 
 <h2>ACTION EXECUTION CONTRACT</h2>
@@ -3049,7 +3049,7 @@ function homePage(): Response {
 <h2>RECENT CHECKPOINTS (real write)</h2>
 <pre id="recent-checkpoints">(no checkpoints written yet)</pre>
 
-<h2>RECENT KANBAN MUTATIONS (M1.5 real bounded)</h2>
+<h2>RECENT KANBAN MUTATIONS (real bounded)</h2>
 <pre id="recent-kanban-mutations">(no kanban mutations recorded yet)</pre>
 
 <h2>ACTION RESULT</h2>
@@ -3418,7 +3418,7 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(request.url);
 
-    // M7.1 Card 77: CORS preflight is exempt from auth (no header on OPTIONS).
+    // : CORS preflight is exempt from auth (no header on OPTIONS).
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
@@ -3429,7 +3429,7 @@ export default {
       return json({ ok: true, service: "agent-thursday", version: "0.1.0", agent: "AgentThursdayAgent", instance: DEMO_INSTANCE, timestamp: Date.now() });
     }
 
-    // M7.1 Card 77 + 78: auth only gates the data surface. The SPA shell
+    //  + 78: auth only gates the data surface. The SPA shell
     // (HTML/JS/CSS bundle served by ASSETS) must load without a secret so
     // SecretGate can prompt the user. SecretGate then probes /api/workspace
     // — a 401 means "wrong secret", a 503 means "worker misconfigured".
@@ -3521,7 +3521,7 @@ export default {
       return json(WorkspaceSnapshotSchema.parse(snapshot));
     }
 
-    // M7.5 Card 115 — Discord Gateway DO control surface. Auth-gated by
+    // Discord Gateway DO control surface. Auth-gated by
     // the global `requireSecret` check above. POST /start and /stop are
     // idempotent; GET /status is safe to poll. Status fields never include
     // tokens / shared secret / raw gateway frames.
@@ -3558,8 +3558,8 @@ export default {
     if (url.pathname === "/api/inspect" && request.method === "GET") {
       const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
       const snapshot: InspectSnapshot = await stub.getInspectSnapshot();
-      // Card 110 / 114 — best-effort cross-DO fetches against ContentHubAgent.
-      // Both `contentAudit` (raw rows) and `contentEvidence` (Card 114
+      //  / 114 — best-effort cross-DO fetches against ContentHubAgent.
+      // Both `contentAudit` (raw rows) and `contentEvidence` (
       // aggregated summary) are observability layers; failure must not
       // break the AgentThursdayAgent snapshot or each other.
       let contentAudit: Array<{ type: string; at: number; payload: unknown; traceId: string | null }> = [];
@@ -3578,7 +3578,7 @@ export default {
       return json(InspectSnapshotSchema.parse(merged));
     }
 
-    // M7.3 Card 103 — codemode self-probe. Bypasses the model loop; calls
+    // codemode self-probe. Bypasses the model loop; calls
     // executor.execute("return 1+1", []) directly so reviewers get ground
     // truth about whether `execute` is registered + functional. Auth-gated
     // (already covered by the global secret check above).
@@ -3588,7 +3588,7 @@ export default {
       return json(probe);
     }
 
-    // Card 108a A.2 — diagnostic endpoint for direct env.AI.run() capture.
+    //  A.2 — diagnostic endpoint for direct env.AI.run() capture.
     // Bypasses the workers-ai-provider adapter so we can see the raw shape
     // Workers AI returns for an allowlisted model + minimal tool schema.
     // Used to determine whether tool_calls land in the structural fields
@@ -3640,7 +3640,7 @@ export default {
       return json({ mode: "non-stream", ...summarizeDiagOutput(output) });
     }
 
-    // M7.2 Card 82 — workspace file manager (read-only).
+    // workspace file manager (read-only).
     if (url.pathname === "/api/workspace/files" && request.method === "GET") {
       const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
       try {
@@ -3661,7 +3661,7 @@ export default {
       }
     }
 
-    // M7.3 Card 85 — ChannelHub auth-gated stub endpoints.
+    // ChannelHub auth-gated stub endpoints.
     if (url.pathname === "/api/channel/inbound" && request.method === "POST") {
       let body: unknown;
       try {
@@ -3691,7 +3691,7 @@ export default {
       return json(ChannelSnapshotSchema.parse(snapshot));
     }
 
-    // M7.3 Card 89 — compact channel summary for default user-layer panel.
+    // compact channel summary for default user-layer panel.
     if (url.pathname === "/api/channel/summary" && request.method === "GET") {
       const stub = await getAgentByName<Env, ChannelHubAgent>(
         env.ChannelHubAgent as unknown as AgentNamespace<ChannelHubAgent>,
@@ -3701,7 +3701,7 @@ export default {
       return json(ChannelCompactSummarySchema.parse(summary));
     }
 
-    // M7.3 Card 88 — outbound text enqueue.
+    // outbound text enqueue.
     if (url.pathname === "/api/channel/outbound/text" && request.method === "POST") {
       let body: unknown;
       try { body = await request.json(); } catch { return json({ code: "request.invalid-json" }, 400); }
@@ -3723,7 +3723,7 @@ export default {
       }
     }
 
-    // M7.3 Card 88 — approval card enqueue.
+    // approval card enqueue.
     if (url.pathname === "/api/channel/outbound/approval" && request.method === "POST") {
       let body: unknown;
       try { body = await request.json(); } catch { return json({ code: "request.invalid-json" }, 400); }
@@ -3737,7 +3737,7 @@ export default {
       return json(EnqueueOutboundResultSchema.parse(result));
     }
 
-    // M7.3 Card 88 — deliver pending outbound (bridge or dry-run).
+    // deliver pending outbound (bridge or dry-run).
     if (url.pathname === "/api/channel/outbound/deliver-pending" && request.method === "POST") {
       let body: unknown = {};
       try { body = await request.json(); } catch { body = {}; }
@@ -3750,7 +3750,7 @@ export default {
       return json(DeliverPendingResultSchema.parse(result));
     }
 
-    // M7.3 Card 88 — approval resolve callback (bridge → AgentThursday button click).
+    // approval resolve callback (bridge → AgentThursday button click).
     if (url.pathname === "/api/channel/approval/resolve" && request.method === "POST") {
       let body: unknown;
       try { body = await request.json(); } catch { return json({ code: "request.invalid-json" }, 400); }
@@ -3764,12 +3764,12 @@ export default {
       return json(ApprovalResolveResultSchema.parse(result));
     }
 
-    // M7.3 Card 91 — direct Discord adapter: HTTP Interactions endpoint.
+    // direct Discord adapter: HTTP Interactions endpoint.
     // PUBLIC (no X-AgentThursday-Secret); authenticity comes from Discord's Ed25519
     // signature. CF Worker can't run the Gateway WebSocket, so normal
     // MESSAGE_CREATE arrives via the auth-gated /api/channel/discord/direct
     // path (below) — typically populated by a sidecar gateway runner OR by
-    // smoke tests using the Card 86 OpenClaw payload shape.
+    // smoke tests using the  OpenClaw payload shape.
     if (url.pathname === "/discord/interactions" && request.method === "POST") {
       const sig = request.headers.get("X-Signature-Ed25519");
       const ts = request.headers.get("X-Signature-Timestamp");
@@ -3894,8 +3894,8 @@ export default {
       return json({ type: 4, data: { content: "interaction type not supported", flags: 64 } });
     }
 
-    // M7.3 Card 91 — auth-gated direct ingest path. Same OpenClaw payload shape
-    // (Card 86) so a sidecar gateway runner can post message-create-shaped events
+    // auth-gated direct ingest path. Same OpenClaw payload shape
+    // () so a sidecar gateway runner can post message-create-shaped events
     // here without renaming the contract. Bridge endpoint /api/channel/discord/openclaw
     // is preserved as a compatibility alias.
     if (url.pathname === "/api/channel/discord/direct" && request.method === "POST") {
@@ -3903,7 +3903,7 @@ export default {
       try { body = await request.json(); } catch { return json({ code: "request.invalid-json" }, 400); }
       const parsed = OpenClawDiscordInboundSchema.safeParse(body);
       if (!parsed.success) return json({ code: "request.invalid-shape", issues: parsed.error.issues }, 400);
-      // Apply Card 91 Hermes-inspired filters BEFORE normalization so we don't
+      // Apply  Hermes-inspired filters BEFORE normalization so we don't
       // persist messages we'd just ignore. Bridge path (openclaw) keeps the
       // old behavior — operators can ingest unfiltered there.
       const cfg = loadDirectDiscordConfig(env);
@@ -3938,7 +3938,7 @@ export default {
       });
     }
 
-    // M7.3 Card 91 — Discord REST mock for smoke testing. When operators
+    // Discord REST mock for smoke testing. When operators
     // point DISCORD_API_BASE_URL at this prefix, sendDiscordMessage hits this
     // endpoint instead of discord.com. Returns a Discord-shaped {id} so the
     // sender can record providerMessageId. NOT auth-gated (the worker's own
@@ -3952,7 +3952,7 @@ export default {
       });
     }
 
-    // M7.3 Card 87 helper — set channel identity role (trusted/unknown).
+    //  helper — set channel identity role (trusted/unknown).
     if (url.pathname === "/api/channel/identity/role" && request.method === "POST") {
       let body: unknown;
       try { body = await request.json(); } catch { return json({ code: "request.invalid-json" }, 400); }
@@ -3976,7 +3976,7 @@ export default {
       return json(result);
     }
 
-    // M7.3 Card 87 — route pending inbox rows. Idempotent: only `received`
+    // route pending inbox rows. Idempotent: only `received`
     // status rows are picked up, others are skipped.
     if (url.pathname === "/api/channel/route-pending" && request.method === "POST") {
       let body: unknown = {};
@@ -3996,8 +3996,8 @@ export default {
       return json(ChannelRoutePendingResultSchema.parse(result));
     }
 
-    // M7.3 Card 86 — OpenClaw Discord bridge inbound. Translates the narrow
-    // OpenClaw payload into ChannelMessageEnvelope and persists via Card 85
+    // OpenClaw Discord bridge inbound. Translates the narrow
+    // OpenClaw payload into ChannelMessageEnvelope and persists via 
     // ingestInbound. Same /api/* auth gate; raw Discord JSON is NOT accepted.
     if (url.pathname === "/api/channel/discord/openclaw" && request.method === "POST") {
       let body: unknown;
@@ -4031,16 +4031,16 @@ export default {
       });
     }
 
-    // M7.2 Card 84 — Agent Memory v1 read-only snapshot.
+    // Agent Memory v1 read-only snapshot.
     if (url.pathname === "/api/memory" && request.method === "GET") {
       const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
       const snapshot = await stub.getMemorySnapshot();
       return json(MemorySnapshotSchema.parse(snapshot));
     }
 
-    // M7.4 Card 107 — ContentHub registry listing. Card 107 returns the
+    // ContentHub registry listing.  returns the
     // hardcoded `agentthursday-github` source with static `registry-only` health.
-    // Card 108 swaps the health probe for a real GitHub fetch and Card 110
+    //  swaps the health probe for a real GitHub fetch and 
     // adds inspect-layer events. Query params:
     //   ?includeHealth=false  → cheap listing without health field
     //   ?sourceId=<id>        → filter to a single source (404-shaped: empty array)
@@ -4058,7 +4058,7 @@ export default {
       return json(ContentSourcesResponseSchema.parse(result));
     }
 
-    // M7.4 Card 108 — ContentHub list endpoint. Body shape:
+    // ContentHub list endpoint. Body shape:
     //   { sourceId, path, ref? } → ContentListResponse (`{ ok, result|error }`)
     if (url.pathname === "/api/content/list" && request.method === "POST") {
       let body: unknown;
@@ -4073,7 +4073,7 @@ export default {
       return json(ContentListResponseSchema.parse(result));
     }
 
-    // M7.4 Card 108 — ContentHub read endpoint. Body shape:
+    // ContentHub read endpoint. Body shape:
     //   { sourceId, path, ref?, maxBytes? } → ContentReadResponse
     if (url.pathname === "/api/content/read" && request.method === "POST") {
       let body: unknown;
@@ -4088,7 +4088,7 @@ export default {
       return json(ContentReadResponseSchema.parse(result));
     }
 
-    // M7.4 Card 109 — ContentHub literal-search endpoint. Body shape:
+    // ContentHub literal-search endpoint. Body shape:
     //   { sourceId, query, path?, ref?, strategy?, maxResults? } → ContentSearchResponse
     // `strategy:"api-search"` (default) is fail-loud on quota; explicit
     // `strategy:"bounded-local"` returns degraded grep with searchedPaths +
@@ -4106,7 +4106,7 @@ export default {
       return json(ContentSearchResponseSchema.parse(result));
     }
 
-    // M7.2 Card 83 — Tier 3 headless browser smoke endpoint. Same auth/CORS
+    // Tier 3 headless browser smoke endpoint. Same auth/CORS
     // posture as the rest of /api/*. SSRF guard runs inside runBrowser.
     if (url.pathname === "/api/browser/run" && request.method === "POST") {
       let body: unknown;
@@ -4209,7 +4209,7 @@ export default {
       return json(result);
     }
 
-    // M7.1 Card 78: anything not handled above falls through to:
+    // : anything not handled above falls through to:
     //   1. agents library router (Durable Object websockets etc.)
     //   2. static SPA assets from web/dist (binding ASSETS in wrangler.toml)
     // The legacy `homePage()` HTML is no longer wired; left in source for now
