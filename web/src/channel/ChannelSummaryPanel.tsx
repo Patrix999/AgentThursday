@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useChannelSummary } from "../hooks/useChannelSummary";
 
 /**
- * compact, leak-safe channel status for the user-layer.
+ * M7.3 Card 89 — compact, leak-safe channel status for the user-layer.
  * Shows ONLY counts + last-inbound relative time. No provider message ids,
  * no payloads, no audit strings. The full inspect view (with row detail) is
  * gated behind the `/inspect` Channel tab.
@@ -10,7 +10,7 @@ import { useChannelSummary } from "../hooks/useChannelSummary";
  * Collapsible like MemoryPanel / WorkspaceFileManager.
  */
 export function ChannelSummaryPanel() {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const { data, loading, error } = useChannelSummary();
 
   return (

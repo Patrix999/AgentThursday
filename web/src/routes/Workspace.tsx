@@ -8,9 +8,7 @@ import { InspectDrawer } from "../shell/InspectDrawer";
 import { InspectEntry } from "../shell/InspectEntry";
 import { ThumbReachLayout } from "../mobile/ThumbReachLayout";
 import { MobileComposer } from "../mobile/MobileComposer";
-import { WorkspaceFileManager } from "../workspace/WorkspaceFileManager";
-import { MemoryPanel } from "../memory/MemoryPanel";
-import { ChannelSummaryPanel } from "../channel/ChannelSummaryPanel";
+import { ActivityFeed } from "../activity/ActivityFeed";
 
 /**
  * Default user-layer surface. Two independent shell trees — one shown only
@@ -40,19 +38,17 @@ export function Workspace() {
             inspectOpen={inspectOpen}
           />
           {errorBanner}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto" id="agent-thursday-main-scroll">
             <MainCardsArea snapshot={data} />
-            <ChannelSummaryPanel />
-            <MemoryPanel />
-            <WorkspaceFileManager />
             <SummaryStream snapshot={data} />
+            <ActivityFeed scrollContainerId="agent-thursday-main-scroll" />
           </div>
           <Composer snapshot={data} />
         </div>
         <InspectDrawer open={inspectOpen} onClose={() => setInspectOpen(false)} />
       </div>
 
-      {/* Mobile () */}
+      {/* Mobile shell */}
       <ThumbReachLayout
         top={
           <>
@@ -63,10 +59,8 @@ export function Workspace() {
         scroll={
           <>
             <MainCardsArea snapshot={data} hideApprovalActions />
-            <ChannelSummaryPanel />
-            <MemoryPanel />
-            <WorkspaceFileManager />
             <SummaryStream snapshot={data} />
+            <ActivityFeed />
           </>
         }
         inspect={<InspectEntry />}

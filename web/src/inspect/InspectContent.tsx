@@ -8,8 +8,10 @@ import { RecoverActions } from "./RecoverActions";
 import { ChannelTimeline } from "./ChannelTimeline";
 import { DegradationBanner } from "./DegradationBanner";
 import { useChannelSnapshot } from "../hooks/useChannelSnapshot";
+import { WorkspaceFileManager } from "../workspace/WorkspaceFileManager";
+import { MemoryPanel } from "../memory/MemoryPanel";
 
-type Tab = "ladder" | "trace" | "tools" | "channel" | "debug";
+type Tab = "ladder" | "trace" | "tools" | "channel" | "workspace" | "memory" | "debug";
 
 type Props = {
   data: InspectSnapshot | null;
@@ -19,7 +21,7 @@ type Props = {
 
 /**
  * Tab structure shared by InspectDrawer (desktop) and InspectRoute (mobile).
- *  added the Channel tab. ChannelHub state is fetched lazily — only
+ * Card 89 added the Channel tab. ChannelHub state is fetched lazily — only
  * when the Channel tab is active — same pattern as `useInspect(open)`.
  * RecoverActions sits below the tabs so it's always reachable.
  */
@@ -47,6 +49,8 @@ export function InspectContent({ data, loading, error }: Props) {
         {tab === "channel" && (
           <ChannelTimeline data={channel.data} loading={channel.loading} error={channel.error} />
         )}
+        {tab === "workspace" && <WorkspaceFileManager />}
+        {tab === "memory" && <MemoryPanel />}
       </div>
       <div className="border-t border-slate-800 px-4 py-3">
         <RecoverActions />
@@ -61,6 +65,8 @@ function Tabs({ current, onChange }: { current: Tab; onChange: (t: Tab) => void 
     { id: "trace", label: "Trace" },
     { id: "tools", label: "Tools" },
     { id: "channel", label: "Channel" },
+    { id: "workspace", label: "Workspace" },
+    { id: "memory", label: "Memory" },
     { id: "debug", label: "Debug" },
   ];
   return (
