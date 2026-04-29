@@ -2304,7 +2304,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
    *
    * Replaces ChannelHub's previous heuristic `currentTask !== null` (which
    * misfired when `currentTask` was a stale string but the actual loop was
-   * idle — Pat hit this in dogfood: 小d showed busy forever).
+   * idle — observed in dogfood: the bot showed busy forever).
    *
    * `canAccept` is the authority on whether ChannelHub may submit a new
    * channel-driven task on top of current state. The reason string is
