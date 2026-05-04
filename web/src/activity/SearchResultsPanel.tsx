@@ -9,7 +9,7 @@ type Props = {
 };
 
 /**
- * Card 127 — Search results panel. v1 surfaces what was searched and
+ * Search results panel. v1 surfaces what was searched and
  * where, not the hits themselves (search hits aren't persisted in
  * `event_log`; they're returned to the agent reply directly). When
  * we later persist `tool.content_search.ok` follow-up events we can

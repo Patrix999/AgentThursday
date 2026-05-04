@@ -1,18 +1,25 @@
 import { useEffect, useRef } from "react";
 import type { WorkspaceSnapshot } from "../../shared/schema";
+import { MarkdownText } from "../components/MarkdownText";
 
 type Props = { snapshot: WorkspaceSnapshot | null };
 
 /**
- * Renders only `summaryStream[]` — strings already humanized by the worker.
+ * Renders `summaryStream[]` — strings already humanized by the worker.
  *  guarantees no `event_payload` / raw tool JSON appears here.
  *
- *  §B-5: newest at the bottom (the worker emits ascending order),
- * with auto-scroll on new entries so users see the latest line.
+ * Newest at the bottom (the worker emits ascending order) with
+ * auto-scroll on new entries so users see the latest line.
+ *
+ * v2: user messages are now rendered inline so the user's own input
+ * shows up in the main dialog. Previously they were filtered out and
+ * the user task only surfaced as a separate `CurrentTaskCard` above
+ * the dialog. The task card is gone (moved to TopStatusBar badges);
+ * the dialog is now the single source of "what was said by whom".
  */
 export function SummaryStream({ snapshot }: Props) {
   const items = snapshot?.summaryStream ?? [];
-  const visible = items.filter((m) => m.kind !== "user");
+  const visible = items;
   const bottomRef = useRef<HTMLDivElement>(null);
   const lastIdRef = useRef<string | null>(null);
 
@@ -32,9 +39,17 @@ export function SummaryStream({ snapshot }: Props) {
     <div className="px-4 py-3">
       <ul className="space-y-2">
         {visible.map((m) => (
-          <li key={m.id} className="flex items-start gap-2 text-sm">
+          <li key={m.id} className="flex items-start gap-2 text-sm min-w-0">
             <KindLabel kind={m.kind} />
-            <span className="text-slate-200 whitespace-pre-wrap break-words">{m.text}</span>
+            {/* safe Markdown rendering. The renderer never
+                uses dangerouslySetInnerHTML, so injected `<script>`
+                tags or other raw HTML render as plain text. URL allowlist
+                blocks `javascript:` / `data:` schemes. `min-w-0` on the
+                <li> + overflow-x-auto on code blocks keep long URLs and
+                fenced code from widening the page. */}
+            <div className="flex-1 min-w-0">
+              <MarkdownText text={m.text} className="space-y-2 text-slate-200" />
+            </div>
           </li>
         ))}
       </ul>

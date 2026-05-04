@@ -1,10 +1,10 @@
 import { z } from "zod";
 
 /**
- * M7.1 Card 76 — Unified Object Model Schema and Worker Contract
+ * Unified Object Model Schema and Worker Contract
  *
- * Single source of truth for the data the new Web shell (Card 78),
- * Current Task View (Card 79), and inspect surface (Card 81) consume.
+ * Single source of truth for the data the new Web shell (),
+ * Current Task View (), and inspect surface () consume.
  * Built so 76 → 77/78 → 79 → 80/81 do not have to invent shapes.
  *
  * Legacy → new mapping (kept here so future readers can navigate):
@@ -13,23 +13,23 @@ import { z } from "zod";
  *   ---------------------------------|------------------------|-------------------------------------
  *   taskObject (TaskObject)          | M2 task lifecycle      | TaskView
  *   cliSession (CliSession)          | M3 cli session         | SessionView
- *   lastActionResult (ActionResult)  | M1.3 action result     | ArtifactView (kind="actionResult")
+ *   lastActionResult (ActionResult)  |  action result     | ArtifactView (kind="actionResult")
  *   developerLoopReview              | M2 reviewer            | summary text → MessageView (kind="summary")
  *                                    |                        | + traces → TraceEvent[] (inspect)
- *   pendingToolApproval              | M5.1 tool approval     | ApprovalView (kind="tool")
+ *   pendingToolApproval              |  tool approval     | ApprovalView (kind="tool")
  *   pendingKanbanMutations[]         | M2 mutation            | ApprovalView (kind="mutation")
- *   debugTrace.recentToolEvents[]    | M5.1 trace             | ToolEvent[] (inspect only)
- *   debugTrace.lastLadderTier        | M6.1 ladder            | TaskView.ladderTier + .ladderReason
- *   debugTrace.lastAssistantSummary  | M5.1                   | MessageView (kind="assistant")
+ *   debugTrace.recentToolEvents[]    |  trace             | ToolEvent[] (inspect only)
+ *   debugTrace.lastLadderTier        |  ladder            | TaskView.ladderTier + .ladderReason
+ *   debugTrace.lastAssistantSummary  |                    | MessageView (kind="assistant")
  *   deliverableGate.deliverable      | M2 deliverable         | ArtifactView (kind="deliverable")
  *
- * Card 79 user-layer reads only:
+ *  user-layer reads only:
  *   session, currentTask, summaryStream, pendingApproval, replyNeed, latestResult
- * Card 81 inspect-layer reads only:
+ *  inspect-layer reads only:
  *   inspectEntry (presence flags) + GET /api/inspect (full data)
  *
  * The /cli/* legacy endpoints stay live for TUI; a follow-up cleanup card
- * will retire them after Card 79 ships.
+ * will retire them after  ships.
  */
 
 export const SessionViewSchema = z.object({
@@ -113,12 +113,19 @@ export const WorkspaceSnapshotSchema = z.object({
   replyNeed: ReplyNeedSchema.nullable(),
   latestResult: ArtifactViewSchema.nullable(),
   inspectEntry: InspectEntrySchema,
+  // canonical active context identity (registry
+  // `context_active` pointer). The client uses this to reconcile its
+  // localStorage cache: if the value differs, the client updates
+  // `agent-thursday.contextId` and re-fetches under the canonical id. Carries
+  // ONLY the identity string; never any system prompt / SOUL / tool
+  // payload / hidden context content.
+  activeContextId: z.string(),
 });
 export type WorkspaceSnapshot = z.infer<typeof WorkspaceSnapshotSchema>;
 
 /**
- * Inspect surface shapes — the real data producer arrives in Card 81.
- * Card 76 only declares the contract and ships a stub returning empty arrays.
+ * Inspect surface shapes — the real data producer arrives in .
+ *  only declares the contract and ships a stub returning empty arrays.
  */
 
 export const TraceEventSchema = z.object({
@@ -147,7 +154,7 @@ export const ToolEventSchema = z.object({
 });
 export type ToolEvent = z.infer<typeof ToolEventSchema>;
 
-// Card 110 — ContentHub audit events surfaced via /api/inspect. Field shape
+// ContentHub audit events surfaced via /api/inspect. Field shape
 // is intentionally permissive (`payload: z.unknown()`) because the producer
 // (ContentHubAgent.logAudit) already capped/redacted before persisting; the
 // inspect surface just relays. `type` is one of `content.sources`,
@@ -160,8 +167,8 @@ export const ContentAuditEventSchema = z.object({
 });
 export type ContentAuditEvent = z.infer<typeof ContentAuditEventSchema>;
 
-// Card 114 — ContentHub evidence pack (aggregated audit summary). Sits next
-// to Card 110's raw `contentAudit` rows, NOT replacing them. Three pivot
+// ContentHub evidence pack (aggregated audit summary). Sits next
+// to 's raw `contentAudit` rows, NOT replacing them. Three pivot
 // views answer the reviewer's recurring questions:
 //   - byTraceId: in this agent round, what did it touch?
 //   - bySourceId: what's the cumulative usage of this source?
@@ -224,8 +231,8 @@ export const ContentAuditSummarySchema = z.object({
 });
 export type ContentAuditSummary = z.infer<typeof ContentAuditSummarySchema>;
 
-// M7.5 Card 121 — degradation diagnostics surface compact view schemas.
-// These mirror the JSON payloads emitted by Cards 117/119/102 events.
+// degradation diagnostics surface compact view schemas.
+// These mirror the JSON payloads emitted by  events.
 // `.passthrough()` lets the panel ride forward when those payloads grow;
 // it does NOT promote unknown fields into the typed view, just keeps them
 // for the raw `trace` consumer that already lives in `InspectSnapshot`.
@@ -282,21 +289,649 @@ export const DegradationDiagnosticsSchema = z.object({
 });
 export type DegradationDiagnostics = z.infer<typeof DegradationDiagnosticsSchema>;
 
-// M7.6 Card 125 — Action UI Intent backend view-model schemas. Mirror
+// Action UI Intent backend view-model schemas. Mirror
 // the types in `src/actionUiIntents.ts`; both kept in sync. The
 // component.props field is `z.unknown()` because each component name
 // has its own loose shape (DegradationCard sees a different prop set
 // than PauseCard); v1 trusts the backend builder and renders defensively.
+// Context lifecycle (inspect / reset) view-model schemas.
+// Mirror the types in `src/contextLifecycle.ts`. `parts` is a discriminated
+// union in the helper; expressed here as one passthrough object so future
+// part shapes ride forward without breaking the API.
+export const ContextInspectMessagePartSchema = z.object({
+  type: z.enum(["text", "tool", "other"]),
+}).passthrough();
+
+export const ContextInspectMessageSchema = z.object({
+  id: z.string(),
+  role: z.enum(["user", "assistant", "system"]),
+  parts: z.array(ContextInspectMessagePartSchema),
+  partsDropped: z.number().int().nonnegative(),
+});
+
+export const ContextInspectResultSchema = z.object({
+  totalMessageCount: z.number().int().nonnegative(),
+  byRole: z.object({
+    user: z.number().int().nonnegative(),
+    assistant: z.number().int().nonnegative(),
+    system: z.number().int().nonnegative(),
+  }),
+  visibleMessages: z.array(ContextInspectMessageSchema),
+  visibleStartIndex: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+  sanitizedAt: z.number().int(),
+  // Token / pressure stats are deferred to . v1 returns null so
+  // the panel can render a placeholder without a schema break later.
+  tokenSession: z.object({
+    in: z.number().int().nonnegative(),
+    out: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+  }).nullable(),
+  tokenTask: z.object({
+    in: z.number().int().nonnegative(),
+    out: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+  }).nullable(),
+  // context budget surface. Rail displays "全高 = 模型
+  // context window"; numbers only, no SOUL / system prompt / tool schema
+  // text leaks here. v1 uses chars/4 estimation (no tokenizer dep) and
+  // a small per-model max-window mapping; unknown models report
+  // `source:"unavailable"` and the UI falls back to message-stack mode.
+  contextBudget: z.object({
+    modelMaxTokens: z.number().int().nonnegative().nullable(),
+    // three-layer threshold policy from
+    // `contextWindowRegistry.ts`. `softCompactAt` (default ratio 0.5)
+    // is a UI hint only; `autoCompactAt` (0.7) is the hygiene loop
+    // trigger; `dangerAt` (0.85) is the red line. Old clients that
+    // only know `autoCompactAt` / `dangerAt` keep working; new client
+    // reads `softCompactAt` to draw the third threshold line.
+    softCompactAt: z.number().int().nonnegative().nullable().optional(),
+    autoCompactAt: z.number().int().nonnegative().nullable(),
+    dangerAt: z.number().int().nonnegative().nullable(),
+    usedTokens: z.number().int().nonnegative().nullable(),
+    visibleDialogTokens: z.number().int().nonnegative().nullable(),
+    systemOverheadTokens: z.number().int().nonnegative().nullable(),
+    systemOverheadBreakdown: z.object({
+      systemPrompt: z.number().int().nonnegative().optional(),
+      soul: z.number().int().nonnegative().optional(),
+      tools: z.number().int().nonnegative().optional(),
+      skills: z.number().int().nonnegative().optional(),
+      other: z.number().int().nonnegative().optional(),
+    }),
+    source: z.enum(["estimated", "provider", "unavailable"]),
+  }),
+});
+export type ContextInspectResult = z.infer<typeof ContextInspectResultSchema>;
+
+export const ContextResetResultSchema = z.object({
+  ok: z.boolean(),
+  beforeMessageCount: z.number().int().nonnegative(),
+  afterMessageCount: z.number().int().nonnegative(),
+  reason: z.string().nullable(),
+  preservedDurableState: z.boolean(),
+  timestamp: z.number().int(),
+});
+export type ContextResetResult = z.infer<typeof ContextResetResultSchema>;
+
+// v3 Context history / new-context (v1 reset-style fallback).
+// True multi-DO context switching is deferred to ; v1 closes the
+// active context_history row, opens a new one with a fresh contextId, and
+// clears messages in the same DO. Old transcripts are NOT preserved (only
+// the audit row + per-context event_log entries survive); this limitation
+// is recorded explicitly in `rawMessagesPreservedInOldContext`.
+export const ActiveContextSchema = z.object({
+  contextId: z.string(),
+  reason: z.string().nullable(),
+  createdAt: z.number().int(),
+});
+export type ActiveContext = z.infer<typeof ActiveContextSchema>;
+
+export const ContextHistoryEntrySchema = z.object({
+  contextId: z.string(),
+  reason: z.string().nullable(),
+  createdAt: z.number().int(),
+  endedAt: z.number().int().nullable(),
+  messageCountAtEnd: z.number().int().nullable(),
+  isActive: z.boolean(),
+});
+export type ContextHistoryEntry = z.infer<typeof ContextHistoryEntrySchema>;
+
+export const ContextHistoryListSchema = z.object({
+  contexts: z.array(ContextHistoryEntrySchema),
+});
+export type ContextHistoryList = z.infer<typeof ContextHistoryListSchema>;
+
+export const NewContextResultSchema = z.object({
+  ok: z.boolean(),
+  previousContextId: z.string(),
+  newContextId: z.string(),
+  reason: z.string().nullable(),
+  beforeMessageCount: z.number().int().nonnegative(),
+  afterMessageCount: z.number().int().nonnegative(),
+  preservedDurableState: z.boolean(),
+  // v3 per-context DO routing flips this to `true` for
+  // contexts created from v2 onwards. v1-era contexts (created before
+  // routing was in place) are still flagged `false` in their original
+  // audit rows because their raw transcripts were cleared in the
+  // single-DO model. Live result of `newContext` always reports `true`
+  // under v2 because it never clears messages.
+  rawMessagesPreservedInOldContext: z.boolean(),
+  // Free-form note for forward compatibility — v1 used this to flag the
+  // reset-style fallback; v2 uses it to confirm per-context routing is
+  // active and to point at the routing semantics.
+  v1FallbackNote: z.string(),
+  timestamp: z.number().int(),
+});
+export type NewContextResult = z.infer<typeof NewContextResultSchema>;
+
+// v3 switch active context to an existing context_history
+// id. Audit-only on the registry DO; per-context DOs continue to own
+// their messages independently. `previousContextId` may equal
+// `newContextId` if the operator switches to the already-active context
+// (no-op success).
+export const SwitchContextResultSchema = z.object({
+  ok: z.boolean(),
+  previousContextId: z.string(),
+  newContextId: z.string(),
+  reason: z.string().nullable(),
+  activatedAt: z.number().int(),
+});
+export type SwitchContextResult = z.infer<typeof SwitchContextResultSchema>;
+
+// Conversation Archive ingestion. `drainForArchive`
+// runs on a per-context DO and returns its full sanitized message log
+// (no `lastN` cap, intentionally — the  public snapshot caps
+// at 200 which would silently truncate older contexts during
+// archival). `archiveChunks` runs on the registry DO and writes the
+// chunks into the canonical `conversation_archive` table.
+export const ArchiveChunkInputSchema = z.object({
+  messageId: z.string(),
+  messageIndex: z.number().int().nonnegative(),
+  role: z.enum(["user", "assistant", "system"]),
+  text: z.string(),
+  indexText: z.string(),
+  isSyntheticCompaction: z.boolean(),
+});
+export type ArchiveChunkInput = z.infer<typeof ArchiveChunkInputSchema>;
+
+export const DrainForArchiveResultSchema = z.object({
+  contextId: z.string(),
+  snapshotAt: z.number().int(),
+  chunks: z.array(ArchiveChunkInputSchema),
+  totalMessageCount: z.number().int().nonnegative(),
+});
+export type DrainForArchiveResult = z.infer<typeof DrainForArchiveResultSchema>;
+
+export const ArchiveTriggerSchema = z.enum(["context.new", "context.reset", "manual"]);
+export type ArchiveTrigger = z.infer<typeof ArchiveTriggerSchema>;
+
+export const ArchiveChunksInputSchema = z.object({
+  contextId: z.string(),
+  trigger: ArchiveTriggerSchema,
+  chunks: z.array(ArchiveChunkInputSchema),
+  reason: z.string().nullable().optional(),
+});
+export type ArchiveChunksInput = z.infer<typeof ArchiveChunksInputSchema>;
+
+export const ArchiveFlushResultSchema = z.object({
+  flushId: z.string(),
+  contextId: z.string(),
+  trigger: z.string(),
+  chunkCount: z.number().int().nonnegative(),
+  messageCount: z.number().int().nonnegative(),
+  status: z.enum(["ok", "failed", "skipped"]),
+  error: z.string().nullable(),
+  archivedAt: z.number().int(),
+});
+export type ArchiveFlushResult = z.infer<typeof ArchiveFlushResultSchema>;
+
+// `conversation_search` over the registry's
+// `conversation_archive`. Defaults: cross-context (no `contextId`
+// filter); topK clamped to [1, 10] with default 3; snippet cap 300
+// chars per hit. Hits include source refs but NOT raw tool payloads
+// or system content ( sanitization preserved upstream during
+// archive ingestion).
+export const ConversationSearchInputSchema = z.object({
+  query: z.string().min(1).max(500),
+  contextId: z.string().optional(),
+  fromTimestamp: z.number().int().optional(),
+  toTimestamp: z.number().int().optional(),
+  role: z.enum(["user", "assistant", "system"]).optional(),
+  topK: z.number().int().positive().max(10).optional(),
+  snippetCap: z.number().int().positive().max(2000).optional(),
+  // Caller-supplied audit identity; logged but not used for filtering.
+  callerContextId: z.string().optional(),
+  callerTaskId: z.string().optional(),
+  traceId: z.string().optional(),
+});
+export type ConversationSearchInput = z.infer<typeof ConversationSearchInputSchema>;
+
+export const ConversationSearchHitSchema = z.object({
+  chunkId: z.string(),
+  contextId: z.string(),
+  messageId: z.string().nullable(),
+  messageIndex: z.number().int().nonnegative().nullable(),
+  role: z.string().nullable(),
+  trigger: z.string(),
+  archivedAt: z.number().int(),
+  snippet: z.string(),
+  matchReason: z.string(),
+  isSyntheticCompaction: z.boolean(),
+});
+export type ConversationSearchHit = z.infer<typeof ConversationSearchHitSchema>;
+
+export const ConversationSearchResultSchema = z.object({
+  ok: z.boolean(),
+  retrievalId: z.string(),
+  query: z.string(),
+  topK: z.number().int().positive(),
+  snippetCap: z.number().int().positive(),
+  hits: z.array(ConversationSearchHitSchema),
+  resultCount: z.number().int().nonnegative(),
+  searchedAt: z.number().int(),
+  // Echoed back for caller transparency. The audit row records the
+  // same values plus filters_json.
+  filters: z.object({
+    contextId: z.string().nullable(),
+    fromTimestamp: z.number().int().nullable(),
+    toTimestamp: z.number().int().nullable(),
+    role: z.string().nullable(),
+  }),
+});
+export type ConversationSearchResult = z.infer<typeof ConversationSearchResultSchema>;
+
+// archive / retrieval Inspect surface. Read-only
+// summary the operator inspects to see what was archived, what was
+// searched, and where failures landed. Hard-capped so the default
+// payload never carries full archive text.
+export const ArchiveFlushRowSchema = z.object({
+  flushId: z.string(),
+  contextId: z.string(),
+  trigger: z.string(),
+  chunkCount: z.number().int().nonnegative(),
+  messageCount: z.number().int().nonnegative(),
+  status: z.enum(["ok", "failed", "skipped"]),
+  reason: z.string().nullable(),
+  error: z.string().nullable(),
+  createdAt: z.number().int(),
+});
+export type ArchiveFlushRow = z.infer<typeof ArchiveFlushRowSchema>;
+
+export const RetrievalLogRowSchema = z.object({
+  retrievalId: z.string(),
+  query: z.string(), // already capped server-side
+  filtersJson: z.string().nullable(),
+  returnedRefs: z.array(z.object({
+    chunkId: z.string(),
+    contextId: z.string(),
+  })),
+  callerContextId: z.string().nullable(),
+  callerTaskId: z.string().nullable(),
+  traceId: z.string().nullable(),
+  resultCount: z.number().int().nonnegative(),
+  createdAt: z.number().int(),
+});
+export type RetrievalLogRow = z.infer<typeof RetrievalLogRowSchema>;
+
+export const ArchiveContextCountSchema = z.object({
+  contextId: z.string(),
+  trigger: z.string(),
+  chunkCount: z.number().int().nonnegative(),
+  latestArchivedAt: z.number().int(),
+});
+export type ArchiveContextCount = z.infer<typeof ArchiveContextCountSchema>;
+
+export const ArchiveInspectSummarySchema = z.object({
+  // Aggregated counters for the dashboard top.
+  totals: z.object({
+    archiveChunkTotal: z.number().int().nonnegative(),
+    archiveContextCount: z.number().int().nonnegative(),
+    flushTotal: z.number().int().nonnegative(),
+    flushFailedTotal: z.number().int().nonnegative(),
+    retrievalTotal: z.number().int().nonnegative(),
+  }),
+  recentFlushes: z.array(ArchiveFlushRowSchema),
+  recentRetrievals: z.array(RetrievalLogRowSchema),
+  countsByContext: z.array(ArchiveContextCountSchema),
+  generatedAt: z.number().int(),
+});
+export type ArchiveInspectSummary = z.infer<typeof ArchiveInspectSummarySchema>;
+
+// Continuous Context Hygiene loop v1.
+// `runContextHygiene` evaluates context pressure and decides:
+//   - skipped: pressure below threshold, nothing to do
+//   - proposed: pressure high but a risk gate fired; plan recorded but
+//     not applied
+//   - auto-applied: pressure high, all gates clear; 
+//     applyCompactPlan succeeded
+//   - failed: applyCompactPlan threw or returned partial rejection
+// Manual-trigger only in v1; scheduled triggers are opt-in via a
+// future card.
+export const HygieneTriggerSchema = z.enum([
+  "manual-check",
+  "scheduled",
+  "pressure-threshold",
+]);
+export type HygieneTrigger = z.infer<typeof HygieneTriggerSchema>;
+
+export const HygieneRunInputSchema = z.object({
+  trigger: HygieneTriggerSchema.optional(),
+  pressureThreshold: z.number().int().positive().optional(),
+  // When true (default), apply when safe; when false, always
+  // produce a proposal without applying. Useful for dry-run probes
+  // that just want to see what hygiene would do.
+  autoApply: z.boolean().optional(),
+});
+export type HygieneRunInput = z.infer<typeof HygieneRunInputSchema>;
+
+export const HygieneDecisionSchema = z.enum([
+  "skipped",
+  "proposed",
+  "auto-applied",
+  "failed",
+]);
+export type HygieneDecision = z.infer<typeof HygieneDecisionSchema>;
+
+export const HygieneRiskConditionSchema = z.enum([
+  "pending_tool_approval",
+  "waiting_for_human",
+  "current_obstacle_blocked",
+  "auto_apply_disabled",
+  "no_compactable_ranges",
+  "below_pressure_threshold",
+]);
+export type HygieneRiskCondition = z.infer<typeof HygieneRiskConditionSchema>;
+
+export const HygieneProposedRangeSchema = z.object({
+  rangeId: z.string(),
+  fromMessageId: z.string(),
+  toMessageId: z.string(),
+  fromIndex: z.number().int().nonnegative(),
+  toIndex: z.number().int().nonnegative(),
+  messageCount: z.number().int().positive(),
+  estimatedReduction: z.number().int().nonnegative(),
+});
+
+export const HygieneRunResultSchema = z.object({
+  ok: z.boolean(),
+  runId: z.string(),
+  trigger: HygieneTriggerSchema,
+  decision: HygieneDecisionSchema,
+  reason: z.string().nullable(),
+  pressureMessageCount: z.number().int().nonnegative(),
+  pressureThreshold: z.number().int().nonnegative(),
+  beforeMessageCount: z.number().int().nonnegative(),
+  afterMessageCount: z.number().int().nullable(),
+  archiveFlushId: z.string().nullable(),
+  appliedCompactPlanId: z.string().nullable(),
+  riskConditions: z.array(HygieneRiskConditionSchema),
+  proposedRanges: z.array(HygieneProposedRangeSchema),
+  createdAt: z.number().int(),
+});
+export type HygieneRunResult = z.infer<typeof HygieneRunResultSchema>;
+
+// auditable compact MVP. Mirrors `Session.addCompaction`
+// shape; the `summaryPreview` here is capped server-side so a long
+// summary doesn't bloat the inspect API. `compactedRangeSize` is the
+// authoritative count of messages folded into this overlay (always
+// meaningful even when `getMessages()` length is unchanged because
+// the SDK overlay leaves the tree intact).
+export const StoredCompactionViewSchema = z.object({
+  id: z.string(),
+  summaryPreview: z.string(),
+  summaryLength: z.number().int().nonnegative(),
+  fromMessageId: z.string(),
+  toMessageId: z.string(),
+  createdAt: z.string(),
+});
+export type StoredCompactionView = z.infer<typeof StoredCompactionViewSchema>;
+
+export const CompactContextResultSchema = z.object({
+  ok: z.boolean(),
+  reason: z.string().nullable(),
+  // Range that was compacted (indices into `getMessages()` snapshot at
+  // call time, inclusive on both ends).
+  fromIndex: z.number().int().nonnegative(),
+  toIndex: z.number().int().nonnegative(),
+  fromMessageId: z.string(),
+  toMessageId: z.string(),
+  compactedRangeSize: z.number().int().positive(),
+  // Pre/post snapshots from the app-visible message view. Runtime smoke
+  // showed this Think integration applies compaction overlays to
+  // `getMessages()` as well as `Session.getHistory()`, while the SDK still
+  // preserves the underlying stored message tree. Both values are surfaced
+  // honestly so reviewers see exactly what happened.
+  beforeMessageCount: z.number().int().nonnegative(),
+  afterMessageCount: z.number().int().nonnegative(),
+  modelVisibleAfter: z.number().int().nonnegative().nullable(),
+  // Compaction record returned by `Session.addCompaction`.
+  compaction: StoredCompactionViewSchema,
+  summaryTruncated: z.boolean(),
+  preservedDurableState: z.boolean(),
+  timestamp: z.number().int(),
+});
+export type CompactContextResult = z.infer<typeof CompactContextResultSchema>;
+
+export const CompactionsListSchema = z.object({
+  compactions: z.array(StoredCompactionViewSchema),
+});
+export type CompactionsList = z.infer<typeof CompactionsListSchema>;
+
+//  v2 Context snapshot for anchor-aware planning. Mirrors
+// `buildContextSnapshot` in `src/contextLifecycle.ts`. `parts` reuses the
+// passthrough  schema so any future part shapes ride forward
+// without breaking the API. `compactedRanges` resolves message-ID
+// endpoints against the FULL message log so unresolved entries
+// (synthetic-as-from / no longer present) are surfaced honestly via
+// `isResolvableInCurrentView:false` rather than silently dropped.
+export const ContextSnapshotMessageSchema = z.object({
+  id: z.string(),
+  index: z.number().int().nonnegative(),
+  role: z.enum(["user", "assistant", "system"]),
+  parts: z.array(ContextInspectMessagePartSchema),
+  partsDropped: z.number().int().nonnegative(),
+  isSyntheticCompaction: z.boolean(),
+  anchorEligible: z.boolean(),
+});
+
+export const ContextSnapshotCompactedRangeSchema = z.object({
+  id: z.string(),
+  fromMessageId: z.string(),
+  toMessageId: z.string(),
+  summaryPreview: z.string(),
+  summaryLength: z.number().int().nonnegative(),
+  createdAt: z.string(),
+  fromIndex: z.number().int().nonnegative().nullable(),
+  toIndex: z.number().int().nonnegative().nullable(),
+  isResolvableInCurrentView: z.boolean(),
+});
+
+export const ContextSnapshotResultSchema = z.object({
+  totalMessageCount: z.number().int().nonnegative(),
+  visibleStartIndex: z.number().int().nonnegative(),
+  messages: z.array(ContextSnapshotMessageSchema),
+  compactedRanges: z.array(ContextSnapshotCompactedRangeSchema),
+  messageIsSyntheticCompaction: z.record(z.string(), z.boolean()),
+  sanitizedAt: z.number().int(),
+});
+export type ContextSnapshotResult = z.infer<typeof ContextSnapshotResultSchema>;
+
+//  v2 deterministic anchor classifier output. Per-message
+// classification (anchors AND non-anchors) so the planner can also see
+// which messages are NOT preserved. `reasons` is a list, not a single
+// label, so callers can audit every rule that fired.
+export const ContextAnchorReasonSchema = z.enum([
+  "first-k",
+  "explicit-anchor",
+  "rule-or-constraint",
+  "long-user-briefing",
+  "memory-or-workflow-instruction",
+  "handoff-or-version-marker",
+]);
+
+export const ContextAnchorClassificationSchema = z.object({
+  id: z.string(),
+  index: z.number().int().nonnegative(),
+  role: z.enum(["user", "assistant", "system"]),
+  isAnchor: z.boolean(),
+  reasons: z.array(ContextAnchorReasonSchema),
+  confidence: z.enum(["high", "medium", "low"]),
+  preview: z.string(),
+});
+
+export const ContextAnchorsResultSchema = z.object({
+  snapshot: z.object({
+    totalMessageCount: z.number().int().nonnegative(),
+    visibleStartIndex: z.number().int().nonnegative(),
+    sanitizedAt: z.number().int(),
+  }),
+  options: z.object({
+    firstK: z.number().int().nonnegative(),
+    lastN: z.number().int().positive(),
+  }),
+  anchors: z.array(ContextAnchorClassificationSchema),
+  anchorCount: z.number().int().nonnegative(),
+  classifiedAt: z.number().int(),
+});
+export type ContextAnchorsResult = z.infer<typeof ContextAnchorsResultSchema>;
+
+//  v2 compact plan / apply split. The plan is a read-only
+// dry-run proposal of safe ID-based compaction ranges; apply takes a plan
+// back and re-runs all pre-flight checks against a fresh snapshot before
+// each `addCompaction` call. No automatic compaction; no LLM summary.
+export const CompactPlanInputSchema = z.object({
+  lastN: z.number().int().positive().optional(),
+  firstK: z.number().int().nonnegative().optional(),
+  keepRecent: z.number().int().nonnegative().optional(),
+  minRangeMessages: z.number().int().positive().optional(),
+  pressureThreshold: z.number().int().nonnegative().optional(),
+});
+export type CompactPlanInput = z.infer<typeof CompactPlanInputSchema>;
+
+export const CompactPlanStrategySchema = z.object({
+  lastN: z.number().int().positive(),
+  firstK: z.number().int().nonnegative(),
+  keepRecent: z.number().int().nonnegative(),
+  minRangeMessages: z.number().int().positive(),
+  pressureThreshold: z.number().int().nonnegative(),
+});
+
+export const CompactPlanPreservedSchema = z.object({
+  id: z.string(),
+  index: z.number().int().nonnegative(),
+  reasons: z.array(z.string()),
+  preview: z.string(),
+});
+
+//  v2 medium-tier anchors lifted into the compact
+// summary. Optional + omitted when empty so older plans / clients
+// continue to parse cleanly.
+export const SummaryPreservedAnchorSchema = z.object({
+  id: z.string(),
+  index: z.number().int().nonnegative(),
+  reasons: z.array(z.string()),
+  preview: z.string(),
+});
+
+export const CompactPlanRangeSchema = z.object({
+  rangeId: z.string(),
+  fromMessageId: z.string(),
+  toMessageId: z.string(),
+  fromIndex: z.number().int().nonnegative(),
+  toIndex: z.number().int().nonnegative(),
+  messageCount: z.number().int().positive(),
+  estimatedReduction: z.number().int().nonnegative(),
+  previews: z.array(z.string()),
+  summaryPreservedAnchors: z.array(SummaryPreservedAnchorSchema).optional(),
+});
+
+export const CompactPlanRejectionSchema = z.object({
+  reason: z.string(),
+  detail: z.string(),
+});
+
+export const CompactPlanResultSchema = z.object({
+  planId: z.string(),
+  strategy: CompactPlanStrategySchema,
+  snapshot: z.object({
+    totalMessageCount: z.number().int().nonnegative(),
+    visibleStartIndex: z.number().int().nonnegative(),
+    sanitizedAt: z.number().int(),
+  }),
+  pressure: z.object({
+    beforeMessages: z.number().int().nonnegative(),
+    estimatedAfterMessages: z.number().int().nonnegative(),
+    estimatedReduction: z.number().int().nonnegative(),
+  }),
+  preserved: z.array(CompactPlanPreservedSchema),
+  ranges: z.array(CompactPlanRangeSchema),
+  rejected: z.array(CompactPlanRejectionSchema),
+  createdAt: z.string(),
+});
+export type CompactPlanResult = z.infer<typeof CompactPlanResultSchema>;
+
+//  v2 semantic summary advisor audit. Optional + emitted
+// only when the advisor was invoked (input.semanticAdvisor === true on
+// apply). `qualityFlags` documents validator outcomes; `fallbackReason`
+// is null on success and populated when the deterministic summary was
+// used instead.
+export const SemanticSummaryAuditSchema = z.object({
+  sourceCompactionId: z.string().nullable(),
+  fromMessageId: z.string(),
+  toMessageId: z.string(),
+  deterministicSummaryHash: z.string(),
+  semanticModel: z.string().nullable(),
+  semanticPromptVersion: z.string(),
+  trigger: z.enum(["manual", "high_pressure", "phase_boundary", "degradation_suspicion"]).nullable(),
+  createdAt: z.string(),
+  fallbackReason: z.string().nullable(),
+  qualityFlags: z.array(z.string()),
+  latencyMs: z.number().int().nullable(),
+});
+
+export const SemanticAdvisorAppliedSchema = z.object({
+  ok: z.boolean(),
+  audit: SemanticSummaryAuditSchema,
+});
+
+export const CompactPlanAppliedRangeSchema = z.object({
+  rangeId: z.string(),
+  compactionId: z.string(),
+  fromMessageId: z.string(),
+  toMessageId: z.string(),
+  beforeCount: z.number().int().nonnegative(),
+  afterCount: z.number().int().nonnegative(),
+  semanticAdvisor: SemanticAdvisorAppliedSchema.optional(),
+});
+
+export const CompactPlanRejectedRangeSchema = z.object({
+  rangeId: z.string(),
+  reason: z.string(),
+  detail: z.string(),
+});
+
+export const CompactPlanApplyResultSchema = z.object({
+  ok: z.boolean(),
+  planId: z.string(),
+  appliedRanges: z.array(CompactPlanAppliedRangeSchema),
+  rejectedRanges: z.array(CompactPlanRejectedRangeSchema),
+  beforeCount: z.number().int().nonnegative(),
+  afterCount: z.number().int().nonnegative(),
+  deadRecordDetected: z.boolean(),
+  timestamp: z.number().int(),
+});
+export type CompactPlanApplyResult = z.infer<typeof CompactPlanApplyResultSchema>;
+
 export const ActionUiIntentSchema = z.object({
   id: z.string(),
   taskId: z.string().nullable(),
   sourceEventType: z.string(),
   sourceEventAt: z.number().int(),
-  // Card 127 — added 3 tool-specific intent types alongside Card 125's
+  // added 3 tool-specific intent types alongside 's
   // 4 baseline types. The new types upgrade specific tool families
   // (content_search / content_read / execute / sandbox_exec) from the
   // generic chrome to dedicated panels with whitelisted props.
-  // Card 128 — added `tool.workspace_mutation` for write/edit-shaped
+  // added `tool.workspace_mutation` for write/edit-shaped
   // events (checkpoint writes and future tool.workspace.* prefix).
   type: z.enum([
     "agent.degradation",
@@ -342,26 +977,26 @@ export const InspectSnapshotSchema = z.object({
   trace: z.array(TraceEventSchema),
   toolEvents: z.array(ToolEventSchema),
   debugRaw: z.unknown(),
-  // Card 110 — most-recent ContentHub audit events. Newest-first. Empty
+  // most-recent ContentHub audit events. Newest-first. Empty
   // array when ContentHub has not been touched in the visible window.
   contentAudit: z.array(ContentAuditEventSchema).optional(),
-  // Card 114 — aggregated evidence-pack view computed by ContentHubAgent
+  // aggregated evidence-pack view computed by ContentHubAgent
   // over the same audit rows. Best-effort: cross-DO fetch failures leave
   // this field undefined without breaking the rest of the snapshot.
   contentEvidence: ContentAuditSummarySchema.optional(),
-  // M7.5 Card 121 — read-only degradation diagnostics. Indexed view of
-  // events Cards 117/119/102 already log into event_log. Optional so a DO
+  // read-only degradation diagnostics. Indexed view of
+  // events  already log into event_log. Optional so a DO
   // with no degradation events yet returns clean.
   degradationDiagnostics: DegradationDiagnosticsSchema.optional(),
-  // M7.6 Card 125 — Action UI Intent index for Action-aware Gen UI.
+  // Action UI Intent index for Action-aware Gen UI.
   // Derived on read from event_log; capped at 30 newest-first. Optional
-  // so older clients ignore the field; Card 126 frontend will consume.
+  // so older clients ignore the field;  frontend will consume.
   actionUiIntents: z.array(ActionUiIntentSchema).optional(),
 });
 export type InspectSnapshot = z.infer<typeof InspectSnapshotSchema>;
 
 /**
- * M7.2 Card 82 — workspace file manager (read-only).
+ * workspace file manager (read-only).
  * Maps `@cloudflare/shell` `Workspace.readDir` / `readFile` / `stat` outputs
  * into a stable contract the web client consumes. Hidden paths
  * (`.dev.vars`, `.env`, `.wrangler`, `node_modules`, `.git`) are filtered
@@ -392,7 +1027,7 @@ export const WorkspaceFileContentSchema = z.object({
 export type WorkspaceFileContent = z.infer<typeof WorkspaceFileContentSchema>;
 
 /**
- * M7.2 Card 83 — Tier 3 headless browser tool contract.
+ * Tier 3 headless browser tool contract.
  *
  * The agent (and the smoke endpoint) sends `BrowserRunRequest` and gets back
  * `BrowserRunResult`. SSRF defenses + size caps live in `src/browser.ts`.
@@ -427,7 +1062,7 @@ export const BrowserRunResultSchema = z.object({
 export type BrowserRunResult = z.infer<typeof BrowserRunResultSchema>;
 
 /**
- * M7.2 Card 84 — Agent Memory v1.
+ * Agent Memory v1.
  * See docs/design/agent-memory-v1.md for the full design.
  *
  * Taxonomy mirrors Cloudflare's Agent Memory blog (2026-04-17): facts,
@@ -465,7 +1100,7 @@ export type MemoryRecallMatch = z.infer<typeof MemoryRecallMatchSchema>;
 /**
  * GET /api/memory snapshot. Compact, leak-free shape for Web user layer.
  * Counts by type + recent active facts/instructions/events/tasks.
- * Card 84 §F-18: "show active facts/instructions and recent events/tasks".
+ *  §F-18: "show active facts/instructions and recent events/tasks".
  */
 export const MemorySnapshotSchema = z.object({
   counts: z.object({
@@ -483,11 +1118,11 @@ export const MemorySnapshotSchema = z.object({
 export type MemorySnapshot = z.infer<typeof MemorySnapshotSchema>;
 
 /**
- * M7.3 Card 85 — ChannelHub envelopes & storage row schemas.
+ * ChannelHub envelopes & storage row schemas.
  *
  * Provider-agnostic. Discord-first but no schema field is Discord-specific.
- * See `docs/milestones/M7.3-multi-channel-communication-middle-layer.md`
- * and `docs/design/M7.3-review-notes.md`.
+ * See `docs/milestones/-multi-channel-communication-middle-layer.md`
+ * and `docs/design/-review-notes.md`.
  *
  * v1 P0 outbound is text-only — no `presentation.blocks/tone` (premature
  * pollution per review §5). Approval is reserved as a future `kind`
@@ -541,7 +1176,7 @@ export const ChannelMessageEnvelopeSchema = z.object({
 export type ChannelMessageEnvelope = z.infer<typeof ChannelMessageEnvelopeSchema>;
 
 /**
- * Outbound discriminated union. P0 has `text` (Card 85) + `approval` (Card 88).
+ * Outbound discriminated union. P0 has `text` () + `approval` ().
  * No generic `presentation.blocks/tone` (review notes §5).
  */
 const DeliveryPolicySchema = z.object({
@@ -562,11 +1197,11 @@ const OutboundTextMessageSchema = z.object({
 });
 
 /**
- * Card 88 — Hermes-style approval card. Rendered to Discord as a text
+ * Hermes-style approval card. Rendered to Discord as a text
  * fallback + structured `approval` block so the bridge can attach buttons
  * if its surface supports them. Scope buttons mirror Hermes:
  * once / session / always / deny. `always` is gated behind an env flag
- * (Card 88 §C-13); when gating is on, the bridge should hide/disable that
+ * ( §C-13); when gating is on, the bridge should hide/disable that
  * button and the resolve endpoint downgrades it to "session".
  */
 export const ApprovalScopeSchema = z.enum(["once", "session", "always", "deny"]);
@@ -609,7 +1244,7 @@ export const OutboundChannelMessageSchema = z.discriminatedUnion("kind", [
 export type OutboundChannelMessage = z.infer<typeof OutboundChannelMessageSchema>;
 
 /**
- * Card 93: `busy-skip` is distinct from `wait` — `wait` consumes the row
+ * : `busy-skip` is distinct from `wait` — `wait` consumes the row
  * (status → deferred) because we need explicit human clarification; `busy-skip`
  * leaves the row at `received` so a later route attempt can pick it up when
  * the agent is free. The user's message must NOT be consumed just because
@@ -646,7 +1281,7 @@ export const ChannelInboxItemSchema = z.object({
   status: ChannelInboxStatusSchema,
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
-  // Card 87 — route metadata; null when row hasn't been routed yet.
+  // route metadata; null when row hasn't been routed yet.
   routeAction: z.enum(["process", "ignore", "wait", "escalate"]).nullable(),
   routeReason: z.string().nullable(),
   routedAt: z.number().int().nullable(),
@@ -668,7 +1303,7 @@ export const ChannelOutboxItemSchema = z.object({
   attemptCount: z.number().int(),
   createdAt: z.number().int(),
   sentAt: z.number().int().nullable(),
-  // Card 88 — kind and approval link.
+  // kind and approval link.
   kind: z.enum(["text", "approval"]),
   approvalId: z.string().nullable(),
 });
@@ -765,7 +1400,7 @@ export const ChannelRoutePendingResultSchema = z.object({
   ok: z.boolean(),
   scanned: z.number().int(),
   /**
-   * Card 93: number of rows whose decision was `busy-skip` — i.e. would
+   * : number of rows whose decision was `busy-skip` — i.e. would
    * have processed but the agent was busy. These rows remain `received`
    * (not consumed) and will be reconsidered by the next routePending call.
    */
@@ -782,7 +1417,7 @@ export const ChannelRoutePendingResultSchema = z.object({
 export type ChannelRoutePendingResult = z.infer<typeof ChannelRoutePendingResultSchema>;
 
 /**
- * Card 88 — outbound enqueue / deliver / approval-resolve API contracts.
+ * outbound enqueue / deliver / approval-resolve API contracts.
  */
 
 export const EnqueueOutboundTextRequestSchema = z.object({
@@ -855,10 +1490,10 @@ export const ApprovalResolveResultSchema = z.object({
 export type ApprovalResolveResult = z.infer<typeof ApprovalResolveResultSchema>;
 
 // ============================================================================
-// M7.4 Card 107 — ContentHub: provider-agnostic content source layer.
+// ContentHub: provider-agnostic content source layer.
 //
-// Card 107 ships schemas + a hardcoded `agentthursday-github` registry entry only.
-// Card 108/109 fill in real GitHub network reads/list/search.
+//  ships schemas + a hardcoded `agentthursday-github` registry entry only.
+// /109 fill in real GitHub network reads/list/search.
 //
 // Design constraints (ADR §3, §4):
 //   - `ContentRevision` is a discriminated union from day 1, never a bare
@@ -911,10 +1546,10 @@ export type ContentSourceScope = z.infer<typeof ContentSourceScopeSchema>;
 export const ContentSourceAuthModeSchema = z.enum(["public", "secret", "oauth", "mcp", "browser", "none"]);
 export type ContentSourceAuthMode = z.infer<typeof ContentSourceAuthModeSchema>;
 
-// M7.4 v2 Card 112 — explicit per-source capability declaration. Forward
+//  v2 explicit per-source capability declaration. Forward
 // compatible: undefined `capabilities` on existing v1 sources is permitted
 // and treated as "all true" by callers that haven't adopted the field yet.
-// Card 113 fan-out search will filter sources by `capabilities.search:true`
+//  fan-out search will filter sources by `capabilities.search:true`
 // instead of provider-name matching, so honest declarations matter.
 export const ContentSourceCapabilitiesSchema = z.object({
   read: z.boolean(),
@@ -941,7 +1576,7 @@ export type ContentSource = z.infer<typeof ContentSourceSchema>;
 
 export const ContentSourceHealthSchema = z.object({
   ok: z.boolean(),
-  // v1 = "registry-only" (no network probe). Card 108/109 will add "live"
+  // v1 = "registry-only" (no network probe). /109 will add "live"
   // (real GitHub probe) and "degraded" (rate-limited / partial).
   mode: z.enum(["registry-only", "live", "degraded"]),
   latencyMs: z.number().int().nonnegative().optional(),
@@ -961,7 +1596,7 @@ export const ContentSourcesResponseSchema = z.object({
 });
 export type ContentSourcesResponse = z.infer<typeof ContentSourcesResponseSchema>;
 
-// File entry for list results — used by Card 108+.
+// File entry for list results — used by +.
 export const ContentFileEntrySchema = z.object({
   name: z.string(),
   pathOrId: z.string(),
@@ -980,7 +1615,7 @@ export type ContentRedaction = z.infer<typeof ContentRedactionSchema>;
 
 export const ContentReadResultSchema = z.object({
   ref: ContentRefSchema,
-  content: z.string(),                    // v1 utf-8 text only; binary path is v1.5+ (Card 115)
+  content: z.string(),                    // v1 utf-8 text only; binary path is v1.5+ ()
   contentType: z.string(),
   size: z.number().int().nonnegative(),
   truncated: z.boolean().optional(),
@@ -1012,11 +1647,11 @@ export type ContentSearchMode = z.infer<typeof ContentSearchModeSchema>;
 export const ContentSearchCoverageSchema = z.enum(["full", "partial"]);
 export type ContentSearchCoverage = z.infer<typeof ContentSearchCoverageSchema>;
 
-// Card 108 — request/response envelopes for content_list and content_read.
+// request/response envelopes for content_list and content_read.
 // Discriminated `{ ok: true, result } | { ok: false, error }` shape so both
 // the API endpoint and the LLM tool wrapper can forward without exception
-// machinery. `error.code` enumerates the structured failure modes Card 108
-// produces; the list grows in Card 109+.
+// machinery. `error.code` enumerates the structured failure modes 
+// produces; the list grows in +.
 
 export const ContentErrorCodeSchema = z.enum([
   // Path policy
@@ -1040,18 +1675,18 @@ export const ContentErrorCodeSchema = z.enum([
   "list-failed",
   "not-a-directory",
   "no-body",
-  // Card 109 — search
+  // search
   "quota-exhausted",
   "code-search-failed",
   "search-failed",
-  // Card 113 — multi-source fan-out
+  // multi-source fan-out
   "capability-not-supported",
   // Generic fallback
   "internal",
 ]);
 export type ContentErrorCode = z.infer<typeof ContentErrorCodeSchema>;
 
-// Card 113 — per-source result/error state for multi-source fan-out.
+// per-source result/error state for multi-source fan-out.
 // Each entry carries provenance even on failure so the agent can tell which
 // source succeeded and which didn't, without a single source's failure
 // silently swallowing another source's hits. `ok:true` populates `hits` (+
@@ -1079,7 +1714,7 @@ export const ContentSearchResultSchema = z.object({
   searchCoverage: ContentSearchCoverageSchema.optional(),
   searchedPaths: z.array(z.string()).optional(),
   omittedReason: z.string().optional(),
-  // Card 113 — multi-source fan-out result. Present iff the request used
+  // multi-source fan-out result. Present iff the request used
   // `sourceIds`. In that mode top-level `hits` is an empty array and the
   // agent MUST consume `perSource[]` for grouped results — flat aggregation
   // would lose source-level provenance, which the audit and ContentRef
@@ -1094,7 +1729,7 @@ export const ContentErrorSchema = z.object({
   sourceId: z.string().optional(),
   path: z.string().optional(),
   status: z.number().int().nullable().optional(),
-  // Card 109 §7.1 — quota / upstream-failure errors carry an explicit
+  //  §7.1 — quota / upstream-failure errors carry an explicit
   // fallback hint so the caller can opt in to `strategy: "bounded-local"`.
   // Only set on search errors; other endpoints leave these undefined.
   fallbackAvailable: z.boolean().optional(),
@@ -1129,16 +1764,16 @@ export const ContentListRequestSchema = z.object({
 });
 export type ContentListRequest = z.infer<typeof ContentListRequestSchema>;
 
-// Card 109 — request/response envelopes for content_search. Mirrors the
-// Card 108 read/list discriminated-union pattern so clients forward errors
+// request/response envelopes for content_search. Mirrors the
+//  read/list discriminated-union pattern so clients forward errors
 // without exception machinery. Default strategy is `api-search` (fail-loud
 // on quota); `bounded-local` is opt-in degraded grep over the connector's
 // list+read path, always carries `searchCoverage:"partial"`.
 export const ContentSearchRequestSchema = z.object({
-  // Card 113 — `sourceId` and `sourceIds` are mutually exclusive, fail-loud:
+  // `sourceId` and `sourceIds` are mutually exclusive, fail-loud:
   //  - exactly one must be provided
   //  - presenting both, or neither, is a 400 at the request boundary
-  // Single-source mode (`sourceId`) keeps Card 109 behavior unchanged.
+  // Single-source mode (`sourceId`) keeps  behavior unchanged.
   // Multi-source mode (`sourceIds`) returns a `perSource` array; top-level
   // `hits` is empty stub to preserve schema shape.
   sourceId: z.string().min(1).optional(),
@@ -1160,8 +1795,84 @@ export const ContentSearchResponseSchema = z.discriminatedUnion("ok", [
 ]);
 export type ContentSearchResponse = z.infer<typeof ContentSearchResponseSchema>;
 
+// ────────────────────────────────────────────────────────────────────
+// read-only memory candidate inspect surface.
+//
+// View-only schema for "things that *might* be worth promoting to
+// long-term memory, but the operator hasn't acted on yet". v1 is a
+// pure inspect surface: the candidates are derived from
+// conversation_archive / message log / local conversation_search and
+// returned to the caller, but **never written** to `agent_memories`.
+// Promote / dismiss flows are explicitly out of scope ().
+// ────────────────────────────────────────────────────────────────────
+
+export const MemoryCandidateTypeSchema = z.enum([
+  "fact",
+  "instruction",
+  "decision",
+  "task",
+  "event",
+  "preference",
+]);
+export type MemoryCandidateType = z.infer<typeof MemoryCandidateTypeSchema>;
+
+export const MemoryCandidateSourceRefSchema = z.object({
+  /** Where the evidence came from. */
+  kind: z.enum(["archive", "dialog", "search", "memory"]),
+  /** Stable identifier within that source — archive `chunk_id`,
+   *  dialog message index (stringified), search retrievalId, memory id. */
+  ref: z.string(),
+  /** Optional capped preview of the source content (caller-side
+   *  windowing rules apply downstream; no raw payload here). */
+  preview: z.string().optional(),
+});
+export type MemoryCandidateSourceRef = z.infer<typeof MemoryCandidateSourceRefSchema>;
+
+export const MemoryCandidateDedupeHintSchema = z.object({
+  /** Existing memory id this candidate likely supersedes / overlaps
+   *  with. Read-only signal — v1 does not auto-supersede. */
+  maybeExistingMemoryId: z.string().optional(),
+  /** Short human-readable why we think they overlap (e.g. "shared
+   *  key prefix" / "content substring match"). */
+  similarityReason: z.string().optional(),
+});
+export type MemoryCandidateDedupeHint = z.infer<typeof MemoryCandidateDedupeHintSchema>;
+
+export const MemoryCandidateInspectItemSchema = z.object({
+  /** Stable id within this listing — caller can use for UI keys. */
+  candidateId: z.string(),
+  type: MemoryCandidateTypeSchema,
+  /** Human-readable candidate text — already sanitized server-side
+   *  (no SOUL / tool inputPreview / outputPreview / secrets). Capped
+   *  by the candidate generator. */
+  text: z.string(),
+  sourceRefs: z.array(MemoryCandidateSourceRefSchema),
+  /** Why the heuristic flagged this as candidate-worthy. Free-form
+   *  short string, e.g. "explicit `请记下` request" / "repeated 3 times
+   *  across archive". */
+  reason: z.string(),
+  /** 0..1 inclusive. Repetition / explicit-ask boost up; idle chatter
+   *  pushed down. v1 thresholds are heuristic. */
+  confidence: z.number().min(0).max(1),
+  /** Null when no overlap with existing memory was found. */
+  dedupeHint: MemoryCandidateDedupeHintSchema.nullable(),
+});
+export type MemoryCandidateInspectItem = z.infer<typeof MemoryCandidateInspectItemSchema>;
+
+export const MemoryCandidatesResultSchema = z.object({
+  ok: z.boolean(),
+  /** When `ok === false` or generator chose to fail-safe, this
+   *  describes why (e.g. "archive table empty" / "internal error"). */
+  blockedReason: z.string().nullable(),
+  /** Empty array on failure / no candidates / fail-safe path. */
+  items: z.array(MemoryCandidateInspectItemSchema),
+  /** Server timestamp (ms). */
+  generatedAt: z.number().int(),
+});
+export type MemoryCandidatesResult = z.infer<typeof MemoryCandidatesResultSchema>;
+
 // Connector contract — TS interface, not zod (it's an internal shape, not
-// API-surface JSON). Card 108 adds the GitHub implementation.
+// API-surface JSON).  adds the GitHub implementation.
 export interface ContentSourceConnector {
   readonly meta: ContentSource;
 

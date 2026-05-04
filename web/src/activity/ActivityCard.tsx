@@ -7,13 +7,13 @@ import { WorkspaceChangePanel } from "./WorkspaceChangePanel";
 type Intent = NonNullable<InspectSnapshot["actionUiIntents"]>[number];
 
 /**
- * Card 126 — generic visual renderer for an `ActionUiIntent`.
+ * generic visual renderer for an `ActionUiIntent`.
  *
  * v1 only knows how to render the four built-in component names from
- * Card 125's backend: `GenericToolEventCard`, `GenericEventCard`,
+ * 's backend: `GenericToolEventCard`, `GenericEventCard`,
  * `DegradationCard`, `PauseCard`. All four use a single visual chrome
  * with type-based color accent + a small structured props row, because
- * Card 127 will introduce per-tool components and we don't want to
+ *  will introduce per-tool components and we don't want to
  * over-design the chrome before that lands.
  *
  * Visual hierarchy goal (kanban §"Make tool/action cards visually
@@ -43,7 +43,7 @@ export function ActivityCard({ intent }: { intent: Intent }) {
 }
 
 /**
- * Card 127 — dispatch to the per-component renderer based on the
+ * dispatch to the per-component renderer based on the
  * backend-supplied `component.name`. Each renderer takes a defensive
  * narrowing of `props: unknown` so a malformed/unknown shape degrades
  * gracefully rather than crashing the feed.

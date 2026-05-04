@@ -5,179 +5,158 @@ import { ActivityCard } from "./ActivityCard";
 
 type Intent = NonNullable<InspectSnapshot["actionUiIntents"]>[number];
 
-type Props = {
-  /** Optional id of the parent scroll container; if provided, the
-   *  IntersectionObserver roots itself there instead of the viewport. */
-  scrollContainerId?: string;
-};
-
 const EMPTY_COPY =
   "Waiting for model actions… Search, file reads, execution, and workspace changes will appear here.";
 
-const FEED_CAP = 20;
-const RAIL_CAP = 12;
+const FEED_CAP = 30;
 
 /**
- * M7.6 v2 — single-active card + right-side thumbnail rail.
+ * v3 accordion ( v3) — the operator redesign:
  *
- * Pat redesign brief:
- *   - keep one active card visible at a time
- *   - shrink the rest into a thumbnail rail attached to the dialog
- *   - user clicks a thumbnail to enlarge it as the new active card
+ *   - The activity surface is now a right-side independent panel,
+ *     not part of the conversation column.
+ *   - Each intent is an accordion item: header (always visible) +
+ *     body (expanded only when active).
+ *   - Newest intent auto-expands; older items collapse to a thin
+ *     header row.
+ *   - Click a header to toggle.
+ *   - When a new intent of the same `type` as an existing collapsed
+ *     item arrives, that item auto-expands again, with the same
+ *     "fresh" visual cue as a brand-new item.
+ *   - The conversation column owns nothing about activity now; this
+ *     component is pure render of `inspect.actionUiIntents`.
  *
- * Layout:
- *   - desktop / wide viewport: horizontal split inside this section.
- *     Active card grows in the left column (`flex-1`), thumbnails stack
- *     vertically in a fixed-width right column.
- *   - narrow viewport: thumbnail rail collapses below the active card
- *     as a horizontal scroll strip (`flex-row overflow-x-auto`).
- *
- * Selection model:
- *   - Default behavior: `selectedId === null` → active card is the
- *     latest intent. New arrivals swap in seamlessly without scrolling
- *     anything.
- *   - User clicks a thumbnail: `selectedId === intent.id` → that intent
- *     becomes the pinned active card. New arrivals are still rendered
- *     in the rail but DO NOT replace the user's pinned selection. A
- *     small "↑ N new" affordance lets the user return to "follow
- *     latest" mode.
- *
- * Anti-focus-stealing:
- *   - This component never calls `scrollTo` / `scrollIntoView`. The
- *     active card swap happens in-place; thumbnails appear in the rail
- *     without affecting page scroll. The earlier Card 129 "feed scroll"
- *     concept is gone — there's nothing to scroll inside the feed
- *     anymore.
- *   - The optional `scrollContainerId` prop is kept as a hook for
- *     future surfaces that want to know whether the user is at the
- *     bottom of the parent dialog scroll container.
+ * Anti-focus-stealing red line is preserved: this component never
+ * calls `scrollTo` / `scrollIntoView`. New items append at the top of
+ * the accordion in place; existing scroll position is unaffected.
  */
-export function ActivityFeed({ scrollContainerId: _scrollContainerId }: Props = {}) {
+export function ActivityFeed() {
   const { data } = useInspect(true);
-  const intents = useMemo<Intent[]>(() => {
+  const visible = useMemo<Intent[]>(() => {
     const all = data?.actionUiIntents ?? [];
     return all.filter(isDefaultFeedIntent).slice(0, FEED_CAP);
   }, [data?.actionUiIntents]);
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  // Keep track of how many new intents have arrived since user pinned
-  // a non-latest selection. Only used for the "follow latest" hint.
+  // Track per-intent expanded state. Default newest expanded; older
+  // collapsed. Updates reactively when new intents arrive.
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const seenIdsRef = useRef<Set<string>>(new Set());
-  const [newSincePin, setNewSincePin] = useState(0);
+  const userToggledIdsRef = useRef<Set<string>>(new Set());
+  const lastTypeIdRef = useRef<Record<Intent["type"], string | undefined>>(
+    {} as Record<Intent["type"], string | undefined>,
+  );
 
   useEffect(() => {
     const seen = seenIdsRef.current;
-    let firstSnapshot = seen.size === 0;
-    let added = 0;
-    for (const intent of intents) {
+    const userToggled = userToggledIdsRef.current;
+    const lastByType = lastTypeIdRef.current;
+    const addedIds = new Set<string>();
+    const reactivatedIds = new Set<string>();
+    let mutated = false;
+    const nextExpanded = { ...expanded };
+
+    for (const intent of visible) {
       if (!seen.has(intent.id)) {
-        if (!firstSnapshot) added += 1;
         seen.add(intent.id);
+        addedIds.add(intent.id);
+        // New intent: expand it.
+        nextExpanded[intent.id] = true;
+        // the operator rule: if a previously-collapsed item of the same type
+        // exists, also re-expand it — "fresh" visual same as new.
+        // User toggles still win: don't override a manual collapse.
+        const prevId = lastByType[intent.type];
+        if (
+          prevId
+          && prevId !== intent.id
+          && nextExpanded[prevId] === false
+          && !userToggled.has(prevId)
+        ) {
+          nextExpanded[prevId] = true;
+          reactivatedIds.add(prevId);
+        }
+        lastByType[intent.type] = intent.id;
+        mutated = true;
       }
     }
-    if (selectedId === null) {
-      // Following latest — newCount stays 0; latest auto-promotes.
-      setNewSincePin(0);
-    } else if (added > 0) {
-      setNewSincePin((c) => c + added);
+
+    // Auto-collapse inactive items on every new arrival while preserving
+    // explicit user toggles and same-type reactivation.
+    if (addedIds.size > 0 && visible.length > 0) {
+      const newestId = visible[0].id;
+      for (const intent of visible) {
+        if (intent.id === newestId) continue;
+        if (reactivatedIds.has(intent.id)) continue;
+        if (userToggled.has(intent.id)) continue;
+        if (nextExpanded[intent.id] !== false) {
+          nextExpanded[intent.id] = false;
+          mutated = true;
+        }
+      }
     }
-  }, [intents, selectedId]);
 
-  const latest = intents[0] ?? null;
-  const active: Intent | null = selectedId
-    ? (intents.find((i) => i.id === selectedId) ?? latest)
-    : latest;
-  const railIntents = intents.filter((i) => i.id !== active?.id).slice(0, RAIL_CAP);
+    if (mutated) setExpanded(nextExpanded);
+  }, [visible, expanded]);
 
-  function followLatest() {
-    setSelectedId(null);
-    setNewSincePin(0);
+  function toggle(id: string) {
+    userToggledIdsRef.current.add(id);
+    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
   }
 
-  if (intents.length === 0) {
+  if (visible.length === 0) {
     return (
-      <section className="px-4 py-3">
+      <div className="px-4 py-3">
         <div className="mb-2 text-xs uppercase tracking-wide text-slate-500">Activity</div>
         <div className="rounded border border-dashed border-slate-800 bg-slate-900/40 px-4 py-6 text-sm text-slate-500 text-center">
           {EMPTY_COPY}
         </div>
-      </section>
+      </div>
     );
   }
 
   return (
-    <section className="px-4 py-3">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs uppercase tracking-wide text-slate-500">Activity</span>
-        {selectedId !== null && newSincePin > 0 && (
-          <button
-            type="button"
-            onClick={followLatest}
-            className="rounded-full bg-cyan-700 hover:bg-cyan-600 px-3 py-0.5 text-xs text-cyan-50"
-          >
-            ↑ {newSincePin} new — follow latest
-          </button>
-        )}
+    <div className="px-4 py-3">
+      <div className="mb-2 text-xs uppercase tracking-wide text-slate-500">Activity</div>
+      <div className="space-y-2">
+        {visible.map((intent) => {
+          const isOpen = expanded[intent.id] !== false;
+          const tone = headerToneFor(intent.type);
+          return (
+            <div
+              key={intent.id}
+              className={`rounded-lg border ${tone.border} ${tone.bg}`}
+            >
+              <button
+                type="button"
+                onClick={() => toggle(intent.id)}
+                className="w-full text-left px-3 py-2 flex items-center gap-2 hover:brightness-125"
+              >
+                <span className="text-slate-500 font-mono text-xs w-3">
+                  {isOpen ? "▾" : "▸"}
+                </span>
+                <span className={`text-[10px] uppercase font-mono px-1.5 rounded ${tone.badge}`}>
+                  {tone.label}
+                </span>
+                <span className="text-sm text-slate-200 truncate flex-1 min-w-0">
+                  {intent.title}
+                </span>
+                <span className="text-[10px] text-slate-500 shrink-0 ml-2">
+                  {relativeShort(intent.sourceEventAt)}
+                </span>
+              </button>
+              {isOpen && (
+                <div className="border-t border-slate-800/70 px-3 py-3">
+                  <ActivityCard intent={intent} />
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
-      <div className="flex flex-col lg:flex-row gap-3">
-        {/* Active card — large, prominent, attached visually to the
-            dialog area (which renders directly above this section) */}
-        <div className="flex-1 min-w-0">
-          {active && <ActivityCard intent={active} />}
-        </div>
-        {/* Thumbnail rail — vertical on desktop, horizontal scroll on narrow */}
-        {railIntents.length > 0 && (
-          <aside
-            className="lg:w-44 lg:shrink-0 lg:max-h-[60vh] lg:overflow-y-auto
-                       flex flex-row lg:flex-col gap-2 overflow-x-auto pb-1 lg:pb-0"
-            aria-label="Recent activity"
-          >
-            {railIntents.map((intent) => (
-              <ThumbnailButton
-                key={intent.id}
-                intent={intent}
-                onClick={() => {
-                  setSelectedId(intent.id);
-                  setNewSincePin(0);
-                }}
-              />
-            ))}
-          </aside>
-        )}
-      </div>
-    </section>
+    </div>
   );
 }
 
-function ThumbnailButton({
-  intent,
-  onClick,
-}: {
-  intent: Intent;
-  onClick: () => void;
-}) {
-  const tone = thumbnailToneFor(intent.type);
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`shrink-0 lg:shrink min-w-[8rem] lg:min-w-0 text-left rounded-md border ${tone.border} ${tone.bg} px-2 py-1.5 hover:brightness-125 transition`}
-      title={intent.title}
-    >
-      <div className="flex items-center gap-1.5">
-        <span className={`text-[10px] uppercase font-mono px-1 rounded ${tone.badge}`}>
-          {tone.label}
-        </span>
-        <span className="text-[10px] text-slate-500 ml-auto">
-          {relativeShort(intent.sourceEventAt)}
-        </span>
-      </div>
-      <div className="mt-1 text-xs text-slate-200 truncate">{intent.title}</div>
-    </button>
-  );
-}
-
-function thumbnailToneFor(type: Intent["type"]): {
+function headerToneFor(type: Intent["type"]): {
   border: string;
   bg: string;
   badge: string;
@@ -218,9 +197,6 @@ function relativeShort(at: number): string {
 function isDefaultFeedIntent(intent: Intent): boolean {
   if (intent.priority === "debug") return false;
   if (intent.placementHint.region === "debug") return false;
-  // Conversation-first invariant for degradation/pause stays — they
-  // should not be top-pinned as default UI cards. They appear via
-  // chat reply markers (Card 116 / 120) and Inspect drawer banner.
   if (intent.type === "agent.degradation") return false;
   if (intent.type === "agent.pause") return false;
   return (

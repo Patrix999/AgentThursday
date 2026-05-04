@@ -3,10 +3,10 @@ import { useWorkspaceFiles, useWorkspaceFileContent } from "../hooks/useWorkspac
 import type { WorkspaceFileEntry } from "../../shared/schema";
 
 /**
- * Read-only workspace file panel. Default collapsed (per Card 126);
+ * Read-only workspace file panel. Default collapsed (per );
  * the user expands it manually OR programmatically via the
  * `agent-thursday:workspace:focus-path` custom event that
- * `WorkspaceChangePanel` (Card 128) dispatches when the user clicks
+ * `WorkspaceChangePanel` () dispatches when the user clicks
  * "Open in workspace". On a focus request the panel auto-opens, the
  * directory listing navigates to the parent dir, and the file preview
  * loads — but ONLY because the user explicitly clicked the button, so

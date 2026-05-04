@@ -8,7 +8,11 @@ import { InspectDrawer } from "../shell/InspectDrawer";
 import { InspectEntry } from "../shell/InspectEntry";
 import { ThumbReachLayout } from "../mobile/ThumbReachLayout";
 import { MobileComposer } from "../mobile/MobileComposer";
+import { MobileStatusRow } from "../mobile/MobileStatusRow";
+import { MobileSummaryStream } from "../mobile/MobileSummaryStream";
 import { ActivityFeed } from "../activity/ActivityFeed";
+import { ContextRail } from "../context/ContextRail";
+import { ContextInspectProvider } from "../context/ContextInspectProvider";
 
 /**
  * Default user-layer surface. Two independent shell trees — one shown only
@@ -28,39 +32,65 @@ export function Workspace() {
 
   return (
     <>
-      {/* Desktop */}
-      <div className="hidden lg:flex h-full">
-        <div className="flex flex-col flex-1 min-h-0">
-          <TopStatusBar
-            snapshot={data}
-            lastRefreshedAt={lastRefreshedAt}
-            onToggleInspect={() => setInspectOpen((v) => !v)}
-            inspectOpen={inspectOpen}
-          />
-          {errorBanner}
-          <div className="flex-1 overflow-y-auto" id="agent-thursday-main-scroll">
-            <MainCardsArea snapshot={data} />
-            <SummaryStream snapshot={data} />
-            <ActivityFeed scrollContainerId="agent-thursday-main-scroll" />
+      {/* Desktop — context rail + two-column main area + right activity accordion.
+          ContextInspectProvider wraps both Rail and Drawer so the rail's
+          always-on poll is the only `inspectContext` HTTP loop on the page;
+          the Drawer's Context tab consumes the same data.  spec
+          forbade adding a second polling loop. */}
+      <ContextInspectProvider>
+        <div className="hidden lg:flex h-full">
+          <ContextRail />
+          <div className="flex flex-col flex-1 min-w-0">
+            <TopStatusBar
+              snapshot={data}
+              lastRefreshedAt={lastRefreshedAt}
+              onToggleInspect={() => setInspectOpen((v) => !v)}
+              inspectOpen={inspectOpen}
+            />
+            {errorBanner}
+            <div className="flex-1 flex min-h-0 min-w-0">
+              <div
+                className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden"
+                id="agent-thursday-main-scroll"
+              >
+                <MainCardsArea snapshot={data} />
+                <SummaryStream snapshot={data} />
+              </div>
+              <aside
+                className="w-80 shrink-0 border-l border-slate-800 overflow-y-auto overflow-x-hidden"
+                aria-label="Activity"
+              >
+                <ActivityFeed />
+              </aside>
+            </div>
+            <Composer snapshot={data} />
           </div>
-          <Composer snapshot={data} />
+          <InspectDrawer open={inspectOpen} onClose={() => setInspectOpen(false)} />
         </div>
-        <InspectDrawer open={inspectOpen} onClose={() => setInspectOpen(false)} />
-      </div>
+      </ContextInspectProvider>
 
-      {/* Mobile shell */}
+      {/* mobile-first IA pass.
+          - `MobileStatusRow` replaces `TopStatusBar` so the header is
+            one compact row (≤ 56px target) and includes the operator's
+            non-negotiable context indicator chip linking to
+            `/inspect#context`.
+          - `MobileSummaryStream` collapses older turns by default,
+            so latest 1–3 stay above the fold at 360×780.
+          - `ActivityFeed` is intentionally NOT rendered in the mobile
+            primary scroll. Operators reach activity / inspect / archive
+            via `InspectEntry → /inspect`. The desktop right-aside
+            `ActivityFeed` is unchanged. */}
       <ThumbReachLayout
         top={
           <>
-            <TopStatusBar snapshot={data} lastRefreshedAt={lastRefreshedAt} />
+            <MobileStatusRow snapshot={data} lastRefreshedAt={lastRefreshedAt} />
             {errorBanner}
           </>
         }
         scroll={
           <>
             <MainCardsArea snapshot={data} hideApprovalActions />
-            <SummaryStream snapshot={data} />
-            <ActivityFeed />
+            <MobileSummaryStream snapshot={data} />
           </>
         }
         inspect={<InspectEntry />}

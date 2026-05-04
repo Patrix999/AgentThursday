@@ -8,14 +8,14 @@
  *     scope only, no global-latest joins (per  verifier patch
  *     invariant)
  *   - rendering the conversational pause message that the agent appends
- *     to the user-facing reply (operator hard requirement: no new buttons,
+ *     to the user-facing reply (the operator hard requirement: no new buttons,
  *     no approval-card UI; resume must be natural-language reply)
  *   - detecting whether a follow-up user message is a natural-language
  *     resume confirmation (`继续` / `proceed` / `resume` / etc.)
  *   - rendering a short reminder when the user sends non-resume text while
  *     the loop is paused
  *
- * v1 invariants (per kanban + milestone red lines):
+ * v1 invariants (per kanban +  milestone red lines):
  *   - Only `state === "needs_human"` triggers pause; never `degraded`,
  *     never `blocked`, never `normal`.
  *   - Config must be read at decision time, not cached at module load,
@@ -24,7 +24,7 @@
  *   - No automatic routing changes (no retry / switch / fallback).
  *   - Pause text never includes prompts, raw replies, raw provider
  *     payloads, raw Discord messages, or secrets — only enum/short-id
- *     fields already vetted by Cards 117/119.
+ *     fields already vetted by .
  */
 
 import type { TaskDegradationSummary } from "./degradationSummary";

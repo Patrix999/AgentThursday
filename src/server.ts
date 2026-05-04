@@ -45,11 +45,133 @@ import {
   type MemoryRecallMatch,
   type MemorySnapshot,
   type MemoryType,
+  type MemoryCandidatesResult,
+  type MemoryCandidateInspectItem,
+  type MemoryCandidateSourceRef,
+  type MemoryCandidateType,
 } from "./schema";
 import { requireSecret, CORS_HEADERS } from "./auth";
 import { listWorkspaceDir, readWorkspaceFile } from "./workspaceFiles";
 import { runBrowser, BrowserError } from "./browser";
-import { findToolClaims, checkTruthfulness, renderTruthfulnessWarning } from "./toolTruthfulness";
+import { findToolClaims, checkTruthfulness, renderTruthfulnessWarning, renderInlineJsonWarning } from "./toolTruthfulness";
+import {
+  buildContextInspect,
+  buildCompactSummary,
+  buildContextSnapshot,
+  buildCompactPlan,
+  buildArchiveChunks,
+  classifyContextAnchors as runAnchorClassifier,
+  isHardPreserveAnchor,
+  isSummaryPreserveAnchor,
+  type ContextInspectViewModel,
+  type ContextSnapshotViewModel,
+  type CompactPlanResultView,
+  type ContextAnchorClassification,
+  type CompactSummaryPreservedPoint,
+} from "./contextLifecycle";
+import {
+  runSemanticSummaryAdvisor,
+  type SemanticAdvisorClient,
+  type SemanticSummaryAdvisorRequest,
+  type SemanticSummaryAdvisorResult,
+  type SemanticSummarySourceTurn,
+} from "./semanticSummaryAdvisor";
+import type {
+  ContextInspectResult,
+  ContextResetResult,
+  CompactContextResult,
+  StoredCompactionView,
+  CompactionsList,
+  ContextAnchorsResult,
+  CompactPlanInput,
+  CompactPlanResult,
+  CompactPlanApplyResult,
+  ActiveContext,
+  ContextHistoryList,
+  NewContextResult,
+  SwitchContextResult,
+  ArchiveChunkInput,
+  ArchiveChunksInput,
+  ArchiveFlushResult,
+  ArchiveTrigger,
+  DrainForArchiveResult,
+  ConversationSearchInput,
+  ConversationSearchResult,
+  ConversationSearchHit,
+  ArchiveInspectSummary,
+  ArchiveFlushRow,
+  RetrievalLogRow,
+  ArchiveContextCount,
+  HygieneRunInput,
+  HygieneRunResult,
+  HygieneRiskCondition,
+  HygieneTrigger,
+  HygieneDecision,
+} from "./schema";
+
+// v3 fresh context id. Crypto-random when available
+// (Cloudflare Workers expose `crypto.randomUUID`); falls back to a
+// time + random base-36 hash for the unlikely no-crypto path so the id
+// remains unique for audit purposes.
+function newContextId(): string {
+  const g = globalThis as { crypto?: { randomUUID?: () => string } };
+  if (g.crypto?.randomUUID) return `ctx_${g.crypto.randomUUID()}`;
+  return `ctx_${Date.now().toString(36)}-${Math.floor(Math.random() * 1e9).toString(36)}`;
+}
+
+const COMPACTION_SUMMARY_PREVIEW_BUDGET = 600;
+
+function storedCompactionView(stored: {
+  id: string;
+  summary: string;
+  fromMessageId: string;
+  toMessageId: string;
+  createdAt: string;
+}): StoredCompactionView {
+  const len = stored.summary.length;
+  const summaryPreview = len > COMPACTION_SUMMARY_PREVIEW_BUDGET
+    ? `${stored.summary.slice(0, COMPACTION_SUMMARY_PREVIEW_BUDGET)}…`
+    : stored.summary;
+  return {
+    id: stored.id,
+    summaryPreview,
+    summaryLength: len,
+    fromMessageId: stored.fromMessageId,
+    toMessageId: stored.toMessageId,
+    createdAt: stored.createdAt,
+  };
+}
+
+// recompute medium-tier "preserved important points" from a
+// FRESH snapshot/anchors taken immediately before each apply step.
+// Using the original plan's `summaryPreservedAnchors` would risk
+// drifting into a stale view of which messages still classify as
+// medium anchors; recomputing keeps the summary honest.
+function collectFreshPreservedPoints(
+  snapshot: ContextSnapshotViewModel,
+  anchors: readonly ContextAnchorClassification[],
+  fromMessageId: string,
+  toMessageId: string,
+): CompactSummaryPreservedPoint[] {
+  const fromIdx = snapshot.messages.findIndex((m) => m.id === fromMessageId);
+  const toIdx = snapshot.messages.findIndex((m) => m.id === toMessageId);
+  if (fromIdx < 0 || toIdx < 0 || toIdx < fromIdx) return [];
+  const anchorById = new Map<string, ContextAnchorClassification>();
+  for (const a of anchors) anchorById.set(a.id, a);
+  const out: CompactSummaryPreservedPoint[] = [];
+  for (let i = fromIdx; i <= toIdx; i++) {
+    const m = snapshot.messages[i];
+    const a = anchorById.get(m.id);
+    if (!a || !isSummaryPreserveAnchor(a)) continue;
+    let text = "";
+    for (const p of m.parts) {
+      if (p.type === "text") text += (text.length > 0 ? "\n" : "") + p.text;
+    }
+    out.push({ index: m.index, reasons: a.reasons, preview: text });
+  }
+  return out;
+}
+
 import {
   detectSupplierDegradation,
   emptySupplierTaskSignals,
@@ -66,6 +188,7 @@ import {
   shouldPauseForNeedsHuman,
 } from "./pauseDecision";
 import { buildActionUiIntents, type ActionUiIntentSourceRow } from "./actionUiIntents";
+import { pickModelContextProfile, type ModelContextProfile } from "./contextWindowRegistry";
 import {
   ChannelMessageEnvelopeSchema,
   ChannelInboundResultSchema,
@@ -107,7 +230,7 @@ export { ChannelHubAgent };
 export { ContentHubAgent };
 export { DiscordGatewayAgent };
 
-const SOUL = `你是 AgentThursday Agent —— 一个云原生工作 agent。
+const SOUL = `你是 AgentThursday Agent —— 操作员的云原生工作 agent。
 你运行在 Cloudflare Durable Objects 上，具备跨 hibernate 的持久 identity 与 session 连续性。
 你的首要目标是协助操作员推进 AgentThursday 项目，保持工作的连续性与可回放性。
 在模型水平较低时（safer mode），你只推进最优先的单一下一步，不承诺超出当前能力的目标。
@@ -134,7 +257,66 @@ const SOUL = `你是 AgentThursday Agent —— 一个云原生工作 agent。
 - **不要** 把 secret / 临时 noise / 大段 raw log 写进 memory
 - checkpoint 与 review_note 是任务进度日志，与 memory 不同：memory 是可检索的命题；checkpoint/note 是过程记录。
 
-## Content Sources vs Workspace（affordance）
+## 对话历史 grounding 规则（强制）
+
+当用户问以下"状态/历史"类问题时，**必须先回看当前可见 message
+history 再答**，不得凭 mental model 自称"fresh / 没聊过 / 在某个
+ctx" —— 。
+
+触发关键词（非穷举，按意图判断）：
+
+- "我们聊到哪儿了？" / "刚才说什么？" / "刚才聊了什么？" / "今天聊了什么？"
+- "继续刚才的" / "接着刚才"
+- "这个 context 里有什么？" / "你现在在哪个 session/context？"
+- "之前讨论过什么？"
+
+回答步骤：
+
+1. 扫一遍 message log 最近若干 turn（至少最近 5 个 user/assistant 消息）；
+2. 如果有可见 turn → **基于 turn 内容**总结，再补必要的不确定性
+   说明（"基于当前可见对话…"）；
+3. 如果 message log 真的空 → 才说"当前可见对话里没有历史 / 这是
+   我看到的第一条消息"；
+4. **不要**凭"我感觉是 fresh context"或"测试框架文字像新会话"
+   下结论；157a 暴露的 first-pass bug 就是这种 mental-model 抢答。
+5. 不确定时 → 明确说"不确定，我先按当前可见对话总结"。
+
+agent_memories（remember 过的 fact / event / task）跟当前 dialog 是
+两回事：回答"刚才聊了什么"时**优先**当前 dialog history，memory
+只在用户明确问到长期事实（"我们说好的会议时间"）时才 recall。
+
+## Conversation archive 检索规则（强制）
+
+来源有三层，必须严格区分：
+
+1. **当前可见 dialog**（最近若干 turn）—— grounding 规则的主要依据
+2. **agent_memories**（remember/recall）—— 你显式 remember 过的稳定事实
+3. **conversation_archive**（conversation_search）—— 旧 session / new
+   context 之前对话被归档的内容；当前 dialog 看不到，recall 也读不到
+
+当用户问跨 session / 历史对话类问题，且当前 dialog + recall 都没命中时
+——**必须先调用 conversation_search(query=关键词)** 看 archive，再决定
+怎么回答。
+
+触发关键词（按意图判断）：
+
+- "4 月 X 日 / 上周 / 上次 / 之前我们聊了什么"
+- "之前讨论过 X 吗 / 之前提过 Y 吗 / 上次那个 X 怎么定的"
+- 任何指向"过去某段对话"但当前 dialog + memory 都没命中的具体话题
+
+回答步骤：
+
+1. 调用 conversation_search(query=关键词)，可选 topK / role /
+   fromTimestamp / toTimestamp / contextId
+2. 有 hits → 基于 snippet 简短引用，回答时明确"来自 archive"或
+   "之前 ctx \`<contextId>\` 里…"
+3. 无 hits → 明确说"archive 里也没找到"——**不得**把 recall 无命中
+   等同于 archive 无命中；recall 只搜 agent_memories，不搜 archive
+4. **不得**编造 archive 内容；conversation_search 没返回的就不能说见过
+5. 区分语义：recall = agent_memories；conversation_search = 历史 dialog
+   archive；content_search = 外部 Content Sources。三个工具不可互换
+
+## Content Sources vs Workspace（ affordance）
 
 Tier 0 workspace 是**你自己的**活跃工作区——scratch、drafts、任务输出、你显式创建的 artifacts。它**不会**自动同步 AgentThursday 源码、GitHub repos、OneDrive/Dropbox 文件夹、协作文档、邮件附件或网页内容。
 
@@ -173,7 +355,124 @@ Tier 0 workspace 是**你自己的**活跃工作区——scratch、drafts、任�
 
 旧本地 bridge（exec-node）已废弃，禁止通过任何路径调用。`;
 
-const DEMO_INSTANCE = "agent-thursday-dev";
+const DEMO_INSTANCE = "agent-thursday-dev-fresh-108a-1";
+
+// v3 per-context DO routing. Reads `X-AgentThursday-Context-Id`
+// from the request header and uses it as the DO instance name.
+//
+// header semantics tightened for the "single active session
+// per (user, agent)" model. When the header is present it acts as an
+// **explicit override** (handy for debugging / pinned testing tabs).
+// When it is absent, header-less user-layer requests now fall through
+// to the registry's `context_active` pointer rather than to
+// DEMO_INSTANCE blindly. This means Discord gateway / cron / fresh
+// browsers without a localStorage cache all converge to the canonical
+// active context. DEMO_INSTANCE is still the very-last fallback for
+// the bootstrap case where the active pointer hasn't been written yet.
+const CONTEXT_HEADER = "X-AgentThursday-Context-Id";
+
+function resolveHeaderContext(request: Request): string | null {
+  const headerVal = request.headers.get(CONTEXT_HEADER);
+  if (!headerVal) return null;
+  const trimmed = headerVal.trim();
+  if (trimmed.length === 0 || trimmed.length > 200) return null;
+  return trimmed;
+}
+
+function resolveContextDoName(request: Request): string {
+  // Legacy synchronous accessor — header or DEMO_INSTANCE. Still used
+  // by routes that intentionally want the override-or-bootstrap form
+  // without paying for a registry RPC. New user-layer routes should
+  // prefer `getCanonicalActiveContextDoName` below.
+  return resolveHeaderContext(request) ?? DEMO_INSTANCE;
+}
+
+/**
+ * canonical active-context resolver for user-layer routes.
+ *
+ * Resolution order:
+ *   1. Explicit `X-AgentThursday-Context-Id` header (debug / pinned tab override).
+ *   2. Registry `context_active` pointer (`getActivePointer()` via
+ *      `getActiveContextId` callable on DEMO_INSTANCE). One DO RPC,
+ *      avoided when the header is set.
+ *   3. DEMO_INSTANCE bootstrap fallback (registry hasn't written a
+ *      pointer yet — only happens on a truly fresh deployment).
+ *
+ * Recursion guard: this function NEVER consults the active pointer
+ * when the request itself is targeting the registry (DEMO_INSTANCE)
+ * directly via header — that path always uses DEMO_INSTANCE.
+ *
+ * Routes that reach into the registry for management work
+ * (`/cli/context/{new,active,history,switch}`, archive flushes,
+ * hygiene runs) keep using `DEMO_INSTANCE` directly; this helper is
+ * for user-layer routes that should follow the active pointer.
+ */
+async function getCanonicalActiveContextDoName(env: Env, request: Request): Promise<string> {
+  const headerOverride = resolveHeaderContext(request);
+  if (headerOverride) return headerOverride;
+  try {
+    const registry = await getAgentByName<Env, AgentThursdayAgent>(
+      env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>,
+      DEMO_INSTANCE,
+    );
+    const active = await registry.getActiveContextId();
+    if (active.contextId && active.contextId.length > 0 && active.contextId.length <= 200) {
+      return active.contextId;
+    }
+  } catch {
+    // Registry unreachable / pointer empty — fall through to bootstrap.
+  }
+  return DEMO_INSTANCE;
+}
+
+// Shorthand: every context-scoped /cli/* route resolves the DO name
+// from the request header (or DEMO_INSTANCE) and fetches a stub. The
+// registry-only routes (/cli/context/{new,active,history,switch})
+// continue to reach `DEMO_INSTANCE` directly so they always read /
+// write the same context_history table.
+function getActiveAgentThursdayAgentStub(env: Env, request: Request) {
+  return getAgentByName<Env, AgentThursdayAgent>(
+    env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>,
+    resolveContextDoName(request),
+  );
+}
+
+/**
+ * async stub resolver that follows the canonical active
+ * pointer when no header is set. User-layer routes that want
+ * "follow active context unless caller explicitly pinned a tab"
+ * use this instead of `getActiveAgentThursdayAgentStub`.
+ */
+async function getCanonicalActiveAgentThursdayAgentStub(env: Env, request: Request) {
+  const name = await getCanonicalActiveContextDoName(env, request);
+  return getAgentByName<Env, AgentThursdayAgent>(
+    env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>,
+    name,
+  );
+}
+
+/**
+ * paired `{ name, stub }` resolver. Route handlers that
+ * pass a `routedContextId` to the DO (notably
+ * `/cli/context/reset` per ) MUST send the same id that the
+ * stub points at. With the canonical resolver in place, calling
+ * `getCanonicalActiveContextDoName(...)` and
+ * `getCanonicalActiveAgentThursdayAgentStub(...)` separately can race the
+ * registry pointer (very unlikely on a single isolate, but the
+ * possibility forced two-source-of-truth bugs in 149e1's review).
+ * This helper does the lookup once.
+ */
+async function resolveCanonicalActiveContextRoute(
+  env: Env,
+  request: Request,
+): Promise<{ name: string; stub: ReturnType<typeof getAgentByName<Env, AgentThursdayAgent>> extends Promise<infer S> ? S : never }> {
+  const name = await getCanonicalActiveContextDoName(env, request);
+  const stub = await getAgentByName<Env, AgentThursdayAgent>(
+    env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>,
+    name,
+  );
+  return { name, stub };
+}
 
 // tool names the truthfulness gate watches for in assistant
 // text. Must stay aligned with `getTools()` registration; if a new tool is
@@ -202,8 +501,27 @@ const KNOWN_TOOL_NAMES: readonly string[] = [
   "content_read",
   // ContentHub literal search.
   "content_search",
+  // agent-facing conversation archive search.
+  "conversation_search",
 ];
 const DOGFOOD_TASK = "如何使用新构建的 agent 开发当前项目？";
+
+// model context window + threshold policy lives in
+// `src/contextWindowRegistry.ts` as a typed registry. The previous
+// hardcoded 8K/24K absolutes didn't make sense
+// against 256K/1M model windows; ratios scale across model sizes.
+// `_computeContextBudget` reads the registry; UI receives the
+// already-computed absolute values via `contextBudget`.
+
+// fixed estimates for tool schema + framing overhead
+// (chars/4 surrogate). Keeps inspect cheap; revisit if a real
+// tokenizer lands or registry grows substantially.
+const ESTIMATED_TOOLS_OVERHEAD_TOKENS = 3_000;
+const ESTIMATED_OTHER_OVERHEAD_TOKENS = 500;
+
+// `pickModelMaxTokens` ( heuristic) was replaced
+// by the typed `pickModelContextProfile()` in `contextWindowRegistry.ts`.
+// All callers now read modelMaxTokens + thresholds from the registry.
 
 type EventLogRow = { event_type: string; payload: string; created_at: number; trace_id: string | null };
 
@@ -226,6 +544,15 @@ type DebugTraceShape = {
 
 type PendingMutationRow = { id: number; card_ref: string; mutation_type: string; description: string; diff_hint: string; created_at: number };
 
+// patterns that must NEVER appear in `summaryStream`
+// item text. The first matches the truncation suffix produced by
+// `getLastAssistantText(maxLen)`. The second matches the developer
+// -loop preview line embedded by `getDeveloperLoopReview()`. Both
+// indicate the text came from a synthesized loop view rather than a
+// real user / assistant turn.
+const DIALOG_PREVIEW_SUFFIX_RE = /\(\+\d+ chars?\)/;
+const DIALOG_LOOP_LAST_MSG_RE = /(^|\n)\[last msg\]\s/;
+
 function buildWorkspaceSnapshot(input: {
   agentThursdayState: AgentThursdayState;
   cliSession: CliSession;
@@ -235,9 +562,33 @@ function buildWorkspaceSnapshot(input: {
   debugTrace: DebugTraceShape;
   deliverableGate: DeliverableConvergence;
   pendingMutations: PendingMutationRow[];
-  eventLogCount: number;
+  eventLog: EventLogRow[];
+  // latest `context.reset` boundary. 0 means "no reset has
+  // happened on this DO". The route handler queries `getLastResetAt()`
+  // separately because `getEventLog` is capped at 20 rows.
+  lastResetAt: number;
+  // canonical active context id (registry pointer). The
+  // route handler queries `getActiveContextId()` on the registry DO
+  // and passes the value through. Carries identity only.
+  activeContextId: string;
+  // a — historical user-anchored dialog turns from the
+  // message log, ordered oldest → newest, capped to last 30. Each
+  // entry pairs a user message's aggregated text with the assistant
+  // text that followed it (or null if tool-only). The route handler
+  // calls `getDialogTurns()`; this builder matches each
+  // `task.submitted` event to a turn by `userText` so pairing is
+  // robust to event_log's 20-row cap (v1 used index-based
+  // pairing and misaligned in production).
+  dialogTurns: { userText: string; assistantText: string | null }[];
+  // independent `task.submitted` event window (60 newest
+  // by default), used in place of `eventLog.filter(... 'task.submitted')`
+  // so older user turns aren't evicted from the 20-row eventLog cap.
+  // Optional for backwards compatibility; falls back to eventLog
+  // filter when omitted.
+  taskSubmittedEvents?: EventLogRow[];
 }): WorkspaceSnapshot {
-  const { agentThursdayState, cliSession, loopReview, approvalPolicy, pendingToolApproval, debugTrace, deliverableGate, pendingMutations, eventLogCount } = input;
+  const { agentThursdayState, cliSession, loopReview, approvalPolicy, pendingToolApproval, debugTrace, deliverableGate, pendingMutations, eventLog, lastResetAt, activeContextId, dialogTurns, taskSubmittedEvents } = input;
+  const eventLogCount = eventLog.length;
   const now = Date.now();
 
   const session: SessionView = {
@@ -263,33 +614,222 @@ function buildWorkspaceSnapshot(input: {
 
   // summaryStream: only human-readable text. Never include raw event_payload
   // or tool call JSON — those are inspect-layer responsibilities ().
+  // v2.5+: include user task submissions derived from `task.submitted`
+  // events so the user's own input shows up in the dialog flow and
+  // completed task history is preserved across rounds.
+  //
+  // reset-aware filtering. Reset preserves durable
+  // event_log / currentTaskObject / lastActionResult per /150,
+  // so without filtering pre-reset task text + synthetic loop summary
+  // would re-appear in the dialog. We anchor every summaryStream item
+  // to a real timestamp and drop those at-or-before `lastResetAt`.
+  // When `lastResetAt === 0` (no reset ever) the legacy `at = now`
+  // fallback for synthetic items is preserved.
   const summaryStream: MessageView[] = [];
-  if (debugTrace.lastAssistantSummary) {
+
+  // 1+2) a — turn-aware pairing of user task events
+  //      against message-log dialog turns.
+  //
+  //      Why turn-aware (not index): `userTaskEvents` comes from
+  //      `event_log` which is capped at 20 rows by `getEventLog()`,
+  //      so old `task.submitted` events can fall out of the window
+  //      while the message log retains every dialog turn. 153z4 v1
+  //      paired index-by-index and the verifier reproduced an
+  //      AGT-misalignment: latest user got an OLD assistant from a
+  //      prior round (or no AGT at all) because the indexes drifted.
+  //
+  //      How: each user event's payload carries both the clean
+  //      `display` (= `payload.task` after ) and the
+  //      original `taskPrompt` (only set when display !== task,
+  //      i.e. channel-origin messages where `display` was stripped
+  //      of metadata). The message log stored the FULL prompt as
+  //      the user text in saveMessages. So we match
+  //      `dialogTurns[j].userText` against `prompt` (full) — that
+  //      handles channel-origin. CLI-origin messages have
+  //      display === task → `prompt` falls back to display →
+  //      `dialogTurns[j].userText === display` matches identically.
+  //      A `consumed[]` mask prevents one turn from being matched
+  //      to two events.
+  //
+  //      Tool-only mid-stream rounds (agent ran a tool but didn't
+  //      synthesize text) match a turn whose `assistantText` is
+  //      null; we emit the YOU but skip the AGT for that round.
+  //
+  //      AGT timestamps are synthetic — assistant messages don't
+  //      carry a `createdAt` in the Think SDK shape — but anchored
+  //      to the matched user event's `created_at + 1` so sort time
+  //      naturally interleaves them as YOU → AGT → YOU → AGT.
+  //
+  //      149e3 (clean YOU display), 149e3a (multi-text-part
+  //      aggregation) defensive filter (no SUM),
+  //      149c reset boundary — all preserved.
+  // prefer the independent `task.submitted` window when
+  // the route passed it (60 newest), so the dialog isn't capped by
+  // the 20-row `eventLog`. Fall back to filtering `eventLog` when
+  // the field is omitted (older callers / tests). post-reset filter
+  // and sort apply equally to either source.
+  const taskSubmittedSource: EventLogRow[] = taskSubmittedEvents
+    ?? eventLog.filter((r) => r.event_type === "task.submitted");
+  const userTaskEvents = taskSubmittedSource
+    .filter((r) => r.event_type === "task.submitted" && r.created_at > lastResetAt)
+    .sort((a, b) => a.created_at - b.created_at)
+    .slice(-60);
+  const consumed: boolean[] = new Array(dialogTurns.length).fill(false);
+  let lastEventHadAgt = false;
+  for (let i = 0; i < userTaskEvents.length; i++) {
+    const row = userTaskEvents[i];
+    let display: string | null = null;
+    let prompt: string | null = null;
+    let taskId: string | null = null;
+    try {
+      const p = JSON.parse(row.payload) as { task?: unknown; taskId?: unknown; taskPrompt?: unknown };
+      if (typeof p.task === "string") display = p.task;
+      if (typeof p.taskPrompt === "string") prompt = p.taskPrompt;
+      if (typeof p.taskId === "string") taskId = p.taskId;
+    } catch { /* skip malformed */ }
+    if (display === null) continue;
+    const matchKey = prompt ?? display;
     summaryStream.push({
-      id: `assistant-${debugTrace.lastLadderTier?.at ?? now}`,
-      kind: "assistant",
-      text: debugTrace.lastAssistantSummary,
-      at: debugTrace.lastLadderTier?.at ?? now,
+      id: `user-${taskId ?? row.created_at}`,
+      kind: "user",
+      text: display,
+      at: row.created_at,
     });
+    let matchIdx = -1;
+    for (let j = 0; j < dialogTurns.length; j++) {
+      if (consumed[j]) continue;
+      if (dialogTurns[j].userText === matchKey) {
+        matchIdx = j;
+        break;
+      }
+    }
+    const isLastEvent = i === userTaskEvents.length - 1;
+    if (matchIdx >= 0) {
+      consumed[matchIdx] = true;
+      const at = dialogTurns[matchIdx].assistantText;
+      if (at !== null) {
+        summaryStream.push({
+          id: `assistant-${taskId ?? row.created_at}-${matchIdx}`,
+          kind: "assistant",
+          text: at,
+          // +1 ms keeps AGT immediately after its YOU at sort time.
+          at: row.created_at + 1,
+        });
+        if (isLastEvent) lastEventHadAgt = true;
+      }
+    }
   }
-  if (loopReview.summary) {
-    summaryStream.push({
-      id: `summary-${now}`,
-      kind: "summary",
-      text: loopReview.summary,
-      at: now,
-    });
+
+  // Synthetic anchor — used by both the assistant fallback (2b
+  // below) and the interventions block (3). Anchored to the latest
+  // of currentTaskObject.updatedAt / lastActionResult.recordedAt.
+  // If neither exists AND no reset has happened, fall back to `now`
+  // (legacy behavior for fresh DOs). Once reset is in the log,
+  // synthetic items only re-emerge after real post-reset activity
+  // bumps an anchor.
+  const taskAnchor = agentThursdayState.currentTaskObject?.updatedAt ?? 0;
+  const actionAnchor = agentThursdayState.lastActionResult?.recordedAt ?? 0;
+  const syntheticAnchor = Math.max(taskAnchor, actionAnchor);
+  const allowSyntheticFallback = lastResetAt === 0 && syntheticAnchor === 0;
+  const syntheticAt = syntheticAnchor > 0
+    ? syntheticAnchor
+    : allowSyntheticFallback
+      ? now
+      : null;
+
+  // fallback for "latest user round has no assistant text yet".
+  //      Fires only when the most recent `task.submitted` event
+  //      didn't get a non-null `assistantText` from `dialogTurns`
+  //      (either no matching turn at all, or the turn was
+  //      tool-only). Surfaces `lastActionResult.summary` so the
+  //      dialog shows something for the trailing user turn instead
+  //      of a blank gap.
+  //
+  //       had a 2a→2b chain; 153z4a drops the redundant
+  //      pre-2a single-AGT push because the turn-aware loop above
+  //      already emits the latest assistant from message log when
+  //      one exists.
+  if (!lastEventHadAgt && userTaskEvents.length > 0) {
+    const lar = agentThursdayState.lastActionResult;
+    if (lar && lar.summary && lar.recordedAt > lastResetAt) {
+      summaryStream.push({
+        id: `assistant-action-${lar.recordedAt}`,
+        kind: "assistant",
+        text: lar.summary,
+        at: lar.recordedAt,
+      });
+    }
   }
-  for (const intervention of approvalPolicy.interventions) {
-    if (intervention.active) {
+
+  // REMOVED in .
+  //
+  // Background: 153z added `loopReview.summary` as a final AGT
+  // fallback so flows with no real assistant text would still show
+  // an agent line. Production then surfaced the developer-loop
+  // preview line `[last msg] …(+N chars)` from
+  // `getDeveloperLoopReview()` because that string is embedded
+  // inside `loopReview.summary`. the operator reviewed and rejected loop
+  // previews appearing as AGT body. The dialog should reflect real
+  // user / assistant turns, not loop status.
+  //
+  // Removing 2c means: when `lastAssistantSummary` is empty
+  // (assistant produced no readable text yet) and `lastActionResult`
+  // is empty/stale, no AGT line is rendered. That's the correct UX
+  // — synthetic loop summary text never looks like a real agent
+  // reply, and the empty case is what the dialog should show in
+  // such states. The intervention block (3) below still surfaces
+  // active blockers as `kind:"system"` rows.
+  //
+  // The defensive filter below provides belt-and-suspenders against
+  // any other path that might try to emit a `[last msg]` preview or
+  // `…(+N chars)` suffix into `summaryStream`.
+  void loopReview;
+
+  // 3) Active interventions only.
+  //
+  // filter `review-gate-blocked` out of the dialog SYS
+  // rows. It's a loop-internal "no reviewer-acceptable action recorded
+  // yet" signal that's true on every fresh DO and on every round
+  // until an action result lands; the user can't act on it directly
+  // (they can only submit a task / approve / answer needsHuman, all
+  // of which are surfaced by the OTHER intervention kinds when
+  // applicable). The raw `approvalPolicy.interventions` array is
+  // unchanged — `/cli/status`, `/cli/result`, the inspect / debug
+  // surfaces continue to see every kind for diagnostics. Only the
+  // user-visible main dialog `summaryStream` skips this one row.
+  if (syntheticAt !== null && syntheticAt > lastResetAt) {
+    for (const intervention of approvalPolicy.interventions) {
+      if (!intervention.active) continue;
+      if (intervention.kind === "review-gate-blocked") continue;
       summaryStream.push({
         id: `system-${intervention.kind}`,
         kind: "system",
         text: `[${intervention.kind}] ${intervention.reason}`,
-        at: now,
+        at: syntheticAt,
       });
     }
   }
+  // defensive sanitizer. No `summaryStream` item may
+  // carry a developer-loop preview line (`[last msg] …`) or a
+  // server-side truncation suffix (`…(+N chars)`). Both leaked into
+  // production after 's 2c fallback rendered
+  // `loopReview.summary` as AGT. We've removed 2c above, but keep
+  // this filter as a hard invariant so any future emitter that
+  // accidentally embeds a loop preview gets dropped instead of
+  // surfaced. Drop, never partially clean — partially-cleaned text
+  // would change semantics; an empty dialog is the safer failure.
+  for (let idx = summaryStream.length - 1; idx >= 0; idx--) {
+    const text = summaryStream[idx].text;
+    if (
+      DIALOG_PREVIEW_SUFFIX_RE.test(text)
+      || DIALOG_LOOP_LAST_MSG_RE.test(text)
+    ) {
+      summaryStream.splice(idx, 1);
+    }
+  }
+
+  // Final order: chronological by `at`, oldest at top → newest at bottom.
+  summaryStream.sort((a, b) => a.at - b.at);
 
   let pendingApproval: ApprovalView | null = null;
   if (pendingToolApproval) {
@@ -349,7 +889,7 @@ function buildWorkspaceSnapshot(input: {
     hasToolEvents: debugTrace.recentToolEvents.length > 0,
   };
 
-  return { session, currentTask, summaryStream, pendingApproval, replyNeed, latestResult, inspectEntry };
+  return { session, currentTask, summaryStream, pendingApproval, replyNeed, latestResult, inspectEntry, activeContextId };
 }
 
 function buildCliResultView(session: CliSession, loopReview: DeveloperLoopReview, approvalPolicy: ApprovalPolicy, deliverableGate: DeliverableConvergence): CliResultView {
@@ -500,6 +1040,16 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   private _currentTaskTruthfulnessVerdict: { violationSeen: boolean; category: string | null } = {
     violationSeen: false, category: null,
   };
+  // captured ack from a `tool.memory.remember` call inside
+  // the current submitTask round. Used to fall back when the model
+  // doesn't synthesize visible assistant text after the tool fires
+  // (the "tool-only memory round = silent UI" case the operator hit).
+  // Populated by the `remember` tool's execute, consumed at the end of
+  // submitTask to populate `replyText` for ChannelHub outbox; the
+  // matching `lastActionResult.summary` (also written by the tool
+  // execute) lets `buildWorkspaceSnapshot`'s 2b fallback surface the
+  // ack on `/api/workspace.summaryStream`. Reset at submitTask top.
+  private _currentTaskRememberAck: string | null = null;
   // Tier 2: pre-bundled npm modules for the codemode sandbox. null = not yet initialized.
   // Each value uses the explicit-type Module shape `{ js: source }` so the
   // Workers Loader accepts bare specifier keys like `"zod"` ().
@@ -758,7 +1308,32 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
           supersedesId: z.number().int().optional(),
         }),
         execute: async (input) => {
-          return this.rememberMemory(input);
+          const result = await this.rememberMemory(input);
+          // deterministic ack for tool-only memory round.
+          // SOUL prompt () asks the model to follow up with a
+          // confirmation, but production showed it's not always reliable.
+          // Capture an ack here so submitTask can fall back when the
+          // model produced no assistant text, and write the same string
+          // to `lastActionResult.summary` so `buildWorkspaceSnapshot`'s
+          // 2b fallback surfaces an AGT row in the dialog as well.
+          // Single-line trim of the agent's stored content keeps the
+          // ack short and prevents tool-payload leakage (the content
+          // is the user-visible text the agent chose to remember; the
+          // 200-char slice + whitespace collapse caps blast radius).
+          const ackText = `已记下：${input.content.replace(/\s+/g, " ").trim().slice(0, 200)}`;
+          this._currentTaskRememberAck = ackText;
+          const stateNow = this.agentThursdayState;
+          this.setAgentThursdayState({
+            ...stateNow,
+            lastActionResult: {
+              actionType: "memory.remember",
+              outcome: "success",
+              summary: ackText,
+              recordedAt: Date.now(),
+            },
+            updatedAt: Date.now(),
+          });
+          return result;
         },
       }),
       recall: tool({
@@ -904,6 +1479,52 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
           }, traceId);
         },
       }),
+      // ── agent-facing conversation archive search ────
+      // The `conversationSearch()` callable + `/cli/context/conversation/search`
+      // route already exist () and live on the registry DO
+      // (DEMO_INSTANCE) where the `conversation_archive` table lives. This
+      // wrapper exposes the same retrieval to the model so user questions
+      // like "4 月 28 那天我们聊了什么" or "之前 Kimi 模型那段最后怎么定的"
+      // can be answered against archive instead of bouncing off `recall`
+      // (which only sees `agent_memories`).
+      conversation_search: tool({
+        description: "Search this agent's conversation archive (prior sessions / cross-context dialog). Use when the user asks about historical conversation that isn't in the visible dialog or in agent_memories — e.g. \"what did we discuss on 4/28\", \"that Kimi debugging from before\", \"上次/之前/上周聊过 X 吗\". Returns up to `topK` snippets with provenance (chunkId, contextId, archivedAt, role). Distinct from `recall` (which searches `agent_memories`) and `content_search` (which searches external Content Sources). If no hits, say so honestly — do not equate `recall` empty with archive empty.",
+        inputSchema: z.object({
+          query: z.string().min(1).max(500).describe("Literal search keyword(s). Matches against archived user/assistant text."),
+          topK: z.number().int().positive().max(10).optional().describe("Max hits to return (default 3, cap 10)."),
+          contextId: z.string().optional().describe("Restrict to a single archived contextId. Default: search across all contexts."),
+          role: z.enum(["user", "assistant", "system"]).optional().describe("Restrict to one role."),
+          fromTimestamp: z.number().int().optional().describe("Unix epoch ms; only hits archived at or after."),
+          toTimestamp: z.number().int().optional().describe("Unix epoch ms; only hits archived at or before."),
+          snippetCap: z.number().int().positive().max(2000).optional().describe("Max snippet length per hit (default 300)."),
+        }),
+        execute: async (input) => {
+          const traceId = this.agentThursdayState.currentTaskObject?.id ?? undefined;
+          const callerContextId = this.name;
+          this.logEvent("tool.conversation_search", {
+            queryPreview: input.query.slice(0, 80),
+            topK: input.topK ?? null,
+            contextId: input.contextId ?? null,
+            role: input.role ?? null,
+          });
+          const stub = await getAgentByName<Env, AgentThursdayAgent>(
+            this.env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>,
+            DEMO_INSTANCE,
+          );
+          return await stub.conversationSearch({
+            query: input.query,
+            topK: input.topK,
+            contextId: input.contextId,
+            role: input.role,
+            fromTimestamp: input.fromTimestamp,
+            toTimestamp: input.toTimestamp,
+            snippetCap: input.snippetCap,
+            callerContextId,
+            callerTaskId: traceId,
+            traceId,
+          });
+        },
+      }),
     };
   }
 
@@ -996,6 +1617,133 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     `;
     this.sql`CREATE INDEX IF NOT EXISTS idx_agent_memories_type_active ON agent_memories(type, active)`;
     this.sql`CREATE INDEX IF NOT EXISTS idx_agent_memories_key ON agent_memories(key)`;
+    // v3  / 149 — context_history: one row per logical
+    // context (open or closed).  added the queries; the DDL was
+    // dropped during the  commit so a fresh DO would fail on
+    // first query. Carrying both DDLs forward together (idempotent).
+    // The active context is now tracked separately via context_active
+    // so switching back to a closed context can update the routing
+    // pointer without re-opening the historical row.
+    this.sql`
+      CREATE TABLE IF NOT EXISTS context_history (
+        context_id TEXT PRIMARY KEY,
+        reason TEXT,
+        created_at INTEGER NOT NULL,
+        ended_at INTEGER,
+        message_count_at_end INTEGER
+      )
+    `;
+    this.sql`CREATE INDEX IF NOT EXISTS idx_context_history_ended ON context_history(ended_at)`;
+    // v3 single-row pointer to the registry's active
+    // contextId. CHECK (id=1) enforces uniqueness so we can do
+    // INSERT OR REPLACE without juggling multiple rows. Lives only on
+    // the registry DO (DEMO_INSTANCE); per-context DOs create the table
+    // via this idempotent DDL but never read or write it.
+    this.sql`
+      CREATE TABLE IF NOT EXISTS context_active (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        active_context_id TEXT NOT NULL,
+        activated_at INTEGER NOT NULL
+      )
+    `;
+    // Conversation Archive. The registry DO
+    // (DEMO_INSTANCE) is the canonical owner; per-context DOs run the
+    // same DDL idempotently but never write to it (their reset path
+    // RPCs the registry's `archiveChunks` callable, and the registry's
+    // `newContext` RPCs the closing DO's `drainForArchive` callable
+    // and writes the returned chunks here).
+    //
+    // `text` carries the original sanitized turn text (audit-quality);
+    // `index_text` is an optional boilerplate-stripped variant for
+    // search index reuse.  stripBoilerplate is the source.
+    this.sql`
+      CREATE TABLE IF NOT EXISTS conversation_archive (
+        chunk_id TEXT PRIMARY KEY,
+        context_id TEXT NOT NULL,
+        message_id TEXT,
+        message_index INTEGER,
+        role TEXT,
+        speaker TEXT,
+        surface TEXT,
+        task_id TEXT,
+        card_id TEXT,
+        type TEXT,
+        harness_class TEXT,
+        text TEXT NOT NULL,
+        index_text TEXT,
+        redaction_flags TEXT,
+        source_ref TEXT,
+        is_synthetic_compaction INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        archived_at INTEGER NOT NULL,
+        trigger TEXT NOT NULL
+      )
+    `;
+    this.sql`CREATE INDEX IF NOT EXISTS idx_conversation_archive_context ON conversation_archive(context_id)`;
+    this.sql`CREATE INDEX IF NOT EXISTS idx_conversation_archive_archived ON conversation_archive(archived_at)`;
+    // Per-flush audit row so operators can query "what was archived for
+    // contextId=X under trigger=context.reset?". One row per flush
+    // attempt, including failures (status=`failed`) and no-ops
+    // (status=`skipped` for empty contexts).
+    this.sql`
+      CREATE TABLE IF NOT EXISTS conversation_archive_flushes (
+        flush_id TEXT PRIMARY KEY,
+        context_id TEXT NOT NULL,
+        trigger TEXT NOT NULL,
+        chunk_count INTEGER NOT NULL,
+        message_count INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        reason TEXT,
+        error TEXT,
+        created_at INTEGER NOT NULL
+      )
+    `;
+    this.sql`CREATE INDEX IF NOT EXISTS idx_archive_flushes_context ON conversation_archive_flushes(context_id)`;
+    // Conversation retrieval audit log. Records each
+    // `conversation_search` invocation: the (capped) query, filters,
+    // returned refs (chunk_ids + their context_ids), and any caller-
+    // supplied trace/context/task identity.  will aggregate
+    // this log to score topics for memory promotion (frequency,
+    // cross-context recurrence, used vs. returned).
+    this.sql`
+      CREATE TABLE IF NOT EXISTS conversation_retrieval_log (
+        retrieval_id TEXT PRIMARY KEY,
+        query TEXT NOT NULL,
+        filters_json TEXT,
+        returned_refs_json TEXT,
+        used_refs_json TEXT,
+        trace_id TEXT,
+        context_id TEXT,
+        task_id TEXT,
+        result_count INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    `;
+    this.sql`CREATE INDEX IF NOT EXISTS idx_retrieval_log_created ON conversation_retrieval_log(created_at)`;
+    // context hygiene run audit. One row per
+    // `runContextHygiene` invocation: trigger source, decision
+    // (skipped|proposed|auto-applied|failed), risk gates that fired
+    // (if any), pressure snapshot, before/after counts, and the
+    // archive flush id +  compact plan id when an auto-apply
+    // happened. Lives on each per-context DO that ran hygiene on
+    // itself; the registry isn't involved.
+    this.sql`
+      CREATE TABLE IF NOT EXISTS context_hygiene_runs (
+        run_id TEXT PRIMARY KEY,
+        trigger TEXT NOT NULL,
+        decision TEXT NOT NULL,
+        reason TEXT,
+        pressure_message_count INTEGER NOT NULL,
+        pressure_threshold INTEGER NOT NULL,
+        before_message_count INTEGER NOT NULL,
+        after_message_count INTEGER,
+        archive_flush_id TEXT,
+        applied_compact_plan_id TEXT,
+        risk_conditions_json TEXT,
+        created_at INTEGER NOT NULL
+      )
+    `;
+    this.sql`CREATE INDEX IF NOT EXISTS idx_context_hygiene_runs_created ON context_hygiene_runs(created_at)`;
     // Migrate: add status/applied_at/evidence columns to kanban_mutations if not present
     const kmCols = this.sql<{ name: string }>`PRAGMA table_info(kanban_mutations)`;
     if (!kmCols.some(c => c.name === "status")) {
@@ -1051,15 +1799,116 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return `${full.slice(0, maxLen)} …(+${full.length - maxLen} chars)`;
   }
 
+  /**
+   *  → return up to `limit` most recent
+   * **user-anchored dialog turns** from the message log. Each turn
+   * carries the user's text (aggregated text parts) and the
+   * assistant text that followed it before the next user message
+   * (also aggregated, with multi-text-parts joined by `\n\n` per
+   * 149e3a; multiple consecutive assistant messages between two
+   * users are concatenated with `\n\n` too).
+   *
+   * `assistantText` is `null` when the round produced no usable
+   * assistant text — typically a tool-only round (e.g. a silent
+   * `remember` followed by no synthesis prose). Callers can choose
+   * to surface a fallback (e.g. `lastActionResult.summary`) for
+   * those user turns instead of leaving them bare.
+   *
+   * 153z4 v1 returned only an assistant-only list and pre-/post-
+   * paired by index in `buildWorkspaceSnapshot`. That misaligned
+   * when `event_log`'s 20-row cap dropped older `task.submitted`
+   * events while the message log retained every assistant turn
+   * (verifier reproduced this: latest user got AGT[0] = an old
+   * round, dropping the latest AGT entirely). 153z4a switches to
+   * **turn-aware** pairing — the route handler matches each
+   * `task.submitted` event to a turn by `userText` rather than by
+   * index, so channel-ingress full-prompt user messages and
+   * CLI-origin clean-text user messages both align correctly even
+   * with tool-only mid-stream rounds and asymmetric log windows.
+   *
+   * Tool / dynamic-tool / reasoning / step-start parts are skipped
+   * by the `p.type !== "text"` type-guard; `inputPreview` /
+   * `outputPreview` never reach the dialog. Reset boundary holds
+   * because `clearMessages()` empties the message log, so only
+   * post-reset turns appear here.
+   */
+  @callable()
+  getDialogTurns(limit: number = 30): { userText: string; assistantText: string | null }[] {
+    const messages = this.getMessages();
+    const turns: { userText: string; assistantText: string | null }[] = [];
+    let currentUserText: string | null = null;
+    let currentAssistantSegments: string[] = [];
+
+    function flush() {
+      if (currentUserText === null) return;
+      turns.push({
+        userText: currentUserText,
+        assistantText: currentAssistantSegments.length > 0
+          ? currentAssistantSegments.join("\n\n")
+          : null,
+      });
+      currentUserText = null;
+      currentAssistantSegments = [];
+    }
+
+    function aggregateTextParts(m: { parts: ReadonlyArray<unknown> }): string {
+      const segments: string[] = [];
+      for (const p of m.parts) {
+        const part = p as { type?: unknown; text?: unknown };
+        if (part.type !== "text") continue;
+        if (typeof part.text !== "string") continue;
+        if (part.text.trim().length === 0) continue;
+        segments.push(part.text);
+      }
+      return segments.join("\n\n");
+    }
+
+    for (const m of messages) {
+      if (m.role === "user") {
+        flush();
+        currentUserText = aggregateTextParts(m);
+      } else if (m.role === "assistant" && currentUserText !== null) {
+        const t = aggregateTextParts(m);
+        if (t.length > 0) currentAssistantSegments.push(t);
+      }
+      // system and other roles: ignored.
+      // Assistants before any user are also ignored (no anchor).
+    }
+    flush();
+
+    const cap = Math.max(1, Math.min(200, limit));
+    return turns.slice(-cap);
+  }
+
   // full last-assistant text for outbound delivery. No truncation
   // suffix (would corrupt user-visible Discord reply); 's
   // splitForDiscord2000 handles the 2000-char chunk limit downstream.
+  //
+  // a — aggregate ALL `text` parts in the last assistant
+  // message, joined by `\n\n`, preserving order. The previous
+  // implementation only returned the FIRST text part, so an assistant
+  // round of shape `text → tool → text` rendered just the prologue
+  // and dropped the post-tool conclusion in the workspace dialog
+  // (Discord outbox was fine because it goes through
+  // `getNewAssistantTextsSince`, which already aggregates).
+  //
+  // Tool parts are NEVER included — `inputPreview` / `outputPreview`
+  // are inspect-tab fields and must not leak into the main dialog
+  // (/c privacy contract;  forbidden patterns).
   private getLastAssistantTextFull(): string {
     const msgs = this.getMessages();
     const lastAssistant = [...msgs].reverse().find(m => m.role === "assistant");
     if (!lastAssistant) return "";
-    const textPart = lastAssistant.parts.find((p): p is { type: "text"; text: string } => p.type === "text");
-    return textPart?.text ?? "";
+    const segments: string[] = [];
+    for (const p of lastAssistant.parts) {
+      if (p.type !== "text") continue;
+      const text = (p as { text?: unknown }).text;
+      if (typeof text !== "string") continue;
+      const trimmed = text.trim();
+      if (trimmed.length === 0) continue;
+      segments.push(text);
+    }
+    return segments.join("\n\n");
   }
 
   // aggregate ALL new assistant texts produced during this
@@ -1133,7 +1982,31 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     // a fabricated tool result outside the tool-call frame. Count fenced
     // JSON blocks so /api/inspect can classify the round even when the
     // bot's reply has no detectable claim.
-    const inlineJsonCount = (text.match(/```json\b/gi) ?? []).length;
+    const fencedJsonCount = (text.match(/```json\b/gi) ?? []).length;
+    //  v3 (2026-04-30) — also count raw tool-call schema JSON in
+    // assistant text. Pattern observed live during  v3 demo: Kimi
+    // sporadically emits `{"type":"function","name":"<known-tool>",...}`
+    // as plain text instead of going through the structured tool_calls
+    // field. 's supplier marker doesn't catch this (toolCalls
+    // structural field is empty + finishReason valid → no degradation
+    // signal). Treat any raw schema occurrence with a known tool name
+    // as inline-JSON-without-dispatch evidence so  downgrades
+    // the task and  prepends a user-visible marker.
+    let rawSchemaCount = 0;
+    {
+      // Count raw schemas outside fenced json blocks only, so a fenced
+      // schema does not double-count as both `fencedJsonCount` and
+      // `rawSchemaCount`.
+      const textWithoutFencedJson = text.replace(/```json\b[\s\S]*?```/gi, "");
+      const re = /"\s*type\s*"\s*:\s*"\s*function\s*"[\s\S]{0,160}?"\s*name\s*"\s*:\s*"([a-zA-Z_][a-zA-Z0-9_]*)"/g;
+      let m: RegExpExecArray | null;
+      const knownSet = new Set<string>(KNOWN_TOOL_NAMES);
+      while ((m = re.exec(textWithoutFencedJson)) !== null) {
+        const name = m[1];
+        if (knownSet.has(name)) rawSchemaCount += 1;
+      }
+    }
+    const inlineJsonCount = fencedJsonCount + rawSchemaCount;
 
     const verdict = checkTruthfulness(claims, actualToolNames);
     const dispatchedToolNames = [...actualToolNames].sort();
@@ -1154,6 +2027,9 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       consistentTools: verdict.consistent,
       dispatchedToolNames,
       inlineJsonCount,
+      //  v3 — split fenced vs raw schema for diagnosis.
+      fencedJsonCount,
+      rawSchemaCount,
       claimsCount: verdict.claims.length,
       replyTextLen: text.length,
       mode: effectiveMode,
@@ -1165,8 +2041,13 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     // supplier.signal.summary.
     this._currentTaskTruthfulnessVerdict = { violationSeen: true, category };
 
-    if (verdict.fabricated.length === 0) return text;
     if (effectiveMode === "log-only") return text;
+    //  v3 — inline-JSON-without-dispatch also gets a user-visible
+    // marker now (previously log-only). Operator note: "这种错误应该抓到 downgrade".
+    if (verdict.fabricated.length === 0) {
+      const inlineWarning = renderInlineJsonWarning();
+      return `${inlineWarning}\n\n${text}`;
+    }
     // warn mode → prepend a single warning line.
     const warning = renderTruthfulnessWarning(verdict.fabricated);
     return `${warning}\n\n${text}`;
@@ -1231,8 +2112,42 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   }
 
   private readKnowledge(): string {
-    const rows = this.sql<{ key: string; content: string }>`SELECT key, content FROM memory_knowledge ORDER BY key`;
-    return rows.map(r => `[${r.key}] ${r.content}`).join(" | ");
+    // bounded read. SOUL+knowledge is injected via
+    // `withContext("soul")` on every model invocation, so an unbounded
+    // memory_knowledge table grows linearly into every prompt + into
+    // the DO isolate's working set. Hard cap rows + total characters
+    // so a hot ChannelHub submit path can't OOM the isolate just by
+    // accumulating knowledge entries over months of dogfood.
+    const KNOWLEDGE_ROW_CAP = 50;
+    const KNOWLEDGE_CHAR_BUDGET = 16_000;
+    const rows = this.sql<{ key: string; content: string }>`
+      SELECT key, content FROM memory_knowledge
+      ORDER BY key
+      LIMIT ${KNOWLEDGE_ROW_CAP}
+    `;
+    const parts: string[] = [];
+    let totalChars = 0;
+    let truncatedRows = 0;
+    for (const r of rows) {
+      const segment = `[${r.key}] ${r.content}`;
+      if (totalChars + segment.length > KNOWLEDGE_CHAR_BUDGET) {
+        truncatedRows = rows.length - parts.length;
+        break;
+      }
+      parts.push(segment);
+      totalChars += segment.length + 3; // separator
+    }
+    let out = parts.join(" | ");
+    // Total row count from a separate cheap COUNT, so the marker can
+    // tell the model how much was hidden whether truncation hit the
+    // row cap or the char budget.
+    const totalRows = Number((this.sql<{ n: number | bigint }>`SELECT COUNT(*) as n FROM memory_knowledge`)[0]?.n ?? 0);
+    const hiddenByRowCap = Math.max(0, totalRows - rows.length);
+    const totalHidden = hiddenByRowCap + truncatedRows;
+    if (totalHidden > 0) {
+      out += ` | [knowledge truncated: ${totalHidden} entr${totalHidden === 1 ? "y" : "ies"} hidden — ${rows.length - truncatedRows}/${totalRows} shown, ${totalChars}/${KNOWLEDGE_CHAR_BUDGET} chars]`;
+    }
+    return out;
   }
 
   private makeTaskObject(task: string, source: TaskObject["source"]): TaskObject {
@@ -1240,19 +2155,33 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   }
 
   @callable()
-  async submitTask(task: string): Promise<{ ok: boolean; taskId: string; loopTriggered: boolean; replyText: string }> {
+  async submitTask(task: string, opts?: { displayText?: string }): Promise<{ ok: boolean; taskId: string; loopTriggered: boolean; replyText: string }> {
     // conversational resume from a prior `needs_human`
     // pause. While paused, only explicit resume intents ("继续" /
     // "proceed" / "resume" / ...) may advance the current loop. Other
     // text receives a reminder and does NOT create a new task or call the
     // model, preserving the operator's "resume via conversation" requirement.
+    //
+    // `opts.displayText` lets the caller (ChannelHub) split
+    // the user-facing display text from the metadata-rich agent prompt.
+    // When provided:
+    //   - LLM still sees `task` (full prompt, including channel
+    //     metadata + safety suffix) via `saveMessages`;
+    //   - currentTask / taskObject.title / `task.submitted` event use
+    //     `displayText` so the Web/mobile YOU line and TopStatusBar
+    //     don't leak `[discord channel message ...]` etc.
+    //   - `isResumeIntent` is checked against `displayText` since
+    //     resume keywords come from the human-visible content.
+    // When omitted, `displayText` defaults to `task` and behavior is
+    // identical to .
+    const display = opts?.displayText ?? task;
     const wasWaitingForHuman = !!this.agentThursdayState.waitingForHuman;
-    const isExplicitResume = wasWaitingForHuman && isResumeIntent(task);
+    const isExplicitResume = wasWaitingForHuman && isResumeIntent(display);
     const prevTaskObj = this.agentThursdayState.currentTaskObject;
     if (wasWaitingForHuman && !isExplicitResume) {
       this.logEvent("loop.pause.awaiting_resume", {
         taskId: prevTaskObj?.id ?? null,
-        userTextPreview: task.slice(0, 80),
+        userTextPreview: display.slice(0, 80),
       });
       return {
         ok: true,
@@ -1263,28 +2192,36 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     }
 
     const source: TaskObject["source"] = task === DOGFOOD_TASK ? "dogfood" : "human";
-    const isResubmit = !!(prevTaskObj && prevTaskObj.title === task.slice(0, 120));
+    const isResubmit = !!(prevTaskObj && prevTaskObj.title === display.slice(0, 120));
     const taskObject: TaskObject = isExplicitResume && prevTaskObj
       ? { ...prevTaskObj, status: "active", updatedAt: Date.now() }
       : isResubmit
         ? { ...prevTaskObj, status: "active", updatedAt: Date.now() }
-        : this.makeTaskObject(task, source);
-    const nextTaskTitle = isExplicitResume && prevTaskObj ? prevTaskObj.title : task;
+        : this.makeTaskObject(display, source);
+    const nextTaskTitle = isExplicitResume && prevTaskObj ? prevTaskObj.title : display;
     // New task: reset lastActionResult so old round's completion state doesn't bleed in.
     // Explicit resume keeps the current paused task identity and does not
     // manufacture a new task titled "继续".
     const nextState = isExplicitResume || isResubmit
       ? { ...this.agentThursdayState, currentTask: nextTaskTitle, currentTaskObject: taskObject, status: "running" as const, waitingForHuman: false, updatedAt: Date.now() }
-      : { ...this.agentThursdayState, currentTask: task, currentTaskObject: taskObject, status: "running" as const, waitingForHuman: false, lastActionResult: null, updatedAt: Date.now() };
+      : { ...this.agentThursdayState, currentTask: display, currentTaskObject: taskObject, status: "running" as const, waitingForHuman: false, lastActionResult: null, updatedAt: Date.now() };
     this.setAgentThursdayState(nextState);
     if (isExplicitResume) {
       this.logEvent("loop.resume.needs_human", {
         taskId: taskObject.id,
         prevTaskId: prevTaskObj?.id ?? null,
-        userTextPreview: task.slice(0, 80),
+        userTextPreview: display.slice(0, 80),
       });
     }
-    this.logEvent("task.submitted", { task, taskId: taskObject.id, isResubmit });
+    // `task.submitted.task` drives the YOU line in
+    // `summaryStream`; use the clean `display` so the main dialog
+    // never shows internal channel metadata. The original full
+    // prompt is recorded under `taskPrompt` only when it differs,
+    // so inspect/event-log surfaces can still audit the metadata
+    // payload that reached the model.
+    const taskSubmittedPayload: Record<string, unknown> = { task: display, taskId: taskObject.id, isResubmit };
+    if (display !== task) taskSubmittedPayload.taskPrompt = task;
+    this.logEvent("task.submitted", taskSubmittedPayload);
     // snapshot message-log length BEFORE saveMessages so we
     // can collect ALL new assistant texts produced during this round, not
     // just the "last assistant message" ('s strategy lost results
@@ -1300,6 +2237,9 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     // reset truthfulness verdict for this round so a stale
     // value from a previous turn never leaks into the supplier summary.
     this._currentTaskTruthfulnessVerdict = { violationSeen: false, category: null };
+    // clear last round's remember ack so the fallback
+    // path only fires for THIS round's tool calls.
+    this._currentTaskRememberAck = null;
     const result = await this.saveMessages([{
       id: crypto.randomUUID(),
       role: "user",
@@ -1324,6 +2264,19 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     // "this claim looks fabricated" line. Detection is fail-soft: any
     // throw inside detection/render returns the gated text unchanged.
     let replyText = this.applySupplierDegradationMarker(gatedReplyText);
+    // deterministic ack for tool-only memory rounds.
+    // When the model fired `remember` but produced no assistant text,
+    // surface the captured ack so the user sees a confirmation in
+    // both Discord (via this `replyText` returned to ChannelHub) and
+    // `/api/workspace.summaryStream` (via `lastActionResult.summary`
+    // already written in the tool execute). Bypasses the truthfulness
+    // gate above on purpose — the ack is server-synthesized factual
+    // text ("已记下: <user-stored content>"), not a model claim about
+    // tool calls, so applyTruthfulnessGate's claim-vs-event check
+    // doesn't apply.
+    if ((!replyText || replyText.trim().length === 0) && this._currentTaskRememberAck) {
+      replyText = this._currentTaskRememberAck;
+    }
     // persist per-turn supplier signal summary into
     // event_log so reviewers can grep / inspect tool-decision path
     // signals later without re-deploying diag endpoints. Fail-soft: the
@@ -1534,8 +2487,50 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     `;
   }
 
+  // independent query for `task.submitted` events so the
+  // workspace summary stream can show more than 4 dialog turns. The
+  // 20-row `getEventLog()` cap was dropping older `task.submitted`
+  // rows when they were buried behind agent.woken / tool.* noise.
+  // 60 keeps the desktop dialog readable (~30 user/assistant pairs)
+  // without ballooning the snapshot payload.
+  @callable()
+  getRecentTaskSubmittedEvents(limit: number = 60): EventLogRow[] {
+    const cap = Math.max(1, Math.min(200, Math.floor(limit)));
+    return this.sql<EventLogRow>`
+      SELECT event_type, payload, created_at, trace_id FROM event_log
+      WHERE event_type = 'task.submitted'
+      ORDER BY created_at DESC LIMIT ${cap}
+    `;
+  }
+
+  /**
+   * return the timestamp of the latest `context.reset` event,
+   * or 0 if reset has never been recorded on this DO. Used by
+   * `buildWorkspaceSnapshot` to filter `summaryStream` to post-reset
+   * activity. Does NOT delete event_log; the boundary is informational.
+   *
+   * Has its own MAX() query because `getEventLog` caps at 20 rows; a
+   * recent reset followed by 20+ events would otherwise be invisible to
+   * the snapshot builder.
+   */
+  @callable()
+  getLastResetAt(): number {
+    const row = this.sql<{ at: number | null }>`
+      SELECT MAX(created_at) AS at FROM event_log WHERE event_type = 'context.reset'
+    `[0];
+    const at = row?.at ?? null;
+    return typeof at === "number" ? at : 0;
+  }
+
   @callable()
   getLastTrace(): { traceId: string; events: EventLogRow[] } | null {
+    // bounded read.
+    // Previously this returned every row matching `trace_id`, with full
+    // `payload`. A long-running trace can accumulate hundreds of events
+    // with large tool payloads, which on the DO isolate has shown up as
+    // memory-limit resets during status/debug fetches.
+    // Cap rows + SQL-side payload preview keeps this debug-only callable
+    // safe even when a trace is enormous.
     const rows = this.sql<{ trace_id: string }>`
       SELECT DISTINCT trace_id FROM event_log
       WHERE trace_id IS NOT NULL
@@ -1544,9 +2539,10 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     if (rows.length === 0) return null;
     const traceId = rows[0].trace_id;
     const events = this.sql<EventLogRow>`
-      SELECT event_type, payload, created_at, trace_id FROM event_log
+      SELECT event_type, substr(payload, 1, 4000) AS payload, created_at, trace_id FROM event_log
       WHERE trace_id = ${traceId}
       ORDER BY created_at ASC
+      LIMIT 200
     `;
     return { traceId, events };
   }
@@ -1556,8 +2552,10 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     const s = this.getSafeState();
     const lar = s.lastActionResult;
 
+    // SQL-side payload preview keeps debug callables
+    // bounded even when individual tool events have huge inputs/outputs.
     const rawEvents = this.sql<{ event_type: string; payload: string; created_at: number }>`
-      SELECT event_type, payload, created_at FROM event_log
+      SELECT event_type, substr(payload, 1, 4000) AS payload, created_at FROM event_log
       WHERE event_type LIKE 'tool.%'
       ORDER BY created_at DESC LIMIT 20
     `;
@@ -1602,7 +2600,17 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     }
 
     return {
-      lastAssistantSummary: this.getLastAssistantText(10000),
+      // workspace dialog AGT line must show the full
+      // assistant reply, never the `…(+N chars)` preview suffix that
+      // `getLastAssistantText(maxLen)` appends. The dialog is a
+      // human reading surface; long replies should rely on natural
+      // text wrapping / scrolling on the client, not server-side
+      // pre-truncation. Using `getLastAssistantTextFull()` directly
+      // is safe — the only consumer of this field is
+      // `buildWorkspaceSnapshot`, and its `summaryStream` items
+      // already render through `MarkdownText` (no innerHTML, capped
+      // by parent flex `min-w-0` + `break-words`).
+      lastAssistantSummary: this.getLastAssistantTextFull(),
       recentToolEvents,
       pendingApprovalReason,
       lastActionResult: lar ? { actionType: lar.actionType, outcome: lar.outcome, summary: lar.summary } : null,
@@ -1613,7 +2621,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   @callable()
   // index recent degradation events into a compact view
   // for the inspect panel. Read-only: queries existing event_log rows
-  // emitted by Cards 117 / 119 / 102, parses payload as JSON, and tolerates
+  // emitted by , parses payload as JSON, and tolerates
   // shape drift via fail-soft per-row try/catch. Cap recentSummaries to
   // keep the inspect response payload bounded.
   private getDegradationDiagnostics(): DegradationDiagnostics {
@@ -1700,9 +2708,12 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       };
     });
 
-    // trace: full event log (capped) newest-first; payloads parsed when valid JSON
+    // trace: full event log (capped) newest-first; payloads parsed when valid JSON.
+    // SQL-side preview (substr) bounds memory for /api/inspect
+    // even when individual events log very large payloads (big tool outputs,
+    // pasted content, etc).
     const traceRows = this.sql<EventLogRow>`
-      SELECT event_type, payload, created_at, trace_id FROM event_log
+      SELECT event_type, substr(payload, 1, 4000) AS payload, created_at, trace_id FROM event_log
       ORDER BY created_at DESC LIMIT 200
     `;
     const trace: TraceEvent[] = traceRows.map(r => {
@@ -1717,21 +2728,34 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       };
     });
 
-    // toolEvents: filter to tool.* — kind="call" because the worker only logs tool entries today;
-    // "result" rows would need a separate logEvent path (out of scope for this card).
-    const toolEvents: ToolEvent[] = traceRows
-      .filter(r => r.event_type.startsWith("tool."))
-      .map(r => {
-        let payload: unknown = r.payload;
-        try { payload = JSON.parse(r.payload); } catch { /* keep raw */ }
-        return {
-          id: `${r.event_type}-${r.created_at}`,
-          kind: "call" as const,
-          toolName: r.event_type.replace(/^tool\./, ""),
-          payload,
-          at: r.created_at,
-        };
-      });
+    // toolEvents: kind="call" because the worker only logs tool entries
+    // today ("result" rows would need a separate logEvent path).
+    //
+    // independent SQL query (`event_type LIKE 'tool.%'`)
+    // instead of filtering the 200-row traceRows window. When an active
+    // context's recent event_log is dominated by non-tool noise
+    // (`agent.woken`, `agent.bundled_modules_ready`, channel acks),
+    // tool events used to get evicted past the 200-row cap and the
+    // Tools tab went empty even right after the user observed real
+    // tool dispatches. Independent query keeps the Tools tab populated
+    // up to its own 100-row budget regardless of overall event volume.
+    // SQL-side preview to keep tool tab bounded.
+    const toolEventRows = this.sql<EventLogRow>`
+      SELECT event_type, substr(payload, 1, 4000) AS payload, created_at, trace_id FROM event_log
+      WHERE event_type LIKE 'tool.%'
+      ORDER BY created_at DESC LIMIT 100
+    `;
+    const toolEvents: ToolEvent[] = toolEventRows.map(r => {
+      let payload: unknown = r.payload;
+      try { payload = JSON.parse(r.payload); } catch { /* keep raw */ }
+      return {
+        id: `${r.event_type}-${r.created_at}`,
+        kind: "call" as const,
+        toolName: r.event_type.replace(/^tool\./, ""),
+        payload,
+        at: r.created_at,
+      };
+    });
 
     // debugRaw: the existing debugTrace dump preserved for deep-dive debugging
     const debugRaw = this.getDebugTrace();
@@ -1741,13 +2765,55 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     // when no degradation events have been logged yet.
     const degradationDiagnostics = this.getDegradationDiagnostics();
 
-    // derive Action UI Intents from the same traceRows
-    // (newest-first event_log slice) the trace[] / toolEvents views are
-    // already built from. Pure builder, capped at 30 newest intents.
+    // derive Action UI Intents.
+    //
+    // : feed intents from a richer pool than `traceRows`
+    // alone. The 200-row newest-first slice is dominated by
+    // `agent.woken` / `agent.bundled_modules_ready` / channel ack
+    // chatter on busy contexts, evicting action-relevant rows past
+    // `buildActionUiIntents`'s rowLimit (100). Result: ActivityFeed
+    // dropped to only generic debug intents, which the feed itself
+    // filters out — so the right-side panel went blank even after a
+    // user just ran a tool.
+    //
+    // Fix: merge `traceRows` (full event-type window) with the
+    // already-independent `toolEventRows` (, LIKE 'tool.%')
+    // and a small auxiliary query for non-tool action events
+    // (`degradation.summary` / `loop.pause.*`). Dedupe by
+    // (event_type, created_at, trace_id), then sort with
+    // action-relevant rows ahead of others so buildActionUiIntents
+    // fills its intent budget with feed-worthy entries first; debug
+    // generic.event intents trail naturally and ActivityFeed's debug
+    // filter still hides them.
+    //
     // Wrapped in try/catch so a malformed row never breaks /api/inspect.
+    const actionAuxRows = this.sql<EventLogRow>`
+      SELECT event_type, substr(payload, 1, 4000) AS payload, created_at, trace_id FROM event_log
+      WHERE event_type IN ('degradation.summary', 'loop.pause.needs_human', 'loop.pause.awaiting_resume')
+      ORDER BY created_at DESC LIMIT 50
+    `;
+    const isActionRelevant = (et: string): boolean =>
+      et.startsWith("tool.")
+      || et === "degradation.summary"
+      || et === "loop.pause.needs_human"
+      || et === "loop.pause.awaiting_resume";
+    const intentSeen = new Set<string>();
+    const intentDeduped: EventLogRow[] = [];
+    for (const row of [...traceRows, ...toolEventRows, ...actionAuxRows]) {
+      const key = `${row.event_type}|${row.created_at}|${row.trace_id ?? ""}`;
+      if (intentSeen.has(key)) continue;
+      intentSeen.add(key);
+      intentDeduped.push(row);
+    }
+    intentDeduped.sort((a, b) => {
+      const ar = isActionRelevant(a.event_type) ? 0 : 1;
+      const br = isActionRelevant(b.event_type) ? 0 : 1;
+      if (ar !== br) return ar - br;
+      return b.created_at - a.created_at;
+    });
     let actionUiIntents: ActionUiIntent[] | undefined;
     try {
-      const sourceRows: ActionUiIntentSourceRow[] = traceRows.map(r => ({
+      const sourceRows: ActionUiIntentSourceRow[] = intentDeduped.map(r => ({
         event_type: r.event_type,
         payload: r.payload,
         created_at: r.created_at,
@@ -1794,8 +2860,1760 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
 
   @callable()
   getMemoryLayers(): { soul: string; knowledge: { key: string; content: string }[]; lastMessage: string } {
-    const knowledge = this.sql<{ key: string; content: string }>`SELECT key, content FROM memory_knowledge ORDER BY key`;
+    // bounded read.
+    // /api/memory pulls this on every refresh; an unbounded scan over a
+    // long-lived knowledge table is one of the queries the DO isolate
+    // memory limit can trip. Cap rows + content preview keep the surface
+    // bounded; the inspector only needs an overview, not the full
+    // verbatim corpus.
+    const KNOWLEDGE_INSPECT_ROW_CAP = 100;
+    const knowledge = this.sql<{ key: string; content: string }>`
+      SELECT key, substr(content, 1, 4000) AS content FROM memory_knowledge
+      ORDER BY key
+      LIMIT ${KNOWLEDGE_INSPECT_ROW_CAP}
+    `;
     return { soul: SOUL, knowledge, lastMessage: this.getLastAssistantText() };
+  }
+
+  // ── Context Lifecycle: inspect + reset ────────────────
+  // See docs/milestones/-context-lifecycle-management.md.
+  // `inspectContext` returns a sanitized view (no system prompts / SOUL /
+  // secrets / raw tool payloads); `resetContext` clears transient LLM
+  // messages while preserving durable state (checkpoints, memory, workspace,
+  // event_log, current task metadata, model profile). `context.new` is
+  // deferred — Think SDK doesn't yet expose multi-thread session traceability
+  // we'd need to honor the "preserve traceability" constraint in the spec.
+
+  @callable()
+  inspectContext(input?: { lastN?: number }): ContextInspectResult {
+    const lastN = typeof input?.lastN === "number" ? input.lastN : 20;
+    const messages = this.getMessages();
+    const view: ContextInspectViewModel = buildContextInspect(messages, lastN);
+    const tokenSession = this._sessionTok.hasData
+      ? { in: this._sessionTok.in, out: this._sessionTok.out, total: this._sessionTok.total }
+      : null;
+    const tokenTask = (this._taskTok.taskId !== null && (this._taskTok.in > 0 || this._taskTok.out > 0))
+      ? { in: this._taskTok.in, out: this._taskTok.out, total: this._taskTok.total }
+      : null;
+    const contextBudget = this._computeContextBudget(tokenTask?.total ?? null, tokenSession?.total ?? null);
+    return { ...view, tokenSession, tokenTask, contextBudget };
+  }
+
+  // ── context budget estimation ───────────────────────
+  // Returns numbers only; never the SOUL text, system prompt body, or
+  // tool schema definitions. Estimate uses `chars / 4` (no tokenizer
+  // dep). `modelMaxTokens` falls back to `null` for unmapped models —
+  // UI must render `source:"unavailable"` honestly.
+  private _computeContextBudget(taskTok: number | null, sessionTok: number | null): ContextInspectResult["contextBudget"] {
+    const modelId = this.agentThursdayState.modelProfile?.model ?? "";
+    // : registry profile is the source of truth for both
+    // model max tokens AND threshold ratios. Unknown models fall to
+    // the registry's DEFAULT (128K + 0.5/0.7/0.85), so the budget
+    // surface is always renderable and the UI doesn't degrade to
+    // message-stack mode.
+    const profile: ModelContextProfile = pickModelContextProfile(modelId);
+    const modelMaxTokens = profile.modelMaxTokens;
+    const softCompactAt = Math.round(modelMaxTokens * profile.thresholds.softCompactRatio);
+    const autoCompactAt = Math.round(modelMaxTokens * profile.thresholds.hardCompactRatio);
+    const dangerAt = Math.round(modelMaxTokens * profile.thresholds.dangerRatio);
+    // System overhead breakdown — chars / 4 estimate.
+    const soulTok = Math.ceil(SOUL.length / 4);
+    // Tools schema overhead is hard to bound exactly without rebuilding
+    // the registry; the v1 estimate is a fixed constant tuned to the
+    // current registry footprint (review/checkpoint/note/kanban + tier
+    // 1-4 + memory + content_* + conversation_search ≈ 18 tools, each
+    // averaging ~150-200 tokens of description+schema). Keeps the
+    // number stable across hot paths and avoids serializing zod into
+    // strings every poll.
+    const toolsTok = ESTIMATED_TOOLS_OVERHEAD_TOKENS;
+    // `other` covers Think SDK system framing, role markers, and any
+    // skill registration boilerplate the model receives. Fixed small
+    // constant; revisit when a tokenizer-based estimator lands.
+    const otherTok = ESTIMATED_OTHER_OVERHEAD_TOKENS;
+    const systemOverheadTokens = soulTok + toolsTok + otherTok;
+    // Prefer task tokens (current task usage) over session for "visible
+    // dialog" budgeting; fall back to session if no task is active.
+    const visibleDialogTokens = taskTok !== null ? taskTok : sessionTok;
+    // : even when dialog tokens are unavailable (cold context,
+    // no inference yet), surface `systemOverheadTokens` as the used
+    // baseline so the rail shows a non-empty slate band + threshold
+    // lines. Previously usedTokens=null forced UI into message-stack
+    // fallback and the operator couldn't see budget semantics in production.
+    const usedTokens = visibleDialogTokens !== null
+      ? visibleDialogTokens + systemOverheadTokens
+      : systemOverheadTokens;
+    // : when the registry profile is the `fallback` profile
+    // (unknown model), keep `source: "estimated"` so the UI labels
+    // numbers as estimated. vendor-docs and provider-runtime profiles
+    // also map to "estimated" today since chars/4 overhead is still
+    // an estimate; a future tokenizer-backed reading would flip this
+    // to "provider". The schema enum is unchanged.
+    const source: "estimated" | "provider" | "unavailable" = "estimated";
+    return {
+      modelMaxTokens,
+      autoCompactAt,
+      dangerAt,
+      softCompactAt,
+      usedTokens,
+      visibleDialogTokens,
+      systemOverheadTokens,
+      systemOverheadBreakdown: {
+        soul: soulTok,
+        tools: toolsTok,
+        other: otherTok,
+      },
+      source,
+    };
+  }
+
+  @callable()
+  async resetContext(input?: { reason?: string | null; routedContextId?: string }): Promise<ContextResetResult> {
+    const reason = (typeof input?.reason === "string" && input.reason.trim().length > 0)
+      ? input.reason.trim().slice(0, 200)
+      : null;
+    // The route handler passes the contextId it routed through. If
+    // the caller didn't (e.g. direct callable RPC), fall back to the
+    // registry's view via ensureActiveContext.
+    const routedContextId = (typeof input?.routedContextId === "string" && input.routedContextId.length > 0)
+      ? input.routedContextId
+      : null;
+    const beforeMessageCount = this.getMessages().length;
+
+    // archive-before-clear. Failure semantics: BLOCK
+    // on archive failure (throw before clearMessages). Justification:
+    // reset's whole point is safe rescue, and silently clearing
+    // messages whose archive RPC just failed turns reset into
+    // unaudited data loss. Blocking surfaces the failure so the
+    // operator can retry, switch contexts, or escalate. The audit
+    // event is still emitted in both success and failure paths.
+    //
+    // We skip the archive call entirely when the message log is
+    // already empty — there's nothing to lose.
+    //
+    // Self-RPC handling: if the route resolved to DEMO_INSTANCE (the
+    // registry), `this` IS the archive owner. Cloudflare DOs reject
+    // self-RPC inside an active request, so we write locally via
+    // `_writeArchiveFlush`. For cross-DO resets (header-routed to
+    // ctx_<uuid>) we RPC the registry's `archiveChunks`.
+    if (beforeMessageCount > 0) {
+      const messages = this.getMessages();
+      const chunks = buildArchiveChunks(messages);
+      const isRegistryReset = routedContextId === DEMO_INSTANCE;
+      let contextIdGuess: string;
+      if (routedContextId !== null) {
+        contextIdGuess = routedContextId;
+      } else {
+        try {
+          contextIdGuess = this.ensureActiveContext().context_id;
+        } catch {
+          contextIdGuess = "unknown";
+        }
+      }
+      try {
+        let flush: ArchiveFlushResult;
+        if (isRegistryReset) {
+          flush = this._writeArchiveFlush({
+            contextId: contextIdGuess,
+            trigger: "context.reset",
+            chunks,
+            reason,
+          });
+        } else {
+          const registry = await getAgentByName<Env, AgentThursdayAgent>(
+            this.env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>,
+            DEMO_INSTANCE,
+          );
+          flush = await registry.archiveChunks({
+            contextId: contextIdGuess,
+            trigger: "context.reset",
+            chunks,
+            reason,
+          });
+        }
+        if (flush.status !== "ok" && flush.status !== "skipped") {
+          throw new Error(
+            `resetContext: archive flush returned status=${flush.status} error=${flush.error ?? "unknown"}`,
+          );
+        }
+      } catch (e) {
+        const detail = (e instanceof Error ? e.message : String(e)).slice(0, 400);
+        // Audit + visible error. Do NOT clearMessages — the operator
+        // must see this and retry / switch / escalate.
+        this.logEvent("archive.flush.failed", {
+          contextId: contextIdGuess,
+          trigger: "context.reset",
+          reason,
+          error: detail,
+          beforeMessageCount,
+          blockedReset: true,
+        });
+        throw new Error(
+          `resetContext: aborted because archive flush failed (${detail}). No messages were cleared. ` +
+          `The conversation_archive_flushes audit row records the failure; you may retry once the archive write path is available.`,
+        );
+      }
+    }
+
+    // Think SDK contract (think.d.ts:753–761): when implementing
+    // custom reset, call resetTurnState() *before* clearMessages() so
+    // any in-flight turn / queued continuation is aborted against the
+    // still-populated log instead of racing with a freshly cleared
+    // session.
+    this.resetTurnState();
+    this.clearMessages();
+    this._sessionTok = { in: 0, out: 0, total: 0, hasData: false };
+    this._taskTok = { taskId: this._taskTok.taskId, in: 0, out: 0, total: 0 };
+    const afterMessageCount = this.getMessages().length;
+    const timestamp = Date.now();
+    this.logEvent("context.reset", {
+      reason,
+      beforeMessageCount,
+      afterMessageCount,
+      preservedDurableState: true,
+      archivedBeforeClear: beforeMessageCount > 0,
+    });
+    return {
+      ok: true,
+      beforeMessageCount,
+      afterMessageCount,
+      reason,
+      preservedDurableState: true,
+      timestamp,
+    };
+  }
+
+  // ── v3  — Context history + multi-DO routing ──────
+  //  introduced `context_history` and an audit-only newContext.
+  //  promotes the contextId from metadata to a real DO routing
+  // key: subsequent /cli/* requests carry an `X-AgentThursday-Context-Id` header
+  // so each context owns its own DO. The "active" pointer lives in the
+  // `context_active` single-row table on the REGISTRY DO (DEMO_INSTANCE)
+  // and is the source of truth for "which DO does a header-less request
+  // route to."
+  //
+  // Bootstrap rule (v2): the very first `context_history` row uses
+  // `DEMO_INSTANCE` as its contextId so header-less fallback resolves to
+  // the same DO that owns the registry tables. v1 deployments that
+  // already have a `ctx_<uuid>` bootstrap row keep it — those v1 rows
+  // are read-only audit history (their raw transcripts were cleared
+  // during the v1 reset-style fallback and cannot be recovered).
+
+  private getActiveContextRowFromHistory(): { context_id: string; reason: string | null; created_at: number } | null {
+    // Returns the row that currently has `ended_at IS NULL`. Used
+    // during bootstrap migration when context_active is empty; once
+    // populated, getActivePointer() is the canonical accessor.
+    const rows = this.sql<{ context_id: string; reason: string | null; created_at: number | bigint }>`
+      SELECT context_id, reason, created_at FROM context_history WHERE ended_at IS NULL ORDER BY created_at DESC LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      context_id: row.context_id,
+      reason: row.reason,
+      created_at: Number(row.created_at),
+    };
+  }
+
+  private getActivePointer(): { active_context_id: string; activated_at: number } | null {
+    const rows = this.sql<{ active_context_id: string; activated_at: number | bigint }>`
+      SELECT active_context_id, activated_at FROM context_active WHERE id = 1 LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) return null;
+    return { active_context_id: row.active_context_id, activated_at: Number(row.activated_at) };
+  }
+
+  private writeActivePointer(contextId: string, activatedAt: number): void {
+    this.sql`
+      INSERT OR REPLACE INTO context_active (id, active_context_id, activated_at)
+      VALUES (1, ${contextId}, ${activatedAt})
+    `;
+  }
+
+  private ensureActiveContext(): { context_id: string; reason: string | null; created_at: number } {
+    // First check the active pointer; this is the canonical accessor
+    // post-v2 and avoids the "ended_at IS NULL" assumption that
+    // breaks once we allow switching back to closed contexts.
+    const pointer = this.getActivePointer();
+    if (pointer) {
+      const rows = this.sql<{ context_id: string; reason: string | null; created_at: number | bigint }>`
+        SELECT context_id, reason, created_at FROM context_history WHERE context_id = ${pointer.active_context_id} LIMIT 1
+      `;
+      if (rows[0]) {
+        return {
+          context_id: rows[0].context_id,
+          reason: rows[0].reason,
+          created_at: Number(rows[0].created_at),
+        };
+      }
+    }
+    // Pointer missing or stale → migrate from v1 semantics.
+    const v1Active = this.getActiveContextRowFromHistory();
+    const now = Date.now();
+    if (v1Active) {
+      // v1 bootstrap row exists — adopt it as the active context and
+      // populate the pointer so future calls take the fast path.
+      this.writeActivePointer(v1Active.context_id, now);
+      return v1Active;
+    }
+    // Truly fresh DO → bootstrap. v2 uses DEMO_INSTANCE as the
+    // bootstrap contextId so header-less requests route to the same DO
+    // that owns this row.
+    const contextId = DEMO_INSTANCE;
+    const reason = "initial-bootstrap";
+    this.sql`
+      INSERT INTO context_history (context_id, reason, created_at, ended_at, message_count_at_end)
+      VALUES (${contextId}, ${reason}, ${now}, NULL, NULL)
+    `;
+    this.writeActivePointer(contextId, now);
+    return { context_id: contextId, reason, created_at: now };
+  }
+
+  @callable()
+  getActiveContextId(): ActiveContext {
+    const row = this.ensureActiveContext();
+    return {
+      contextId: row.context_id,
+      reason: row.reason,
+      createdAt: row.created_at,
+    };
+  }
+
+  @callable()
+  listContextHistory(): ContextHistoryList {
+    this.ensureActiveContext();
+    // After v2 the "isActive" status on a row should reflect the
+    // pointer, not just `ended_at IS NULL` (since switching back to a
+    // closed context updates the pointer without re-opening the row).
+    const pointer = this.getActivePointer();
+    const activeId = pointer?.active_context_id ?? null;
+    const rows = this.sql<{
+      context_id: string;
+      reason: string | null;
+      created_at: number | bigint;
+      ended_at: number | bigint | null;
+      message_count_at_end: number | bigint | null;
+    }>`
+      SELECT context_id, reason, created_at, ended_at, message_count_at_end
+      FROM context_history
+      ORDER BY created_at DESC
+      LIMIT 50
+    `;
+    return {
+      contexts: rows.map((r) => ({
+        contextId: r.context_id,
+        reason: r.reason,
+        createdAt: Number(r.created_at),
+        endedAt: r.ended_at === null ? null : Number(r.ended_at),
+        messageCountAtEnd: r.message_count_at_end === null ? null : Number(r.message_count_at_end),
+        isActive: activeId !== null && r.context_id === activeId,
+      })),
+    };
+  }
+
+  @callable()
+  async newContext(input?: { reason?: string | null }): Promise<NewContextResult> {
+    const reason = (typeof input?.reason === "string" && input.reason.trim().length > 0)
+      ? input.reason.trim().slice(0, 200)
+      : null;
+    const previous = this.ensureActiveContext();
+    const timestamp = Date.now();
+
+    // pull-style archive RPC. BEFORE closing the
+    // previous context's row, drain its full sanitized message log
+    // and write chunks to the registry's `conversation_archive`
+    // table. Failures are logged via `archive.flush.failed` but DO
+    // NOT block newContext — the user must still be able to switch
+    // even when the previous DO is unreachable, because newContext's
+    // data-loss profile is benign (the old DO's messages stay where
+    // they are).
+    //
+    // Self-RPC handling: when `previous.context_id === DEMO_INSTANCE`,
+    // the previous DO IS this DO (the registry). Cloudflare DOs reject
+    // self-RPC inside an active request via blockConcurrencyWhile, so
+    // we drain locally instead of round-tripping. For cross-DO cases
+    // we still RPC.
+    let beforeMessageCount = 0;
+    let archiveFlushId: string | null = null;
+    let archiveStatus: string = "skipped";
+    try {
+      let drained: DrainForArchiveResult;
+      if (previous.context_id === DEMO_INSTANCE) {
+        const messages = this.getMessages();
+        drained = {
+          contextId: previous.context_id,
+          snapshotAt: Date.now(),
+          chunks: buildArchiveChunks(messages),
+          totalMessageCount: messages.length,
+        };
+      } else {
+        const previousStub = await getAgentByName<Env, AgentThursdayAgent>(
+          this.env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>,
+          previous.context_id,
+        );
+        drained = await previousStub.drainForArchive();
+      }
+      beforeMessageCount = drained.totalMessageCount;
+      const flush = this._writeArchiveFlush({
+        contextId: previous.context_id,
+        trigger: "context.new",
+        chunks: drained.chunks,
+        reason,
+      });
+      archiveFlushId = flush.flushId;
+      archiveStatus = flush.status;
+    } catch (e) {
+      const detail = (e instanceof Error ? e.message : String(e)).slice(0, 400);
+      // Audit row + event so the failed drain is observable for later
+      // lazy backfill. newContext continues regardless.
+      const fallbackFlushId = newContextId().replace(/^ctx_/, "flush_");
+      this.sql`
+        INSERT INTO conversation_archive_flushes (flush_id, context_id, trigger, chunk_count, message_count, status, reason, error, created_at)
+        VALUES (${fallbackFlushId}, ${previous.context_id}, ${"context.new"}, ${0}, ${0}, ${"failed"}, ${reason}, ${detail}, ${timestamp})
+      `;
+      archiveFlushId = fallbackFlushId;
+      archiveStatus = "failed";
+      this.logEvent("archive.flush.failed", {
+        flushId: fallbackFlushId,
+        contextId: previous.context_id,
+        trigger: "context.new",
+        error: detail,
+        reason,
+      });
+      // beforeMessageCount stays 0 because we couldn't probe the DO.
+    }
+
+    // only close the row if it isn't already closed.
+    this.sql`
+      UPDATE context_history
+      SET ended_at = ${timestamp}, message_count_at_end = ${beforeMessageCount}
+      WHERE context_id = ${previous.context_id} AND ended_at IS NULL
+    `;
+
+    const newId = newContextId();
+    this.sql`
+      INSERT INTO context_history (context_id, reason, created_at, ended_at, message_count_at_end)
+      VALUES (${newId}, ${reason}, ${timestamp}, NULL, NULL)
+    `;
+    this.writeActivePointer(newId, timestamp);
+
+    // DO NOT clear messages on the registry. Per-context DO
+    // routing means the previous context's transcripts live on in the
+    // previous DO (addressed by `previous.context_id`).
+    const afterMessageCount = this.getMessages().length;
+
+    const note = `v2 per-context DO routing active. Old context's raw transcripts remain in its own DO and are now also archived to conversation_archive (flushId=${archiveFlushId ?? "none"}, status=${archiveStatus}).`;
+    this.logEvent("context.new", {
+      previousContextId: previous.context_id,
+      newContextId: newId,
+      reason,
+      beforeMessageCount,
+      afterMessageCount,
+      preservedDurableState: true,
+      rawMessagesPreservedInOldContext: true,
+      archiveFlushId,
+      archiveStatus,
+      v1FallbackNote: note,
+    });
+
+    return {
+      ok: true,
+      previousContextId: previous.context_id,
+      newContextId: newId,
+      reason,
+      beforeMessageCount,
+      afterMessageCount,
+      preservedDurableState: true,
+      rawMessagesPreservedInOldContext: true,
+      v1FallbackNote: note,
+      timestamp,
+    };
+  }
+
+  @callable()
+  switchContext(input: { contextId: string; reason?: string | null }): SwitchContextResult {
+    if (typeof input?.contextId !== "string" || input.contextId.trim().length === 0) {
+      throw new Error("switchContext: missing contextId");
+    }
+    const target = input.contextId.trim();
+    const reason = (typeof input?.reason === "string" && input.reason.trim().length > 0)
+      ? input.reason.trim().slice(0, 200)
+      : null;
+
+    // Validate target exists in context_history (registry-side audit).
+    const existsRows = this.sql<{ context_id: string }>`
+      SELECT context_id FROM context_history WHERE context_id = ${target} LIMIT 1
+    `;
+    if (existsRows.length === 0) {
+      throw new Error(`switchContext: contextId not found in history: ${target}`);
+    }
+
+    const before = this.ensureActiveContext();
+    const activatedAt = Date.now();
+
+    if (before.context_id === target) {
+      // No-op switch (operator clicked the already-active row). Still
+      // emit an audit event so the no-op is traceable.
+      this.logEvent("context.switch", {
+        previousContextId: before.context_id,
+        newContextId: target,
+        reason,
+        noop: true,
+      });
+      return {
+        ok: true,
+        previousContextId: before.context_id,
+        newContextId: target,
+        reason,
+        activatedAt,
+      };
+    }
+
+    this.writeActivePointer(target, activatedAt);
+    this.logEvent("context.switch", {
+      previousContextId: before.context_id,
+      newContextId: target,
+      reason,
+      noop: false,
+    });
+
+    return {
+      ok: true,
+      previousContextId: before.context_id,
+      newContextId: target,
+      reason,
+      activatedAt,
+    };
+  }
+
+  // ── Conversation Archive ingestion ────────────────────
+  // Two callables:
+  //   - `drainForArchive` runs on a per-context DO; returns its full
+  //     sanitized message log (no `lastN` cap). Used by `newContext` on
+  //     the registry to pull the closing context's chunks.
+  //   - `archiveChunks` runs on the registry DO; writes pushed chunks
+  //     into the canonical `conversation_archive` table + an audit row
+  //     in `conversation_archive_flushes`. Used by `resetContext` on
+  //     per-context DOs to push their chunks before clearMessages.
+
+  @callable()
+  drainForArchive(): DrainForArchiveResult {
+    const messages = this.getMessages();
+    const chunks = buildArchiveChunks(messages);
+    // The contextId reported here is the row this DO's registry view
+    // says is active. For the registry DO itself this matches its own
+    // bootstrap row; for per-context DOs the row is whatever pointer
+    // the registry set up. Since per-context DOs run their own
+    // `ensureActiveContext` they may emit a fresh ctx_<uuid> id —
+    // that's fine, we record that id alongside the chunks for audit.
+    // Callers that care about the "official" routing key should use
+    // the contextId they routed with, not the value reported here.
+    let contextIdGuess: string;
+    try {
+      contextIdGuess = this.ensureActiveContext().context_id;
+    } catch {
+      contextIdGuess = "unknown";
+    }
+    return {
+      contextId: contextIdGuess,
+      snapshotAt: Date.now(),
+      chunks,
+      totalMessageCount: messages.length,
+    };
+  }
+
+  @callable()
+  archiveChunks(input: ArchiveChunksInput): ArchiveFlushResult {
+    if (!input || typeof input.contextId !== "string" || input.contextId.length === 0) {
+      throw new Error("archiveChunks: missing contextId");
+    }
+    if (!Array.isArray(input.chunks)) {
+      throw new Error("archiveChunks: missing chunks array");
+    }
+    return this._writeArchiveFlush({
+      contextId: input.contextId,
+      trigger: input.trigger,
+      chunks: input.chunks,
+      reason: input.reason ?? null,
+    });
+  }
+
+  // ── `conversation_search` local tool + audit ─────────
+  // Searches the registry's `conversation_archive` (canonical source).
+  // Default behavior: cross-context (no `contextId` filter) — this is
+  // the central product proof of : from context B, the agent can
+  // find archived context A material without switching back. Hits are
+  // capped (topK ≤ 10, default 3; snippet ≤ 2000 char hard cap with
+  // 300-char default) so search never becomes a backdoor for unbounded
+  // prompt expansion.
+  //
+  // Implementation: SQLite LIKE over `index_text` (boilerplate-stripped
+  // by ). Snippets come from `text` (audit-quality original)
+  // when index_text matches but `text` is more readable. Ranking is
+  // deterministic: most recent archivedAt first, ties broken by
+  // chunk_id.  will aggregate the retrieval log to score
+  // memory candidates;  may swap LIKE for AI Search.
+
+  @callable()
+  conversationSearch(input: ConversationSearchInput): ConversationSearchResult {
+    if (!input || typeof input.query !== "string" || input.query.trim().length === 0) {
+      throw new Error("conversationSearch: missing query");
+    }
+    const queryRaw = input.query.trim().slice(0, 500);
+    const queryLike = `%${queryRaw.replace(/[%_\\]/g, (c) => "\\" + c)}%`;
+    const topK = Math.max(1, Math.min(10, Math.floor(input.topK ?? 3)));
+    const snippetCap = Math.max(50, Math.min(2000, Math.floor(input.snippetCap ?? 300)));
+    const filterContextId = (typeof input.contextId === "string" && input.contextId.length > 0)
+      ? input.contextId
+      : null;
+    const filterFrom = (typeof input.fromTimestamp === "number" && Number.isFinite(input.fromTimestamp))
+      ? Math.floor(input.fromTimestamp)
+      : null;
+    const filterTo = (typeof input.toTimestamp === "number" && Number.isFinite(input.toTimestamp))
+      ? Math.floor(input.toTimestamp)
+      : null;
+    const filterRole = (input.role === "user" || input.role === "assistant" || input.role === "system")
+      ? input.role
+      : null;
+
+    // Build the SQL with optional filters. Each filter is gated by a
+    // sentinel value test so unset filters don't restrict the query.
+    // We hand-stitch the WHERE clause to keep the parameter binding
+    // ordering stable across the conditional pieces.
+    const rows = this.sql<{
+      chunk_id: string;
+      context_id: string;
+      message_id: string | null;
+      message_index: number | bigint | null;
+      role: string | null;
+      trigger: string;
+      archived_at: number | bigint;
+      text: string;
+      index_text: string | null;
+      is_synthetic_compaction: number | bigint;
+    }>`
+      SELECT chunk_id, context_id, message_id, message_index, role, trigger, archived_at, text, index_text, is_synthetic_compaction
+      FROM conversation_archive
+      WHERE (
+        (index_text IS NOT NULL AND index_text LIKE ${queryLike} ESCAPE '\\')
+        OR text LIKE ${queryLike} ESCAPE '\\'
+      )
+      AND (${filterContextId} IS NULL OR context_id = ${filterContextId})
+      AND (${filterFrom} IS NULL OR archived_at >= ${filterFrom})
+      AND (${filterTo} IS NULL OR archived_at <= ${filterTo})
+      AND (${filterRole} IS NULL OR role = ${filterRole})
+      ORDER BY archived_at DESC, chunk_id ASC
+      LIMIT ${topK}
+    `;
+
+    const hits: ConversationSearchHit[] = rows.map((r) => {
+      const fullText = r.text;
+      const matchIdx = fullText.toLowerCase().indexOf(queryRaw.toLowerCase());
+      let snippet: string;
+      if (matchIdx >= 0) {
+        const halfWindow = Math.max(20, Math.floor((snippetCap - queryRaw.length) / 2));
+        const start = Math.max(0, matchIdx - halfWindow);
+        const end = Math.min(fullText.length, matchIdx + queryRaw.length + halfWindow);
+        const head = start > 0 ? "…" : "";
+        const tail = end < fullText.length ? "…" : "";
+        snippet = `${head}${fullText.slice(start, end)}${tail}`;
+      } else {
+        // Match was in index_text only (e.g. boilerplate-stripped
+        // variant matched but `text` original has wrapper chars).
+        snippet = fullText.length > snippetCap
+          ? `${fullText.slice(0, snippetCap)}…`
+          : fullText;
+      }
+      if (snippet.length > snippetCap) {
+        snippet = `${snippet.slice(0, snippetCap)}…`;
+      }
+      return {
+        chunkId: r.chunk_id,
+        contextId: r.context_id,
+        messageId: r.message_id,
+        messageIndex: r.message_index === null ? null : Number(r.message_index),
+        role: r.role,
+        trigger: r.trigger,
+        archivedAt: Number(r.archived_at),
+        snippet,
+        matchReason: matchIdx >= 0 ? "text_match" : "index_text_match",
+        isSyntheticCompaction: Number(r.is_synthetic_compaction) > 0,
+      };
+    });
+
+    const retrievalId = newContextId().replace(/^ctx_/, "ret_");
+    const searchedAt = Date.now();
+    const filtersJson = JSON.stringify({
+      contextId: filterContextId,
+      fromTimestamp: filterFrom,
+      toTimestamp: filterTo,
+      role: filterRole,
+      topK,
+      snippetCap,
+    });
+    const returnedRefsJson = JSON.stringify(
+      hits.map((h) => ({ chunkId: h.chunkId, contextId: h.contextId })),
+    );
+    const callerContextId = (typeof input.callerContextId === "string" && input.callerContextId.length > 0)
+      ? input.callerContextId
+      : null;
+    const callerTaskId = (typeof input.callerTaskId === "string" && input.callerTaskId.length > 0)
+      ? input.callerTaskId
+      : null;
+    const traceId = (typeof input.traceId === "string" && input.traceId.length > 0)
+      ? input.traceId
+      : null;
+
+    this.sql`
+      INSERT INTO conversation_retrieval_log (retrieval_id, query, filters_json, returned_refs_json, used_refs_json, trace_id, context_id, task_id, result_count, created_at)
+      VALUES (${retrievalId}, ${queryRaw}, ${filtersJson}, ${returnedRefsJson}, ${null}, ${traceId}, ${callerContextId}, ${callerTaskId}, ${hits.length}, ${searchedAt})
+    `;
+    this.logEvent("conversation.search", {
+      retrievalId,
+      query: queryRaw.slice(0, 200),
+      filters: {
+        contextId: filterContextId,
+        fromTimestamp: filterFrom,
+        toTimestamp: filterTo,
+        role: filterRole,
+        topK,
+        snippetCap,
+      },
+      returnedRefs: hits.map((h) => ({ chunkId: h.chunkId, contextId: h.contextId })),
+      resultCount: hits.length,
+      callerContextId,
+      callerTaskId,
+      traceId,
+    });
+
+    return {
+      ok: true,
+      retrievalId,
+      query: queryRaw,
+      topK,
+      snippetCap,
+      hits,
+      resultCount: hits.length,
+      searchedAt,
+      filters: {
+        contextId: filterContextId,
+        fromTimestamp: filterFrom,
+        toTimestamp: filterTo,
+        role: filterRole,
+      },
+    };
+  }
+
+  // ── archive / retrieval Inspect surface ──────────────
+  // Read-only summary the operator inspects to see what the archive
+  // pipeline is doing. Hard payload caps so the default response never
+  // includes full archive text — Inspect deep-reads (read-by-ref) live
+  // in a future card if needed. Registry-only because the canonical
+  // archive lives on DEMO_INSTANCE.
+
+  @callable()
+  getArchiveInspectSummary(input?: { recentLimit?: number; perContextLimit?: number }): ArchiveInspectSummary {
+    const recentLimit = Math.max(1, Math.min(50, Math.floor(input?.recentLimit ?? 10)));
+    const perContextLimit = Math.max(1, Math.min(100, Math.floor(input?.perContextLimit ?? 20)));
+    const generatedAt = Date.now();
+
+    // Aggregate totals first — cheap COUNT(*) queries.
+    const archiveChunkTotalRow = this.sql<{ n: number | bigint }>`SELECT COUNT(*) as n FROM conversation_archive`[0];
+    const archiveContextCountRow = this.sql<{ n: number | bigint }>`SELECT COUNT(DISTINCT context_id) as n FROM conversation_archive`[0];
+    const flushTotalRow = this.sql<{ n: number | bigint }>`SELECT COUNT(*) as n FROM conversation_archive_flushes`[0];
+    const flushFailedRow = this.sql<{ n: number | bigint }>`SELECT COUNT(*) as n FROM conversation_archive_flushes WHERE status = 'failed'`[0];
+    const retrievalTotalRow = this.sql<{ n: number | bigint }>`SELECT COUNT(*) as n FROM conversation_retrieval_log`[0];
+
+    const recentFlushRows = this.sql<{
+      flush_id: string;
+      context_id: string;
+      trigger: string;
+      chunk_count: number | bigint;
+      message_count: number | bigint;
+      status: string;
+      reason: string | null;
+      error: string | null;
+      created_at: number | bigint;
+    }>`
+      SELECT flush_id, context_id, trigger, chunk_count, message_count, status, reason, error, created_at
+      FROM conversation_archive_flushes
+      ORDER BY created_at DESC
+      LIMIT ${recentLimit}
+    `;
+    const recentFlushes: ArchiveFlushRow[] = recentFlushRows.map((r) => ({
+      flushId: r.flush_id,
+      contextId: r.context_id,
+      trigger: r.trigger,
+      chunkCount: Number(r.chunk_count),
+      messageCount: Number(r.message_count),
+      status: r.status === "ok" || r.status === "failed" || r.status === "skipped" ? r.status : "ok",
+      reason: r.reason,
+      // Cap error text so operators can see the gist without the full
+      // stack landing in the Inspect payload.
+      error: r.error === null ? null : r.error.length > 240 ? `${r.error.slice(0, 240)}…` : r.error,
+      createdAt: Number(r.created_at),
+    }));
+
+    const recentRetrievalRows = this.sql<{
+      retrieval_id: string;
+      query: string;
+      filters_json: string | null;
+      returned_refs_json: string | null;
+      trace_id: string | null;
+      context_id: string | null;
+      task_id: string | null;
+      result_count: number | bigint;
+      created_at: number | bigint;
+    }>`
+      SELECT retrieval_id, query, filters_json, returned_refs_json, trace_id, context_id, task_id, result_count, created_at
+      FROM conversation_retrieval_log
+      ORDER BY created_at DESC
+      LIMIT ${recentLimit}
+    `;
+    const recentRetrievals: RetrievalLogRow[] = recentRetrievalRows.map((r) => {
+      let returnedRefs: { chunkId: string; contextId: string }[] = [];
+      if (r.returned_refs_json !== null) {
+        try {
+          const parsed = JSON.parse(r.returned_refs_json) as Array<{ chunkId?: unknown; contextId?: unknown }>;
+          returnedRefs = parsed
+            .filter((it) => typeof it.chunkId === "string" && typeof it.contextId === "string")
+            .map((it) => ({ chunkId: String(it.chunkId), contextId: String(it.contextId) }));
+        } catch {
+          returnedRefs = [];
+        }
+      }
+      // Cap query preview at 200 chars (sanity defense; the writer
+      // already capped at 500 so this rarely fires).
+      const queryCapped = r.query.length > 200 ? `${r.query.slice(0, 200)}…` : r.query;
+      return {
+        retrievalId: r.retrieval_id,
+        query: queryCapped,
+        filtersJson: r.filters_json,
+        returnedRefs,
+        callerContextId: r.context_id,
+        callerTaskId: r.task_id,
+        traceId: r.trace_id,
+        resultCount: Number(r.result_count),
+        createdAt: Number(r.created_at),
+      };
+    });
+
+    const perContextRows = this.sql<{
+      context_id: string;
+      trigger: string;
+      n: number | bigint;
+      latest: number | bigint;
+    }>`
+      SELECT context_id, trigger, COUNT(*) as n, MAX(archived_at) as latest
+      FROM conversation_archive
+      GROUP BY context_id, trigger
+      ORDER BY latest DESC
+      LIMIT ${perContextLimit}
+    `;
+    const countsByContext: ArchiveContextCount[] = perContextRows.map((r) => ({
+      contextId: r.context_id,
+      trigger: r.trigger,
+      chunkCount: Number(r.n),
+      latestArchivedAt: Number(r.latest),
+    }));
+
+    return {
+      totals: {
+        archiveChunkTotal: Number(archiveChunkTotalRow?.n ?? 0),
+        archiveContextCount: Number(archiveContextCountRow?.n ?? 0),
+        flushTotal: Number(flushTotalRow?.n ?? 0),
+        flushFailedTotal: Number(flushFailedRow?.n ?? 0),
+        retrievalTotal: Number(retrievalTotalRow?.n ?? 0),
+      },
+      recentFlushes,
+      recentRetrievals,
+      countsByContext,
+      generatedAt,
+    };
+  }
+
+  // ── Continuous Context Hygiene loop v1 ───────────────
+  // Manual-trigger hygiene check that bridges  archive +
+  //  plan/apply with explicit risk gates. Auto-apply MUST go
+  // through `applyCompactPlan` so  hard-anchor + synthetic +
+  // overlap pre-flight is automatic. Risk gates that fire produce a
+  // proposal-only outcome; the operator sees the would-be plan in
+  // the audit but no compaction happens.
+  //
+  // V1 trigger posture: manual-trigger only. The schema accepts
+  // `scheduled` / `pressure-threshold` so a future card can flip
+  // without a schema break, but this v1 rejects any trigger other
+  // than `manual-check` to keep auto-loops opt-in.
+
+  @callable()
+  async runContextHygiene(input?: HygieneRunInput): Promise<HygieneRunResult> {
+    const trigger: HygieneTrigger = (input?.trigger ?? "manual-check") as HygieneTrigger;
+    if (trigger !== "manual-check") {
+      throw new Error(
+        `runContextHygiene v1: only trigger="manual-check" is allowed; received "${trigger}". ` +
+        `Scheduled triggers require explicit the operator config (out of scope for  v1).`,
+      );
+    }
+    const pressureThreshold = Math.max(1, Math.min(500, Math.floor(input?.pressureThreshold ?? 50)));
+    const autoApply = input?.autoApply !== false;
+    const runId = newContextId().replace(/^ctx_/, "hyg_");
+    const createdAt = Date.now();
+
+    const messages = this.getMessages();
+    const beforeMessageCount = messages.length;
+    const pressureMessageCount = beforeMessageCount;
+
+    const riskConditions: HygieneRiskCondition[] = [];
+
+    if (pressureMessageCount < pressureThreshold) {
+      riskConditions.push("below_pressure_threshold");
+    }
+    if (!autoApply) {
+      riskConditions.push("auto_apply_disabled");
+    }
+    // Pending tool approval: -shaped state surfaced via
+    // getPendingToolApproval. Defensive read — if the helper is
+    // missing or throws, treat as "no pending approval" rather than
+    // false-positive blocking hygiene.
+    try {
+      const pending = this.getPendingToolApproval();
+      if (pending && (pending as { toolCallId?: unknown }).toolCallId) {
+        riskConditions.push("pending_tool_approval");
+      }
+    } catch {
+      // Treat as no pending approval; hygiene continues.
+    }
+    // Waiting-for-human / blocked obstacle: surfaced via getSafeState.
+    try {
+      const safe = this.getSafeState();
+      if (safe.waitingForHuman) riskConditions.push("waiting_for_human");
+      if (safe.currentObstacle?.blocked) riskConditions.push("current_obstacle_blocked");
+    } catch {
+      // Defensive: missing getter shouldn't kill hygiene.
+    }
+
+    let decision: HygieneDecision = "skipped";
+    let reason: string | null = null;
+    let archiveFlushId: string | null = null;
+    let appliedCompactPlanId: string | null = null;
+    let proposedRanges: HygieneRunResult["proposedRanges"] = [];
+    let afterMessageCount: number | null = beforeMessageCount;
+
+    // Below pressure → never run plan/apply. Skip directly so the
+    // audit row is cheap and the hygiene loop is idempotent: a
+    // second hygiene call right after a successful auto-apply will
+    // see the now-reduced count and skip without doing anything.
+    const belowThreshold = pressureMessageCount < pressureThreshold;
+    if (belowThreshold) {
+      decision = "skipped";
+      reason = `pressure (${pressureMessageCount}) < threshold (${pressureThreshold})`;
+    } else {
+      // Build a  plan to see what compact would propose.
+      // Plan-time validation already enforces hard anchors / synthetic
+      // / overlap / minRangeMessages — we just need to decide whether
+      // to apply or stop at "proposed".
+      const plan = this.compactPlan({
+        lastN: 200,
+        firstK: 4,
+        keepRecent: 8,
+        minRangeMessages: 3,
+        pressureThreshold: pressureThreshold,
+      });
+      proposedRanges = plan.ranges.map((r) => ({
+        rangeId: r.rangeId,
+        fromMessageId: r.fromMessageId,
+        toMessageId: r.toMessageId,
+        fromIndex: r.fromIndex,
+        toIndex: r.toIndex,
+        messageCount: r.messageCount,
+        estimatedReduction: r.estimatedReduction,
+      }));
+
+      if (proposedRanges.length === 0) {
+        riskConditions.push("no_compactable_ranges");
+        decision = "skipped";
+        reason = `compactPlan produced no ranges (${plan.rejected.map((r) => r.reason).join(", ") || "no_runs"})`;
+      } else if (riskConditions.length > 0) {
+        decision = "proposed";
+        reason = `risk gates fired: ${riskConditions.join(", ")}`;
+      } else {
+        //  archive-before-compact precondition: drain current
+        // messages and push to registry archive before letting 
+        // applyCompactPlan touch them. Self-RPC handling mirrors
+        // resetContext: when we ARE the registry (DEMO_INSTANCE), write
+        // locally; otherwise RPC.
+        let contextIdGuess: string;
+        try {
+          contextIdGuess = this.ensureActiveContext().context_id;
+        } catch {
+          contextIdGuess = "unknown";
+        }
+        try {
+          const chunks = buildArchiveChunks(messages);
+          if (contextIdGuess === DEMO_INSTANCE) {
+            const flush = this._writeArchiveFlush({
+              contextId: contextIdGuess,
+              trigger: "manual",
+              chunks,
+              reason: `hygiene-precompact:${runId}`,
+            });
+            archiveFlushId = flush.flushId;
+          } else {
+            const registry = await getAgentByName<Env, AgentThursdayAgent>(
+              this.env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>,
+              DEMO_INSTANCE,
+            );
+            const flush = await registry.archiveChunks({
+              contextId: contextIdGuess,
+              trigger: "manual",
+              chunks,
+              reason: `hygiene-precompact:${runId}`,
+            });
+            archiveFlushId = flush.flushId;
+          }
+        } catch (e) {
+          // Archive precondition failed → DO NOT auto-apply. The
+          // operator sees a "failed" run with archive_flush_id null,
+          // and the messages stay intact.
+          decision = "failed";
+          reason = `archive-before-compact failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 240)}`;
+        }
+
+        if (decision !== "failed") {
+          // Apply the plan via 's applyCompactPlan — the same
+          // path the UI uses, so all preflight gates run automatically.
+          try {
+            const apply = await this.applyCompactPlan({ plan });
+            appliedCompactPlanId = plan.planId;
+            afterMessageCount = apply.afterCount;
+            if (apply.ok) {
+              decision = "auto-applied";
+              reason = `applied=${apply.appliedRanges.length} rejected=${apply.rejectedRanges.length}`;
+            } else {
+              // Partial apply (some ranges rejected during pre-flight).
+              decision = "failed";
+              reason = `applyCompactPlan partial: applied=${apply.appliedRanges.length} rejected=${apply.rejectedRanges.length} ` +
+                apply.rejectedRanges.map((r) => `${r.rangeId}=${r.reason}`).join(", ").slice(0, 200);
+            }
+          } catch (e) {
+            decision = "failed";
+            reason = `applyCompactPlan threw: ${(e instanceof Error ? e.message : String(e)).slice(0, 240)}`;
+          }
+        }
+      }
+    }
+
+    if (afterMessageCount === null || decision === "failed") {
+      afterMessageCount = this.getMessages().length;
+    }
+
+    // Persist audit row + emit event.
+    const riskJson = JSON.stringify(riskConditions);
+    this.sql`
+      INSERT INTO context_hygiene_runs (
+        run_id, trigger, decision, reason, pressure_message_count, pressure_threshold,
+        before_message_count, after_message_count, archive_flush_id, applied_compact_plan_id,
+        risk_conditions_json, created_at
+      ) VALUES (
+        ${runId}, ${trigger}, ${decision}, ${reason}, ${pressureMessageCount}, ${pressureThreshold},
+        ${beforeMessageCount}, ${afterMessageCount}, ${archiveFlushId}, ${appliedCompactPlanId},
+        ${riskJson}, ${createdAt}
+      )
+    `;
+    this.logEvent("context.hygiene.run", {
+      runId,
+      trigger,
+      decision,
+      reason,
+      pressureMessageCount,
+      pressureThreshold,
+      beforeMessageCount,
+      afterMessageCount,
+      archiveFlushId,
+      appliedCompactPlanId,
+      riskConditions,
+      proposedRangeCount: proposedRanges.length,
+    });
+
+    return {
+      ok: decision !== "failed",
+      runId,
+      trigger,
+      decision,
+      reason,
+      pressureMessageCount,
+      pressureThreshold,
+      beforeMessageCount,
+      afterMessageCount,
+      archiveFlushId,
+      appliedCompactPlanId,
+      riskConditions,
+      proposedRanges,
+      createdAt,
+    };
+  }
+
+  // Internal helper used by both `archiveChunks` (RPC entry) and
+  // `newContext` (when it has chunks pulled from a remote DO and wants
+  // to write them to the local archive table without a self-RPC hop).
+  // Always idempotent on duplicate flush attempts via flush_id (a
+  // freshly-generated UUID per call), and always emits a row in
+  // `conversation_archive_flushes` — even on `failed` and `skipped`
+  // statuses — so failures are observable without needing to scan
+  // event_log.
+  private _writeArchiveFlush(input: {
+    contextId: string;
+    trigger: ArchiveTrigger | string;
+    chunks: readonly ArchiveChunkInput[];
+    reason: string | null;
+  }): ArchiveFlushResult {
+    const archivedAt = Date.now();
+    const flushId = newContextId().replace(/^ctx_/, "flush_");
+    const trigger = typeof input.trigger === "string" ? input.trigger : "manual";
+
+    if (input.chunks.length === 0) {
+      this.sql`
+        INSERT INTO conversation_archive_flushes (flush_id, context_id, trigger, chunk_count, message_count, status, reason, error, created_at)
+        VALUES (${flushId}, ${input.contextId}, ${trigger}, ${0}, ${0}, ${"skipped"}, ${input.reason}, ${null}, ${archivedAt})
+      `;
+      this.logEvent("archive.flush.skipped", {
+        flushId,
+        contextId: input.contextId,
+        trigger,
+        reason: input.reason ?? "no_chunks_to_archive",
+      });
+      return {
+        flushId,
+        contextId: input.contextId,
+        trigger,
+        chunkCount: 0,
+        messageCount: 0,
+        status: "skipped",
+        error: null,
+        archivedAt,
+      };
+    }
+
+    let written = 0;
+    let firstError: string | null = null;
+    for (const chunk of input.chunks) {
+      try {
+        const chunkId = `chunk_${flushId}_${chunk.messageIndex}`;
+        this.sql`
+          INSERT OR REPLACE INTO conversation_archive (
+            chunk_id, context_id, message_id, message_index, role,
+            speaker, surface, task_id, card_id, type, harness_class,
+            text, index_text, redaction_flags, source_ref,
+            is_synthetic_compaction, created_at, archived_at, trigger
+          ) VALUES (
+            ${chunkId}, ${input.contextId}, ${chunk.messageId}, ${chunk.messageIndex}, ${chunk.role},
+            ${null}, ${null}, ${null}, ${null}, ${null}, ${null},
+            ${chunk.text}, ${chunk.indexText}, ${null}, ${null},
+            ${chunk.isSyntheticCompaction ? 1 : 0}, ${archivedAt}, ${archivedAt}, ${trigger}
+          )
+        `;
+        written++;
+      } catch (e) {
+        if (firstError === null) {
+          firstError = (e instanceof Error ? e.message : String(e)).slice(0, 400);
+        }
+      }
+    }
+
+    const status: "ok" | "failed" = firstError === null ? "ok" : "failed";
+    this.sql`
+      INSERT INTO conversation_archive_flushes (flush_id, context_id, trigger, chunk_count, message_count, status, reason, error, created_at)
+      VALUES (${flushId}, ${input.contextId}, ${trigger}, ${written}, ${input.chunks.length}, ${status}, ${input.reason}, ${firstError}, ${archivedAt})
+    `;
+
+    this.logEvent(status === "ok" ? "archive.flush.completed" : "archive.flush.failed", {
+      flushId,
+      contextId: input.contextId,
+      trigger,
+      chunkCount: written,
+      messageCount: input.chunks.length,
+      reason: input.reason,
+      error: firstError,
+    });
+
+    return {
+      flushId,
+      contextId: input.contextId,
+      trigger,
+      chunkCount: written,
+      messageCount: input.chunks.length,
+      status,
+      error: firstError,
+      archivedAt,
+    };
+  }
+
+  // ── Auditable compact MVP ────────────────────────────
+  // Replaces a contiguous slice of transient messages with a deterministic
+  // (no-LLM) summary overlay via `Session.addCompaction`. The SDK keeps
+  // the underlying message tree intact; `getHistory()` substitutes the
+  // summary in place of the range when the model loop reads history. We
+  // log requested + completed/failed event_log rows for full audit
+  // trail. Durable state (memory, checkpoints, workspace, event_log,
+  // task metadata, model profile) is untouched — `addCompaction` only
+  // writes to the session storage's compactions table.
+  //
+  // Defaults: keep the most-recent `keepRecent=5` messages outside the
+  // compaction range; `lastN` (the number of OLDEST messages to fold
+  // into the summary) defaults to `total - keepRecent`. The user can
+  // pass an explicit `lastN` to compact a smaller prefix. We refuse if
+  // `lastN < 2` or `lastN > total - 1` — compacting fewer than 2 or
+  // wiping the entire log buys nothing.
+
+  @callable()
+  compactContext(input?: { reason?: string | null; lastN?: number; keepRecent?: number }): CompactContextResult {
+    const reason = (typeof input?.reason === "string" && input.reason.trim().length > 0)
+      ? input.reason.trim().slice(0, 200)
+      : null;
+    const keepRecent = typeof input?.keepRecent === "number"
+      ? Math.max(0, Math.min(20, Math.floor(input.keepRecent)))
+      : 5;
+    const messages = this.getMessages();
+    const total = messages.length;
+    const defaultLastN = Math.max(0, total - keepRecent);
+    const lastN = typeof input?.lastN === "number"
+      ? Math.max(0, Math.min(total, Math.floor(input.lastN)))
+      : defaultLastN;
+
+    this.logEvent("context.compact.requested", {
+      reason,
+      lastN,
+      keepRecent,
+      totalMessageCount: total,
+    });
+
+    if (lastN < 2) {
+      const failPayload = { reason, lastN, totalMessageCount: total, error: "lastN_too_small" };
+      this.logEvent("context.compact.failed", failPayload);
+      throw new Error(`compactContext: refused — lastN=${lastN} (need at least 2 messages to compact)`);
+    }
+    if (lastN > total - 1) {
+      const failPayload = { reason, lastN, totalMessageCount: total, error: "would_compact_entire_log" };
+      this.logEvent("context.compact.failed", failPayload);
+      throw new Error(`compactContext: refused — would compact entire log (lastN=${lastN}, total=${total}); use resetContext instead`);
+    }
+
+    const fromIndex = 0;
+    const toIndex = lastN - 1;
+    const fromMsg = messages[fromIndex];
+    const toMsg = messages[toIndex];
+    if (!fromMsg?.id || !toMsg?.id) {
+      this.logEvent("context.compact.failed", { reason, lastN, error: "missing_message_id" });
+      throw new Error("compactContext: refused — message slice is missing stable IDs");
+    }
+
+    const summary = buildCompactSummary({ messages, fromIndex, toIndex });
+
+    let stored: { id: string; summary: string; fromMessageId: string; toMessageId: string; createdAt: string };
+    try {
+      stored = this.session.addCompaction(summary.text, fromMsg.id, toMsg.id);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.logEvent("context.compact.failed", {
+        reason,
+        lastN,
+        fromMessageId: fromMsg.id,
+        toMessageId: toMsg.id,
+        error: msg.slice(0, 400),
+      });
+      throw e;
+    }
+
+    const beforeMessageCount = total;
+    const afterMessageCount = this.getMessages().length;
+    let modelVisibleAfter: number | null = null;
+    try {
+      modelVisibleAfter = this.session.getHistory().length;
+    } catch {
+      modelVisibleAfter = null;
+    }
+    const timestamp = Date.now();
+
+    this.logEvent("context.compact.completed", {
+      reason,
+      lastN,
+      fromIndex,
+      toIndex,
+      fromMessageId: fromMsg.id,
+      toMessageId: toMsg.id,
+      compactionId: stored.id,
+      compactedRangeSize: summary.rangeSize,
+      summaryLength: summary.text.length,
+      summaryTruncated: summary.truncated,
+      beforeMessageCount,
+      afterMessageCount,
+      modelVisibleAfter,
+      preservedDurableState: true,
+    });
+
+    return {
+      ok: true,
+      reason,
+      fromIndex,
+      toIndex,
+      fromMessageId: fromMsg.id,
+      toMessageId: toMsg.id,
+      compactedRangeSize: summary.rangeSize,
+      beforeMessageCount,
+      afterMessageCount,
+      modelVisibleAfter,
+      compaction: storedCompactionView(stored),
+      summaryTruncated: summary.truncated,
+      preservedDurableState: true,
+      timestamp,
+    };
+  }
+
+  @callable()
+  listCompactions(): CompactionsList {
+    let stored: Array<{ id: string; summary: string; fromMessageId: string; toMessageId: string; createdAt: string }> = [];
+    try {
+      stored = this.session.getCompactions();
+    } catch {
+      stored = [];
+    }
+    return { compactions: stored.map(storedCompactionView) };
+  }
+
+  // ──  v2 Context snapshot for anchor-aware planning ────
+  // Read-only sanitized projection of `getMessages()` + `getCompactions()`
+  // intended as a stable substrate for 's anchor classifier and
+  // 's compact planner. No audit row (cheap polling). Synthetic
+  // compaction nodes are flagged so callers can refuse to plan a range
+  // that starts on or contains one ( spike found the SDK silently
+  // stores dead records when this guard is missing).
+
+  @callable()
+  inspectContextSnapshot(input?: { lastN?: number }): ContextSnapshotViewModel {
+    const lastN = typeof input?.lastN === "number" ? input.lastN : 20;
+    const messages = this.getMessages();
+    let stored: Array<{ id: string; summary: string; fromMessageId: string; toMessageId: string; createdAt: string }> = [];
+    try {
+      stored = this.session.getCompactions();
+    } catch {
+      stored = [];
+    }
+    return buildContextSnapshot(messages, stored, lastN);
+  }
+
+  // ──  v2 Context anchor classifier ─────────────────────
+  // Deterministic per-message anchor labels (no LLM, no audit row). Reuses
+  // the  snapshot as input substrate so SOUL/system/tool payloads
+  // stay sanitized.  will read this to refuse compact ranges that
+  // contain anchors.
+
+  @callable()
+  classifyContextAnchors(input?: { lastN?: number; firstK?: number }): ContextAnchorsResult {
+    const lastN = Math.max(1, Math.min(200, Math.floor(input?.lastN ?? 50)));
+    const firstK = Math.max(0, Math.min(50, Math.floor(input?.firstK ?? 4)));
+    const snapshot = this.inspectContextSnapshot({ lastN });
+    const anchors = runAnchorClassifier(snapshot, { firstK });
+    return {
+      snapshot: {
+        totalMessageCount: snapshot.totalMessageCount,
+        visibleStartIndex: snapshot.visibleStartIndex,
+        sanitizedAt: snapshot.sanitizedAt,
+      },
+      options: { firstK, lastN },
+      anchors,
+      anchorCount: anchors.reduce((acc, a) => acc + (a.isAnchor ? 1 : 0), 0),
+      classifiedAt: Date.now(),
+    };
+  }
+
+  // ──  v2 Compact plan / apply split ────────────────────
+  // `compactPlan` produces a read-only ID-based dry-run proposal built from
+  // a fresh  snapshot +  anchors. `applyCompactPlan` takes
+  // a plan back and re-runs all pre-flight checks against a fresh snapshot
+  // before each `addCompaction` call. No LLM summaries, no auto-compaction,
+  // no durable mutation. Existing `compactContext(lastN)` remains the
+  // backward-compatible primitive path for  callers.
+
+  @callable()
+  compactPlan(input?: CompactPlanInput): CompactPlanResult {
+    const strategy = this.normalizeCompactPlanStrategy(input);
+    const plan = this.buildFreshCompactPlan(strategy);
+    this.logEvent("context.compact.plan_proposed", {
+      planId: plan.planId,
+      strategy: plan.strategy,
+      rangeCount: plan.ranges.length,
+      preservedCount: plan.preserved.length,
+      rejectedCount: plan.rejected.length,
+      beforeMessages: plan.pressure.beforeMessages,
+      estimatedAfterMessages: plan.pressure.estimatedAfterMessages,
+      estimatedReduction: plan.pressure.estimatedReduction,
+    });
+    return plan;
+  }
+
+  @callable()
+  async applyCompactPlan(input: {
+    plan: CompactPlanResult;
+    // opt-in semantic summary advisor. When true, the
+    // optional model-assisted layer runs after the deterministic summary
+    // is built. If no client is configured (current state), the
+    // advisor records a fallback audit row and the deterministic summary
+    // is used. Either way `applyCompactPlan` never blocks compaction
+    // on advisor failure.
+    semanticAdvisor?: boolean;
+    semanticAdvisorTrigger?: "manual" | "high_pressure" | "phase_boundary" | "degradation_suspicion";
+  }): Promise<CompactPlanApplyResult> {
+    if (!input?.plan || typeof input.plan.planId !== "string") {
+      throw new Error("applyCompactPlan: missing plan in input");
+    }
+    const plan = input.plan;
+    const advisorRequested = input.semanticAdvisor === true;
+    const advisorClient = advisorRequested ? this.getSemanticAdvisorClient() : null;
+    const beforeCount = this.getMessages().length;
+    const appliedRanges: CompactPlanApplyResult["appliedRanges"] = [];
+    const rejectedRanges: CompactPlanApplyResult["rejectedRanges"] = [];
+    const seenInPlan = new Set<string>();
+    let deadRecordDetected = false;
+
+    for (const range of plan.ranges) {
+      // Disallow duplicate / overlapping ranges within the same plan.
+      if (this.planRangeOverlapsAccepted(range, appliedRanges, plan.ranges, seenInPlan)) {
+        const rejection = {
+          rangeId: range.rangeId,
+          reason: "overlapping_in_plan",
+          detail: `range ${range.fromMessageId}..${range.toMessageId} overlaps another range in the same plan`,
+        };
+        rejectedRanges.push(rejection);
+        this.logEvent("context.compact.plan_rejected", { planId: plan.planId, ...rejection });
+        continue;
+      }
+      seenInPlan.add(range.rangeId);
+
+      // Fresh pre-flight on every step —  spike showed prior
+      // compactions can swallow message IDs. We use the same lastN
+      // strategy the plan was built with so the validation window
+      // matches the planner's view.
+      const freshSnapshot = this.inspectContextSnapshot({ lastN: plan.strategy.lastN });
+      const freshAnchors = runAnchorClassifier(freshSnapshot, { firstK: plan.strategy.firstK });
+
+      const validation = this.preflightCompactRange(range, freshSnapshot, freshAnchors, plan.strategy);
+      if (validation) {
+        rejectedRanges.push({ rangeId: range.rangeId, ...validation });
+        this.logEvent("context.compact.plan_rejected", {
+          planId: plan.planId,
+          rangeId: range.rangeId,
+          ...validation,
+        });
+        continue;
+      }
+
+      // Build deterministic -style summary using the underlying
+      // raw `getMessages()` (sanitization is applied inside
+      // buildCompactSummary). The summary text never includes tool
+      // payloads or reasoning.
+      const rawMessages = this.getMessages();
+      const fromIdx = rawMessages.findIndex((m) => m.id === range.fromMessageId);
+      const toIdx = rawMessages.findIndex((m) => m.id === range.toMessageId);
+      if (fromIdx < 0 || toIdx < 0 || toIdx < fromIdx) {
+        const rejection = {
+          rangeId: range.rangeId,
+          reason: "range_not_resolvable_in_raw",
+          detail: `from=${range.fromMessageId} to=${range.toMessageId} fromIdx=${fromIdx} toIdx=${toIdx}`,
+        };
+        rejectedRanges.push(rejection);
+        this.logEvent("context.compact.plan_rejected", { planId: plan.planId, ...rejection });
+        continue;
+      }
+      // recompute medium-tier preserved points from the
+      // FRESH snapshot+anchors (not the original plan) so the summary
+      // reflects what is actually being compacted right now. The
+      // `range.summaryPreservedAnchors` from the plan is informational
+      // only; staleness is corrected here.
+      const preservedPoints = collectFreshPreservedPoints(
+        freshSnapshot,
+        freshAnchors,
+        range.fromMessageId,
+        range.toMessageId,
+      );
+      const summary = buildCompactSummary({
+        messages: rawMessages,
+        fromIndex: fromIdx,
+        toIndex: toIdx,
+        preservedPoints,
+      });
+
+      // optional semantic advisor. The orchestrator is
+      // fallback-safe: a null client (current default), timeout, error,
+      // or validator failure all route to the deterministic summary
+      // text without blocking compaction. The audit row is emitted
+      // either way when the operator asked for it.
+      let advisorResult: SemanticSummaryAdvisorResult | null = null;
+      let summaryTextForCompaction = summary.text;
+      if (advisorRequested) {
+        const advisorReq: SemanticSummaryAdvisorRequest = {
+          fromMessageId: range.fromMessageId,
+          toMessageId: range.toMessageId,
+          sourceCompactionId: null,
+          deterministicSummary: summary.text,
+          preservedPoints,
+          sanitizedSource: this.buildAdvisorSanitizedSource(freshSnapshot, range.fromMessageId, range.toMessageId),
+          trigger: input.semanticAdvisorTrigger,
+        };
+        advisorResult = await runSemanticSummaryAdvisor(advisorReq, advisorClient);
+        if (advisorResult.ok && advisorResult.enrichedSummary) {
+          summaryTextForCompaction = advisorResult.enrichedSummary;
+        }
+      }
+
+      const compactionsBefore = this.safeGetCompactions().length;
+      const syntheticsBefore = this.countSyntheticInVisible();
+
+      let stored: { id: string; summary: string; fromMessageId: string; toMessageId: string; createdAt: string };
+      try {
+        stored = this.session.addCompaction(summaryTextForCompaction, range.fromMessageId, range.toMessageId);
+      } catch (e) {
+        const detail = (e instanceof Error ? e.message : String(e)).slice(0, 400);
+        const rejection = {
+          rangeId: range.rangeId,
+          reason: "add_compaction_threw",
+          detail,
+        };
+        rejectedRanges.push(rejection);
+        this.logEvent("context.compact.plan_rejected", { planId: plan.planId, ...rejection });
+        continue;
+      }
+
+      const compactionsAfter = this.safeGetCompactions().length;
+      const syntheticsAfter = this.countSyntheticInVisible();
+      const compactionsDelta = compactionsAfter - compactionsBefore;
+      const syntheticsDelta = syntheticsAfter - syntheticsBefore;
+      if (compactionsDelta > syntheticsDelta) {
+        deadRecordDetected = true;
+        this.logEvent("context.compact.dead_record_detected", {
+          planId: plan.planId,
+          rangeId: range.rangeId,
+          compactionId: stored.id,
+          compactionsDelta,
+          syntheticsDelta,
+        });
+      }
+
+      const afterCount = this.getMessages().length;
+      const applied: CompactPlanApplyResult["appliedRanges"][number] = {
+        rangeId: range.rangeId,
+        compactionId: stored.id,
+        fromMessageId: range.fromMessageId,
+        toMessageId: range.toMessageId,
+        beforeCount,
+        afterCount,
+      };
+      if (advisorResult) {
+        const auditWithCompaction = {
+          ...advisorResult.audit,
+          sourceCompactionId: stored.id,
+        };
+        applied.semanticAdvisor = {
+          ok: advisorResult.ok,
+          audit: auditWithCompaction,
+        };
+        this.logEvent("context.compact.semantic_advisor_invoked", {
+          planId: plan.planId,
+          rangeId: range.rangeId,
+          ok: advisorResult.ok,
+          ...auditWithCompaction,
+        });
+      }
+      appliedRanges.push(applied);
+      this.logEvent("context.compact.plan_applied", {
+        planId: plan.planId,
+        rangeId: range.rangeId,
+        compactionId: stored.id,
+        fromMessageId: range.fromMessageId,
+        toMessageId: range.toMessageId,
+        messageCount: range.messageCount,
+        summaryLength: summary.text.length,
+        summaryTruncated: summary.truncated,
+        beforeCount,
+        afterCount,
+      });
+    }
+
+    const finalAfterCount = this.getMessages().length;
+    return {
+      ok: rejectedRanges.length === 0,
+      planId: plan.planId,
+      appliedRanges,
+      rejectedRanges,
+      beforeCount,
+      afterCount: finalAfterCount,
+      deadRecordDetected,
+      timestamp: Date.now(),
+    };
+  }
+
+  private normalizeCompactPlanStrategy(input?: CompactPlanInput): CompactPlanResultView["strategy"] {
+    const lastN = Math.max(1, Math.min(200, Math.floor(input?.lastN ?? 200)));
+    const firstK = Math.max(0, Math.min(50, Math.floor(input?.firstK ?? 4)));
+    const keepRecent = Math.max(0, Math.min(50, Math.floor(input?.keepRecent ?? 8)));
+    const minRangeMessages = Math.max(1, Math.min(50, Math.floor(input?.minRangeMessages ?? 3)));
+    const pressureThreshold = Math.max(0, Math.min(500, Math.floor(input?.pressureThreshold ?? 20)));
+    return { lastN, firstK, keepRecent, minRangeMessages, pressureThreshold };
+  }
+
+  private buildFreshCompactPlan(strategy: CompactPlanResultView["strategy"]): CompactPlanResultView {
+    const snapshot = this.inspectContextSnapshot({ lastN: strategy.lastN });
+    const anchors = runAnchorClassifier(snapshot, { firstK: strategy.firstK });
+    return buildCompactPlan(snapshot, anchors, strategy);
+  }
+
+  private preflightCompactRange(
+    range: CompactPlanResult["ranges"][number],
+    snapshot: ContextSnapshotViewModel,
+    anchors: readonly ContextAnchorClassification[],
+    strategy: CompactPlanResultView["strategy"],
+  ): { reason: string; detail: string } | null {
+    const fromIdx = snapshot.messages.findIndex((m) => m.id === range.fromMessageId);
+    const toIdx = snapshot.messages.findIndex((m) => m.id === range.toMessageId);
+    if (fromIdx < 0 || toIdx < 0) {
+      return {
+        reason: "range_endpoint_missing",
+        detail: `fromFound=${fromIdx >= 0} toFound=${toIdx >= 0} fromId=${range.fromMessageId} toId=${range.toMessageId}`,
+      };
+    }
+    if (toIdx < fromIdx) {
+      return {
+        reason: "range_inverted",
+        detail: `fromIdx=${fromIdx} toIdx=${toIdx}`,
+      };
+    }
+    const slice = snapshot.messages.slice(fromIdx, toIdx + 1);
+    if (slice.length < strategy.minRangeMessages) {
+      return {
+        reason: "range_too_small",
+        detail: `count=${slice.length} minRangeMessages=${strategy.minRangeMessages}`,
+      };
+    }
+    for (const m of slice) {
+      if (m.isSyntheticCompaction) {
+        return {
+          reason: "range_contains_synthetic",
+          detail: `messageId=${m.id} index=${m.index}`,
+        };
+      }
+    }
+    if (slice[0].isSyntheticCompaction || slice[slice.length - 1].isSyntheticCompaction) {
+      return {
+        reason: "endpoint_is_synthetic",
+        detail: `from=${range.fromMessageId} to=${range.toMessageId}`,
+      };
+    }
+    // only HARD-tier anchors (explicit / first-k / long
+    // user briefing) block compaction. Medium anchors flow through and
+    // are lifted into the summary at apply time.
+    const hardAnchorIds = new Set<string>();
+    for (const a of anchors) {
+      if (isHardPreserveAnchor(a)) hardAnchorIds.add(a.id);
+    }
+    for (const m of slice) {
+      if (hardAnchorIds.has(m.id)) {
+        return {
+          reason: "range_contains_hard_anchor",
+          detail: `anchorId=${m.id} index=${m.index}`,
+        };
+      }
+    }
+    for (const cr of snapshot.compactedRanges) {
+      if (cr.isResolvableInCurrentView) continue;
+      if (
+        (cr.fromIndex !== null && cr.fromIndex >= fromIdx + snapshot.visibleStartIndex && cr.fromIndex <= toIdx + snapshot.visibleStartIndex) ||
+        (cr.toIndex !== null && cr.toIndex >= fromIdx + snapshot.visibleStartIndex && cr.toIndex <= toIdx + snapshot.visibleStartIndex)
+      ) {
+        return {
+          reason: "range_overlaps_unresolved_compaction",
+          detail: `compactionId=${cr.id}`,
+        };
+      }
+    }
+    return null;
+  }
+
+  private planRangeOverlapsAccepted(
+    range: CompactPlanResult["ranges"][number],
+    accepted: readonly { rangeId: string }[],
+    allRanges: readonly CompactPlanResult["ranges"][number][],
+    seenInPlan: ReadonlySet<string>,
+  ): boolean {
+    for (const other of allRanges) {
+      if (other.rangeId === range.rangeId) continue;
+      if (!seenInPlan.has(other.rangeId)) continue;
+      const overlap = !(other.toIndex < range.fromIndex || other.fromIndex > range.toIndex);
+      if (overlap) return true;
+    }
+    void accepted;
+    return false;
+  }
+
+  private safeGetCompactions(): Array<{ id: string; summary: string; fromMessageId: string; toMessageId: string; createdAt: string }> {
+    try {
+      return this.session.getCompactions();
+    } catch {
+      return [];
+    }
+  }
+
+  private countSyntheticInVisible(): number {
+    const messages = this.getMessages();
+    let n = 0;
+    for (const m of messages) {
+      if (typeof m.id === "string" && /^compaction[_-]/.test(m.id)) n++;
+    }
+    return n;
+  }
+
+  // semantic advisor client provider. Returns null in this
+  // scaffold so the orchestrator always falls back to the deterministic
+  // summary; a future card can override this to wire a model client
+  // (e.g. Workers AI / Anthropic SDK) without touching applyCompactPlan.
+  private getSemanticAdvisorClient(): SemanticAdvisorClient | null {
+    return null;
+  }
+
+  // sanitized source slice handed to the advisor. Reuses the
+  //  snapshot which already strips system/SOUL/reasoning/tool
+  // payloads down to text + tool *names*. The advisor sees the same
+  // surface a human reading the inspect tab would see — never raw
+  // payloads. System and synthetic-compaction messages are skipped.
+  private buildAdvisorSanitizedSource(
+    snapshot: ContextSnapshotViewModel,
+    fromMessageId: string,
+    toMessageId: string,
+  ): SemanticSummarySourceTurn[] {
+    const fromIdx = snapshot.messages.findIndex((m) => m.id === fromMessageId);
+    const toIdx = snapshot.messages.findIndex((m) => m.id === toMessageId);
+    if (fromIdx < 0 || toIdx < 0 || toIdx < fromIdx) return [];
+    const out: SemanticSummarySourceTurn[] = [];
+    for (let i = fromIdx; i <= toIdx; i++) {
+      const m = snapshot.messages[i];
+      if (m.role === "system" || m.isSyntheticCompaction) continue;
+      let text = "";
+      const toolNames: string[] = [];
+      for (const p of m.parts) {
+        if (p.type === "text") {
+          if (text.length === 0) text = p.text;
+        } else if (p.type === "tool" && p.toolName && !toolNames.includes(p.toolName)) {
+          toolNames.push(p.toolName);
+        }
+      }
+      if (text.length === 0 && toolNames.length === 0) continue;
+      out.push({
+        id: m.id,
+        index: m.index,
+        role: m.role === "user" ? "user" : "assistant",
+        text,
+        toolNames,
+      });
+    }
+    return out;
   }
 
   @callable()
@@ -1888,9 +4706,19 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     else if (loopStage === "gate-open") suggestedNextCommand = "approve";
     else suggestedNextCommand = "continue";
 
+    // a — `instanceName` and `sessionId` self-report the
+    // actual DO this RPC landed on, not a hardcoded DEMO. The Agent
+    // base class exposes `this.name` as the runtime instance name
+    // (set when the worker resolved `getAgentByName(ns, name)`). Pre-
+    // 149e1a both fields were `DEMO_INSTANCE` regardless of routing,
+    // so the verifier saw `activeContextId === ctx_NEW` (correct
+    // canonical pointer) but `session.instanceName === DEMO` (lying
+    // self-report) on the very same /api/workspace call. Same fix
+    // for sessionId fallback so a fresh DO without a current task
+    // still reports its own DO name rather than DEMO.
     return {
-      sessionId: s.currentTaskObject?.id ?? DEMO_INSTANCE,
-      instanceName: DEMO_INSTANCE,
+      sessionId: s.currentTaskObject?.id ?? this.name,
+      instanceName: this.name,
       taskId: s.currentTaskObject?.id ?? null,
       taskTitle: s.currentTaskObject?.title ?? s.currentTask,
       taskLifecycle: s.currentTaskObject?.status ?? null,
@@ -2233,6 +5061,298 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return { items };
   }
 
+  /**
+   * read-only memory candidate inspect.
+   *
+   * Walks `conversation_archive` (SELECT only) + recent message log
+   * + active `agent_memories` (read-only for dedupe hints) and surfaces
+   * heuristic candidates that *might* be worth promoting to long-term
+   * memory. **Never writes** to `agent_memories`; never invokes
+   * `tool.memory.remember`. Failure-safe: any internal throw collapses
+   * to `{ ok:true, blockedReason:"...", items:[] }` so it can never
+   * break `/api/workspace` or other inspect surfaces.
+   *
+   * v1 heuristics are explicit and explainable:
+   *   - explicit ask ("帮我记一下..." / "remember ...") → high
+   *     confidence, type inferred from slots (time+party+topic →
+   *     `task`/`event`).
+   *   - preference / instruction ("以后..." / "默认..." / "我倾向...") →
+   *     `instruction` / `preference`.
+   *   - repetition across archive → confidence boost (more
+   *     occurrences = stronger signal).
+   *
+   * Idle chatter (no signal phrase, single occurrence) is dropped.
+   * Tool / system / SOUL content never reaches this surface — input
+   * comes from `conversation_archive.text` and `message log` text
+   * parts, both already sanitized by  / 142.
+   */
+  @callable()
+  listMemoryCandidates(input?: { limit?: number }): MemoryCandidatesResult {
+    const generatedAt = Date.now();
+    try {
+      const cap = Math.max(1, Math.min(50, Math.floor(input?.limit ?? 20)));
+      const candidates = this._buildMemoryCandidatesV1(cap);
+      return {
+        ok: true,
+        blockedReason: candidates.length === 0 ? "no candidates above threshold" : null,
+        items: candidates,
+        generatedAt,
+      };
+    } catch (e) {
+      // Failure-safe: never break the inspect surface. Log so we can
+      // diagnose; return empty list with reason.
+      const msg = e instanceof Error ? e.message.slice(0, 200) : String(e).slice(0, 200);
+      return {
+        ok: true,
+        blockedReason: `internal: ${msg}`,
+        items: [],
+        generatedAt,
+      };
+    }
+  }
+
+  private _buildMemoryCandidatesV1(cap: number): MemoryCandidateInspectItem[] {
+    const generatedAt = Date.now();
+    // Pull a bounded window of archive chunks. Most-recent first so
+    // the list reflects what's been talked about lately. We don't
+    // cross 50 rows because heuristics scale O(rows × patterns).
+    type ArchiveRow = {
+      chunk_id: string;
+      context_id: string;
+      role: string | null;
+      text: string;
+      archived_at: number | bigint;
+    };
+    const archiveRows = this.sql<ArchiveRow>`
+      SELECT chunk_id, context_id, role, text, archived_at
+      FROM conversation_archive
+      ORDER BY archived_at DESC
+      LIMIT 50
+    `;
+
+    // Active memories — read-only, for dedupe hints. Bounded to avoid
+    // O(N×M) blowup; recent first.
+    type MemRow = { id: number; type: string; key: string | null; content: string };
+    const memoryRows = this.sql<MemRow>`
+      SELECT id, type, key, content FROM agent_memories
+      WHERE active = 1 ORDER BY updated_at DESC LIMIT 200
+    `;
+
+    // Recent dialog turns from this DO's message log. Cap at 30 user
+    // turns to keep the heuristic loop bounded.
+    const recentDialog: Array<{ role: "user" | "assistant"; text: string; index: number }> = [];
+    const messages = this.getMessages();
+    let idx = 0;
+    for (const m of messages) {
+      if (m.role !== "user" && m.role !== "assistant") { idx++; continue; }
+      const text = (m.parts ?? [])
+        .filter((p): p is { type: "text"; text: string } => p.type === "text" && typeof (p as { text?: unknown }).text === "string")
+        .map((p) => p.text)
+        .join("\n\n")
+        .trim();
+      if (text.length > 0) recentDialog.push({ role: m.role, text, index: idx });
+      idx++;
+    }
+    const dialogTail = recentDialog.slice(-60);
+
+    // Build candidates from BOTH archive + recent dialog. We compute
+    // a key (lowercased trimmed slice) to dedupe near-identical
+    // candidates from the two sources before scoring.
+    type Acc = {
+      key: string;
+      type: MemoryCandidateType;
+      text: string;
+      reason: string;
+      baseConfidence: number;
+      sourceRefs: MemoryCandidateSourceRef[];
+      occurrences: number;
+    };
+    const acc = new Map<string, Acc>();
+
+    function pushSignal(
+      origin: { kind: "archive" | "dialog"; ref: string; preview: string },
+      signal: { type: MemoryCandidateType; text: string; reason: string; baseConfidence: number },
+    ) {
+      const trimmed = signal.text.trim();
+      if (trimmed.length === 0) return;
+      const key = trimmed.slice(0, 200).toLowerCase();
+      const existing = acc.get(key);
+      if (existing) {
+        existing.occurrences++;
+        existing.sourceRefs.push({ kind: origin.kind, ref: origin.ref, preview: origin.preview.slice(0, 200) });
+        // Keep the strongest base; reasons accumulate compactly.
+        if (signal.baseConfidence > existing.baseConfidence) {
+          existing.baseConfidence = signal.baseConfidence;
+          existing.reason = signal.reason;
+        }
+      } else {
+        acc.set(key, {
+          key,
+          type: signal.type,
+          text: trimmed.slice(0, 400),
+          reason: signal.reason,
+          baseConfidence: signal.baseConfidence,
+          sourceRefs: [{ kind: origin.kind, ref: origin.ref, preview: origin.preview.slice(0, 200) }],
+          occurrences: 1,
+        });
+      }
+    }
+
+    // broader test-harness / verifier noise filter.
+    // The first 154a build let `task` candidates surface from
+    // verifier-rerun questions ("...那一步是不是有立即 ack（156g1
+    // 的关键判据）...") because the explicit-remember regex was too
+    // permissive and the noise guard only matched a tiny vocab.
+    // This filter rejects any text that smells like test/test-harness
+    // / debug-protocol prose.
+    const isCandidateNoise = (t: string): boolean => {
+      // Test-harness / verifier vocabulary (ASCII + 中文)
+      if (/\bverif(?:y|ier|ication)\b/i.test(t)) return true;
+      if (/\b(?:runtime\s+smoke|test\s+harness|case[- ]driven)\b/i.test(t)) return true;
+      if (/\bStory\s+[A-Z]\b/.test(t)) return true;
+      if (/\bCard\s+\d/.test(t)) return true;
+      // the operator / the bot / the bot / the bot 测试侧的判定词
+      if (/(?:验收|关键判据|后端证据|用例|跑测|测试用例|测试套件)/.test(t)) return true;
+      if (/\b(?:PASS|FAIL|N-A|N\/A)\b/.test(t)) return true;
+      // 系统/路由/调度专用词典（dialog-noise typical of small-c orchestration）
+      if (/(?:summaryStream|recentOutbox|routeSummary|debugTrace|recentToolEvents|lastAssistantSummary|conversation_archive|context_active|Story\s)/i.test(t)) return true;
+      // mention to operators (the bot / the operator / channel admins) — mass-distributed ops messages, not user memory intent.
+      // Deployment-specific Discord user IDs intentionally not committed here; wire via env in a future iteration if this heuristic needs to fire.
+      if (/<@!?(?:0)>/.test(t)) return true;
+      // Code fences / jq / curl / shell heredoc — debug protocol, not memory
+      if (/```[\s\S]{4,}```|`(?:curl|jq|grep|wrangler|npm)\b/i.test(t)) return true;
+      if (/\bcurl\s+-[sS]?\b|\bjq\s+['"]/.test(t)) return true;
+      // Channel ingest metadata header (defense-in-depth — should be
+      // stripped pre-archive but we guard regardless)
+      if (/\[discord channel message|provider_message_id:/i.test(t)) return true;
+      // Tool payload field names — never expected in user dialog
+      if (/\binputPreview\b|\boutputPreview\b/.test(t)) return true;
+      // Existing minimal vocab (kept for backward compat)
+      if (/validation-marker|playwright|verifier rerun/i.test(t)) return true;
+      return false;
+    };
+
+    const detect = (text: string): { type: MemoryCandidateType; text: string; reason: string; baseConfidence: number } | null => {
+      const t = text.trim();
+      if (t.length < 6 || t.length > 800) return null;
+
+      // try explicit-remember extraction FIRST. The
+      // archived `text` for a real Discord user prompt usually starts
+      // with `<@the bot_id>` (the bot mention). 154a1 demanded `[\n.!?]`
+      // immediately before `帮我记` AND ran `isCandidateNoise(t)` over
+      // the whole row first, so any verifier-flavored neighbor token
+      // in the same archived chunk killed the legit slot. Now: allow
+      // an optional bot mention prefix (`<@BOT_ID>` or its `<@!…>`
+      // form) before the imperative, extract the slot, and only
+      // filter the slot itself. Bot id is deployment-specific; wire
+      // via env if this heuristic needs to detect self-mention prefixes.
+      const explicit = /(?:^|[\n。！？\.!\?]\s*)(?:<@!?\d+>\s*)?(?:帮我记一?下|请记一?下|麻烦记一?下|remember\s+(?:that|this|the\s+following)|please\s+remember)\s*[:：]\s*(.{6,400})/iu.exec(t);
+      if (explicit) {
+        const slot = explicit[1].trim();
+        if (isCandidateNoise(slot)) return null;
+        const isMeeting = /\d{1,2}[:：]\d{2}|周[一二三四五六日天]|下周|今晚|明早/.test(slot)
+          && /(跟|与|和|with)\s*[\p{L}\w]+/u.test(slot);
+        return {
+          type: isMeeting ? "task" : "fact",
+          text: slot,
+          reason: "explicit `请记/帮我记/remember` request",
+          baseConfidence: 0.85,
+        };
+      }
+
+      // For non-explicit signals (preference / decision) the whole
+      // utterance IS the candidate text, so the outer noise filter
+      // still applies — a verifier discussion that happens to begin
+      // with `决定` shouldn't surface as a decision candidate.
+      if (isCandidateNoise(t)) return null;
+
+      if (/^(?:以后|之后|默认|从现在起|from now on|always)\b/.test(t)) {
+        return {
+          type: "instruction",
+          text: t,
+          reason: "preference / standing-instruction phrase",
+          baseConfidence: 0.6,
+        };
+      }
+      if (/(?:我倾向|我建议|决定|拍板|let's go with|going with)/i.test(t)) {
+        return {
+          type: "decision",
+          text: t,
+          reason: "decision-shaped phrasing",
+          baseConfidence: 0.55,
+        };
+      }
+      return null;
+    };
+
+    for (const r of archiveRows) {
+      const sig = detect(r.text);
+      if (!sig) continue;
+      pushSignal(
+        { kind: "archive", ref: r.chunk_id, preview: r.text },
+        sig,
+      );
+    }
+    for (const d of dialogTail) {
+      const sig = detect(d.text);
+      if (!sig) continue;
+      pushSignal(
+        { kind: "dialog", ref: String(d.index), preview: d.text },
+        sig,
+      );
+    }
+
+    // Score = base + repetition bonus, capped at 1.0.
+    // Build dedupe hints from existing memories by substring overlap.
+    const items: MemoryCandidateInspectItem[] = [];
+    let cidSeq = 0;
+    for (const c of acc.values()) {
+      // Repetition bonus: each extra occurrence adds 0.05 up to +0.20.
+      const repetitionBonus = Math.min(0.20, Math.max(0, c.occurrences - 1) * 0.05);
+      const confidence = Math.min(1, c.baseConfidence + repetitionBonus);
+      let dedupeHint: { maybeExistingMemoryId?: string; similarityReason?: string } | null = null;
+      const candLower = c.text.toLowerCase();
+      const candKeyTokens = candLower.split(/\s+/).filter((w) => w.length >= 4).slice(0, 4);
+      for (const m of memoryRows) {
+        const ml = m.content.toLowerCase();
+        // Substring or shared-token overlap
+        if (ml.length > 0 && candLower.length >= 12 && (
+          ml.includes(candLower.slice(0, 24)) ||
+          candLower.includes(ml.slice(0, 24)) ||
+          (candKeyTokens.length >= 2 && candKeyTokens.every((tok) => ml.includes(tok)))
+        )) {
+          dedupeHint = {
+            maybeExistingMemoryId: String(m.id),
+            similarityReason: m.key
+              ? `key=${m.key} content overlap`
+              : `content overlap (memory ${m.type})`,
+          };
+          break;
+        }
+      }
+      cidSeq++;
+      items.push({
+        candidateId: `cand_${generatedAt.toString(36)}_${cidSeq.toString(36)}`,
+        type: c.type,
+        text: c.text,
+        sourceRefs: c.sourceRefs.slice(0, 6),
+        reason: c.occurrences > 1 ? `${c.reason} (×${c.occurrences})` : c.reason,
+        confidence,
+        dedupeHint,
+      });
+    }
+    // Sort: highest confidence first, ties broken by source count
+    // (more refs = stronger signal).
+    items.sort((a, b) => (b.confidence - a.confidence) || (b.sourceRefs.length - a.sourceRefs.length));
+    return items.slice(0, cap);
+  }
+
+  // Help TS infer the call-site shape — `generatedAt` is set inside
+  // `listMemoryCandidates`; this is a no-op marker so future readers
+  // see the connection between the heuristic builder and the public
+  // callable.
+  // (intentionally left blank below this comment)
+
   @callable()
   forgetMemory(input: { id: number; reason?: string }): { ok: boolean; id: number } {
     const target = this.sql<{ id: number; active: number }>`SELECT id, active FROM agent_memories WHERE id = ${input.id}`;
@@ -2304,7 +5424,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
    *
    * Replaces ChannelHub's previous heuristic `currentTask !== null` (which
    * misfired when `currentTask` was a stale string but the actual loop was
-   * idle — observed in dogfood: the bot showed busy forever).
+   * idle — the operator hit this in dogfood: the bot showed busy forever).
    *
    * `canAccept` is the authority on whether ChannelHub may submit a new
    * channel-driven task on top of current state. The reason string is
@@ -2424,20 +5544,37 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
 
   @callable()
   getMutationReview(): MutationReview {
-    const rows = this.sql<{ status: string; evidence: string | null }>`
-      SELECT status, evidence FROM kanban_mutations
+    // bounded read.
+    // Was: `SELECT status, evidence FROM kanban_mutations` with no LIMIT.
+    // Each `evidence` row can be large (full diffs, log captures), and the
+    // function only ever consults `status` counts + a single boolean
+    // ("any applied row with non-empty evidence?"). Replace the all-row
+    // read with SQL aggregates so memory stays O(1) regardless of how
+    // many mutations the project has accumulated.
+    const countsRows = this.sql<{ status: string; n: number | bigint }>`
+      SELECT status, COUNT(*) as n FROM kanban_mutations GROUP BY status
     `;
-    const pendingCount  = rows.filter(r => r.status === "pending").length;
-    const appliedCount  = rows.filter(r => r.status === "applied").length;
-    const failedCount   = rows.filter(r => r.status === "failed").length;
-    const rejectedCount = rows.filter(r => r.status === "rejected").length;
-    const hasEvidence   = rows.some(r => r.status === "applied" && r.evidence !== null && r.evidence !== "");
+    let pendingCount = 0, appliedCount = 0, failedCount = 0, rejectedCount = 0;
+    let totalRows = 0;
+    for (const r of countsRows) {
+      const n = Number(r.n);
+      totalRows += n;
+      if (r.status === "pending") pendingCount = n;
+      else if (r.status === "applied") appliedCount = n;
+      else if (r.status === "failed") failedCount = n;
+      else if (r.status === "rejected") rejectedCount = n;
+    }
+    const hasEvidence = Number((this.sql<{ n: number | bigint }>`
+      SELECT COUNT(*) as n FROM kanban_mutations
+      WHERE status = 'applied' AND evidence IS NOT NULL AND evidence != ''
+      LIMIT 1
+    `)[0]?.n ?? 0) > 0;
     const effectiveProgress = appliedCount > 0 && hasEvidence;
     const readyForNextMilestone = effectiveProgress;
 
     let stage: MutationReview["stage"];
     let summary: string;
-    if (rows.length === 0) {
+    if (totalRows === 0) {
       stage = "no-mutation";
       summary = "尚未产生任何 kanban mutation。先运行 doWork（stub-verbose）再执行 advance-kanban-card。";
     } else if (appliedCount === 0) {
@@ -2982,7 +6119,7 @@ function homePage(): Response {
   <div id="gate-reason" style="margin-top:.5rem;color:#8b949e;">—</div>
 </div>
 
-<h2>MUTATION REVIEW</h2>
+<h2> MUTATION REVIEW</h2>
 <div id="mutation-review-box" class="review-box mut-no-mutation">
   <div class="stage-label" id="mut-review-stage">loading...</div>
   <div id="mut-review-ready">—</div>
@@ -2990,14 +6127,14 @@ function homePage(): Response {
   <div id="mut-review-summary" style="margin-top:.5rem;color:#8b949e;">—</div>
 </div>
 
-<h2>RECOVERY REVIEW</h2>
+<h2> RECOVERY REVIEW</h2>
 <div id="recovery-review-box" class="review-box stage-normal">
   <div class="stage-label" id="review-stage">loading...</div>
   <div id="review-ready">—</div>
   <div id="review-summary" style="margin-top:.5rem;color:#8b949e;">—</div>
 </div>
 
-<h2>REAL ACTION REVIEW</h2>
+<h2> REAL ACTION REVIEW</h2>
 <div id="real-action-review-box" class="review-box real-no-execution">
   <div class="stage-label" id="real-review-stage">loading...</div>
   <div id="real-review-ready">—</div>
@@ -3005,7 +6142,7 @@ function homePage(): Response {
   <div id="real-review-summary" style="margin-top:.5rem;color:#8b949e;">—</div>
 </div>
 
-<h2>EXECUTION REVIEW</h2>
+<h2> EXECUTION REVIEW</h2>
 <div id="execution-review-box" class="review-box exec-no-action">
   <div class="stage-label" id="exec-review-stage">loading...</div>
   <div id="exec-review-ready">—</div>
@@ -3049,7 +6186,7 @@ function homePage(): Response {
 <h2>RECENT CHECKPOINTS (real write)</h2>
 <pre id="recent-checkpoints">(no checkpoints written yet)</pre>
 
-<h2>RECENT KANBAN MUTATIONS (real bounded)</h2>
+<h2>RECENT KANBAN MUTATIONS ( real bounded)</h2>
 <pre id="recent-kanban-mutations">(no kanban mutations recorded yet)</pre>
 
 <h2>ACTION RESULT</h2>
@@ -3426,7 +6563,7 @@ export default {
     // /health is intentionally exempt so Cloudflare health probes and uptime
     // monitors can keep working without the secret. Keep its response shape minimal.
     if (url.pathname === "/health") {
-      return json({ ok: true, service: "agent-thursday", version: "0.1.0", agent: "AgentThursdayAgent", instance: DEMO_INSTANCE, timestamp: Date.now() });
+      return json({ ok: true, service: "agent-thursday-agent", version: "0.1.0", agent: "AgentThursdayAgent", instance: DEMO_INSTANCE, timestamp: Date.now() });
     }
 
     //  + 78: auth only gates the data surface. The SPA shell
@@ -3494,8 +6631,36 @@ export default {
     }
 
     if (url.pathname === "/api/workspace" && request.method === "GET") {
-      const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
-      const [agentThursdayState, cliSession, loopReview, approvalPolicy, pendingToolApproval, debugTrace, deliverableGate, pendingMutations, eventLog] = await Promise.all([
+      // route the message-bearing fields of the workspace
+      // snapshot through the active context DO so `new context` /
+      // `reset` visibly clears or switches the dialog after refresh.
+      //
+      // when the request lacks `X-AgentThursday-Context-Id`,
+      // resolve the canonical active context via the registry pointer
+      // instead of falling back to DEMO_INSTANCE. This is what makes
+      // a fresh-cache browser / Discord / cron request follow the
+      // current single active session rather than the bootstrap DO.
+      // Whatever DO ends up routed, the response also carries
+      // `activeContextId` so the client can reconcile its local cache
+      // and switch surfaces if the canonical pointer has moved.
+      //
+      // Per-context: cliSession, debugTrace, eventLog (drives
+      // summaryStream), agentThursdayState (waitingForHuman / pendingHelpRequest
+      // → replyNeed), loopReview.summary, approvalPolicy.interventions,
+      // pendingToolApproval, deliverableGate, pendingMutations
+      // (kanban mutations are recorded on the DO that produced them).
+      // Registry/global concerns (model profile gateway, intelligence
+      // signal cache) live elsewhere and are not part of this snapshot.
+      const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
+      // Registry pointer lookup happens once per request; reused for
+      // both routing and the response field. When the header pinned
+      // the routing, we still report the canonical pointer so a
+      // pinned debug tab can see when global active has moved on.
+      const registry = await getAgentByName<Env, AgentThursdayAgent>(
+        env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>,
+        DEMO_INSTANCE,
+      );
+      const [agentThursdayState, cliSession, loopReview, approvalPolicy, pendingToolApproval, debugTrace, deliverableGate, pendingMutations, eventLog, lastResetAt, canonicalActive, dialogTurns, taskSubmittedEvents] = await Promise.all([
         stub.getStatus(),
         stub.getCliSession(),
         stub.getDeveloperLoopReview(),
@@ -3505,6 +6670,25 @@ export default {
         stub.getDeliverableGate(),
         stub.getPendingKanbanMutations(),
         stub.getEventLog(),
+        // separate query because getEventLog caps at 20 rows.
+        stub.getLastResetAt(),
+        // canonical active pointer for client reconcile.
+        registry.getActiveContextId(),
+        // a — turn-aware dialog history. Each entry pairs
+        // a user message's text with the assistant text that
+        // followed it (or null if tool-only). `buildWorkspaceSnapshot`
+        // matches each `task.submitted` event to a turn by
+        // `userText`, so old assistants from prior rounds can never
+        // be misattributed to a newer user (the 153z4 v1 bug).
+        // bumped from 30 → 60 turns so desktop dialog
+        // can show a long enough history to align with the 60-row
+        // taskSubmittedEvents window below.
+        stub.getDialogTurns(60),
+        // independent `task.submitted` window (60 newest)
+        // so the desktop summaryStream isn't capped at ~4 turns when
+        // event_log is dominated by agent.woken / tool.* / channel
+        // ack noise. Mobile collapses client-side regardless of length.
+        stub.getRecentTaskSubmittedEvents(60),
       ]);
       const snapshot = buildWorkspaceSnapshot({
         agentThursdayState,
@@ -3515,7 +6699,11 @@ export default {
         debugTrace,
         deliverableGate,
         pendingMutations,
-        eventLogCount: eventLog.length,
+        eventLog,
+        lastResetAt,
+        activeContextId: canonicalActive.contextId,
+        dialogTurns,
+        taskSubmittedEvents,
       });
       // Validate at the boundary so legacy field drift is caught early.
       return json(WorkspaceSnapshotSchema.parse(snapshot));
@@ -3556,7 +6744,15 @@ export default {
     }
 
     if (url.pathname === "/api/inspect" && request.method === "GET") {
-      const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
+      // route the AgentThursdayAgent stub through the canonical
+      // active context so trace / toolEvents / ladder / memory tabs
+      // reflect the same DO that `/api/workspace` and `/cli/status`
+      // already read from. Without this, inspect was hardcoded to
+      // DEMO_INSTANCE and the user saw a stale registry/bootstrap DO
+      // event_log even though their session lived elsewhere.
+      // ContentHub (cross-DO) stays as before — it's a separate
+      // observability layer with its own audit log.
+      const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
       const snapshot: InspectSnapshot = await stub.getInspectSnapshot();
       //  / 114 — best-effort cross-DO fetches against ContentHubAgent.
       // Both `contentAudit` (raw rows) and `contentEvidence` (
@@ -3642,7 +6838,15 @@ export default {
 
     // workspace file manager (read-only).
     if (url.pathname === "/api/workspace/files" && request.method === "GET") {
-      const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
+      // route through canonical active context so the
+      // workspace file listing reflects the same DO that the agent's
+      // own write/list/read tools mutate. Previously hardcoded to
+      // DEMO_INSTANCE: the agent wrote files into its active context
+      // DO while operators inspecting via this endpoint listed an
+      // unrelated registry/bootstrap DO and saw zero files
+      // (the 156l miss that surfaced when the operator & the bot couldn't find
+      // hermes-vs-agentthursday-comparison.md).
+      const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
       try {
         const list = await stub.listWorkspaceFiles(url.searchParams.get("path"));
         return json(WorkspaceFileListSchema.parse(list));
@@ -3652,7 +6856,10 @@ export default {
     }
 
     if (url.pathname === "/api/workspace/file" && request.method === "GET") {
-      const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
+      // same fix as /api/workspace/files: read from the
+      // canonical active DO so the file content matches what the
+      // agent actually wrote.
+      const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
       try {
         const content = await stub.readWorkspaceFileText(url.searchParams.get("path"));
         return json(WorkspaceFileContentSchema.parse(content));
@@ -4033,7 +7240,11 @@ export default {
 
     // Agent Memory v1 read-only snapshot.
     if (url.pathname === "/api/memory" && request.method === "GET") {
-      const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
+      // route through canonical active context so Memory
+      // tab reflects the active session's `agent_memories` /
+      // `memory_knowledge`, not DEMO_INSTANCE's. Mirrors `/api/inspect`
+      // and `/api/workspace`.
+      const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
       const snapshot = await stub.getMemorySnapshot();
       return json(MemorySnapshotSchema.parse(snapshot));
     }
@@ -4128,7 +7339,7 @@ export default {
     }
 
     if (url.pathname === "/cli/status" && request.method === "GET") {
-      const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
+      const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
       const [session, loopReview, approvalPolicy, pendingToolApproval, debugTrace, usageStats] = await Promise.all([
         stub.getCliSession(), stub.getDeveloperLoopReview(), stub.getApprovalPolicy(), stub.getPendingToolApproval(), stub.getDebugTrace(), stub.getUsageStats(),
       ]);
@@ -4140,7 +7351,7 @@ export default {
 
     if (url.pathname === "/cli/submit" && request.method === "POST") {
       const { task } = await request.json<{ task: string }>();
-      const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
+      const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
       await stub.submitTask(task);
       const [session, loopReview] = await Promise.all([stub.getCliSession(), stub.getDeveloperLoopReview()]);
       return json({
@@ -4154,7 +7365,7 @@ export default {
     }
 
     if (url.pathname === "/cli/continue" && request.method === "POST") {
-      const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
+      const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
       await stub.continueTask();
       const session = await stub.getCliSession();
       return json({ ok: true, session });
@@ -4162,7 +7373,7 @@ export default {
 
     if (url.pathname === "/cli/approve" && request.method === "POST") {
       const body = await request.json<{ kind: "human-response" | "mutation-confirm"; fromHuman?: string; content?: string; mutationId?: number; mutationStatus?: string; evidence?: string }>();
-      const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
+      const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
       let description: string;
       if (body.kind === "mutation-confirm" && body.mutationId !== undefined) {
         await stub.confirmKanbanMutation(body.mutationId, body.mutationStatus ?? "applied", body.evidence ?? "");
@@ -4189,7 +7400,7 @@ export default {
     }
 
     if (url.pathname === "/cli/result" && request.method === "GET") {
-      const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
+      const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
       const [deliverableGate, loopReview, approvalPolicy, session] = await Promise.all([
         stub.getDeliverableGate(), stub.getDeveloperLoopReview(), stub.getApprovalPolicy(), stub.getCliSession(),
       ]);
@@ -4198,15 +7409,337 @@ export default {
 
     if (url.pathname === "/cli/tool-approval" && request.method === "POST") {
       const { toolCallId, approved } = await request.json<{ toolCallId: string; approved: boolean }>();
-      const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
+      const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
       const result = await stub.approvePendingTool(toolCallId, approved);
       return json({ ok: result.ok, toolCallId, approved });
     }
 
     if (url.pathname === "/cli/clear-stale-state" && request.method === "POST") {
-      const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
+      const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
       const result = await stub.clearStaleBlockingState();
       return json(result);
+    }
+
+    // Context lifecycle (inspect + reset). See
+    // docs/milestones/-context-lifecycle-management.md. `context.new`
+    // is deferred until Think SDK exposes traceable multi-thread sessions.
+    if (url.pathname === "/cli/context/inspect" && request.method === "GET") {
+      const lastNRaw = url.searchParams.get("lastN");
+      const lastN = lastNRaw !== null ? Math.max(1, Math.min(200, Number(lastNRaw) || 20)) : 20;
+      const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
+      const result = await stub.inspectContext({ lastN });
+      return json(result);
+    }
+
+    if (url.pathname === "/cli/context/reset" && request.method === "POST") {
+      let body: { reason?: string | null } = {};
+      try {
+        const text = await request.text();
+        if (text.trim().length > 0) body = JSON.parse(text);
+      } catch {
+        // Tolerate empty / malformed body; reason is optional.
+      }
+      // pass `routedContextId` so the DO knows whether it's
+      // running on the registry (DEMO_INSTANCE) and can skip the
+      // self-RPC for archive write.
+      // paired resolver guarantees `routedContextId` and
+      // `stub` point at the same DO. Previously the reset path called
+      // `resolveContextDoName(request)` (sync) and
+      // `getActiveAgentThursdayAgentStub(...)` separately; with the canonical
+      // resolver in place, doing the lookup twice could in principle
+      // race the registry pointer. One lookup, paired return.
+      const { name: routedContextId, stub } = await resolveCanonicalActiveContextRoute(env, request);
+      try {
+        const result = await stub.resetContext({ reason: body.reason ?? null, routedContextId });
+        return json(result);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return new Response(JSON.stringify({ ok: false, error: message }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // v3 new-context (v1 reset-style fallback). Closes
+    // the active context_history row, opens a new one, clears messages.
+    // Auth-gated via the global /cli/* requireSecret check above.
+    if (url.pathname === "/cli/context/new" && request.method === "POST") {
+      let body: { reason?: string | null } = {};
+      try {
+        const text = await request.text();
+        if (text.trim().length > 0) body = JSON.parse(text);
+      } catch {
+        // Tolerate empty / malformed body.
+      }
+      const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
+      const result = await stub.newContext({ reason: body.reason ?? null });
+      return json(result);
+    }
+
+    if (url.pathname === "/cli/context/active" && request.method === "GET") {
+      const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
+      const result = await stub.getActiveContextId();
+      return json(result);
+    }
+
+    if (url.pathname === "/cli/context/history" && request.method === "GET") {
+      const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
+      const result = await stub.listContextHistory();
+      return json(result);
+    }
+
+    // `conversation_search` over the registry's
+    // canonical archive. Registry-only routing (always DEMO_INSTANCE)
+    // because per-context DOs don't hold the archive table. Inputs
+    // come via query params for GET ergonomics; POST body would also
+    // work but GET is friendlier for the agent's tool surface and for
+    // dogfood curl.
+    // context hygiene loop. Manual-trigger only in v1
+    // (the callable rejects other triggers). Routes through the
+    // canonical active context () so hygiene runs ON the
+    // DO whose messages it would compact.
+    if (url.pathname === "/cli/context/hygiene/run" && request.method === "POST") {
+      let body: HygieneRunInput = {};
+      try {
+        const text = await request.text();
+        if (text.trim().length > 0) body = JSON.parse(text);
+      } catch {
+        // Tolerate empty body — defaults apply.
+      }
+      const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
+      try {
+        const result = await stub.runContextHygiene(body);
+        return json(result);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return new Response(JSON.stringify({ ok: false, error: message }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    if (url.pathname === "/cli/context/archive/inspect" && request.method === "GET") {
+      const recentLimit = Number(url.searchParams.get("recentLimit") ?? "");
+      const perContextLimit = Number(url.searchParams.get("perContextLimit") ?? "");
+      const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
+      const result = await stub.getArchiveInspectSummary({
+        recentLimit: Number.isFinite(recentLimit) && recentLimit > 0 ? recentLimit : undefined,
+        perContextLimit: Number.isFinite(perContextLimit) && perContextLimit > 0 ? perContextLimit : undefined,
+      });
+      return json(result);
+    }
+
+    // read-only memory candidate inspect.
+    // Registry-only routing because conversation_archive and the
+    // dedupe-side `agent_memories` view both live on the registry
+    // DO; the candidate generator pulls from those tables only and
+    // never writes anywhere. GET-only; safe to poll.
+    if (url.pathname === "/cli/memory/candidates" && request.method === "GET") {
+      const limitParam = Number(url.searchParams.get("limit") ?? "");
+      const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
+      const result = await stub.listMemoryCandidates({
+        limit: Number.isFinite(limitParam) && limitParam > 0 ? Math.floor(limitParam) : undefined,
+      });
+      return json(result);
+    }
+
+    if (url.pathname === "/cli/context/conversation/search" && request.method === "GET") {
+      const queryParam = url.searchParams.get("query");
+      if (!queryParam || queryParam.trim().length === 0) {
+        return new Response(JSON.stringify({ ok: false, error: "missing_query" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      const parseInt = (v: string | null, hi: number): number | undefined => {
+        if (v === null) return undefined;
+        const n = Number(v);
+        return Number.isFinite(n) ? Math.max(1, Math.min(hi, Math.floor(n))) : undefined;
+      };
+      const parseTimestamp = (v: string | null): number | undefined => {
+        if (v === null) return undefined;
+        const n = Number(v);
+        return Number.isFinite(n) ? Math.floor(n) : undefined;
+      };
+      const roleParam = url.searchParams.get("role");
+      const role = (roleParam === "user" || roleParam === "assistant" || roleParam === "system")
+        ? roleParam
+        : undefined;
+      // The caller's active context (so the retrieval log records who
+      // searched). Optional — default to whatever the route resolver
+      // would pick.
+      const callerContextId = request.headers.get(CONTEXT_HEADER) ?? undefined;
+      const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
+      try {
+        const result = await stub.conversationSearch({
+          query: queryParam,
+          contextId: url.searchParams.get("contextId") ?? undefined,
+          fromTimestamp: parseTimestamp(url.searchParams.get("fromTimestamp")),
+          toTimestamp: parseTimestamp(url.searchParams.get("toTimestamp")),
+          role,
+          topK: parseInt(url.searchParams.get("topK"), 10),
+          snippetCap: parseInt(url.searchParams.get("snippetCap"), 2000),
+          callerContextId,
+          callerTaskId: url.searchParams.get("taskId") ?? undefined,
+          traceId: url.searchParams.get("traceId") ?? undefined,
+        });
+        return json(result);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return new Response(JSON.stringify({ ok: false, error: message }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // v3 switch the active context to an existing
+    // context_history row. Registry-only (always DEMO_INSTANCE) so the
+    // active pointer stays the single source of truth across requests.
+    if (url.pathname === "/cli/context/switch" && request.method === "POST") {
+      let body: { contextId?: string; reason?: string | null } = {};
+      try {
+        const text = await request.text();
+        if (text.trim().length > 0) body = JSON.parse(text);
+      } catch {
+        return new Response(JSON.stringify({ ok: false, error: "invalid_json" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (typeof body.contextId !== "string" || body.contextId.trim().length === 0) {
+        return new Response(JSON.stringify({ ok: false, error: "missing_contextId" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
+      try {
+        const result = await stub.switchContext({
+          contextId: body.contextId.trim(),
+          reason: body.reason ?? null,
+        });
+        return json(result);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return new Response(JSON.stringify({ ok: false, error: message }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    if (url.pathname === "/cli/context/compact" && request.method === "POST") {
+      let body: { reason?: string | null; lastN?: number; keepRecent?: number } = {};
+      try {
+        const text = await request.text();
+        if (text.trim().length > 0) body = JSON.parse(text);
+      } catch {
+        // Tolerate empty body; defaults apply.
+      }
+      const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
+      try {
+        const result = await stub.compactContext({
+          reason: body.reason ?? null,
+          lastN: typeof body.lastN === "number" ? body.lastN : undefined,
+          keepRecent: typeof body.keepRecent === "number" ? body.keepRecent : undefined,
+        });
+        return json(result);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return new Response(JSON.stringify({ ok: false, error: message }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    if (url.pathname === "/cli/context/compactions" && request.method === "GET") {
+      const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
+      const result = await stub.listCompactions();
+      return json(result);
+    }
+
+    //  v2 Read-only context snapshot for anchor planning.
+    // Auth-gated by the global /cli/* requireSecret check above. No audit
+    // row server-side; matches /cli/context/inspect's polling contract.
+    if (url.pathname === "/cli/context/snapshot" && request.method === "GET") {
+      const lastNRaw = url.searchParams.get("lastN");
+      const lastN = lastNRaw !== null ? Math.max(1, Math.min(200, Number(lastNRaw) || 20)) : 20;
+      const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
+      const result = await stub.inspectContextSnapshot({ lastN });
+      return json(result);
+    }
+
+    //  v2 Read-only deterministic anchor classifier.
+    // Same auth contract as /cli/context/snapshot.
+    if (url.pathname === "/cli/context/anchors" && request.method === "GET") {
+      const lastNRaw = url.searchParams.get("lastN");
+      const firstKRaw = url.searchParams.get("firstK");
+      const parsedLastN = lastNRaw !== null ? Number(lastNRaw) : NaN;
+      const parsedFirstK = firstKRaw !== null ? Number(firstKRaw) : NaN;
+      const lastN = Number.isFinite(parsedLastN) ? Math.max(1, Math.min(200, Math.floor(parsedLastN))) : 50;
+      const firstK = Number.isFinite(parsedFirstK) ? Math.max(0, Math.min(50, Math.floor(parsedFirstK))) : 4;
+      const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
+      const result = await stub.classifyContextAnchors({ lastN, firstK });
+      return json(result);
+    }
+
+    //  v2 Read-only compact-plan dry-run.
+    if (url.pathname === "/cli/context/compact-plan" && request.method === "POST") {
+      let body: CompactPlanInput = {};
+      try {
+        const text = await request.text();
+        if (text.trim().length > 0) body = JSON.parse(text);
+      } catch {
+        // Tolerate empty body — defaults apply.
+      }
+      const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
+      const result = await stub.compactPlan(body);
+      return json(result);
+    }
+
+    //  v2 Explicit apply of a previously proposed plan.
+    // Pre-flight runs against a fresh snapshot per range.
+    if (url.pathname === "/cli/context/apply-compact-plan" && request.method === "POST") {
+      type ApplyBody = {
+        plan?: CompactPlanResult;
+        semanticAdvisor?: boolean;
+        semanticAdvisorTrigger?: "manual" | "high_pressure" | "phase_boundary" | "degradation_suspicion";
+      };
+      let body: ApplyBody = {};
+      try {
+        const text = await request.text();
+        if (text.trim().length > 0) body = JSON.parse(text);
+      } catch {
+        return new Response(JSON.stringify({ ok: false, error: "invalid_json" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (!body.plan || typeof body.plan.planId !== "string") {
+        return new Response(JSON.stringify({ ok: false, error: "missing_plan" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
+      try {
+        const result = await stub.applyCompactPlan({
+          plan: body.plan,
+          semanticAdvisor: body.semanticAdvisor === true,
+          semanticAdvisorTrigger: body.semanticAdvisorTrigger,
+        });
+        return json(result);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return new Response(JSON.stringify({ ok: false, error: message }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
     }
 
     // : anything not handled above falls through to:

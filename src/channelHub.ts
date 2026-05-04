@@ -3,9 +3,9 @@
  *
  * Owns inbox / outbox / identity / conversation tables. Provider-agnostic.
  * No Discord/email adapter wiring in this card — only schema, storage, and
- * idempotent ingestion. Cards 86+ wire actual transports.
+ * idempotent ingestion. + wire actual transports.
  *
- * Boundary rationale (review notes §1): kept as its own DO from day 1
+ * Boundary rationale ( review notes §1): kept as its own DO from day 1
  * so AgentThursdayAgent's event_log isn't shared with channel events, and webhook
  * traffic patterns can scale independently of agent task patterns.
  */
@@ -38,8 +38,11 @@ import {
   type ChannelApprovalRow,
   type ChannelCompactSummary,
 } from "./schema";
-import { PENDING_CAP_PER_CONVERSATION, PENDING_INBOX_STATUSES, clampRawRef } from "./channel";
-import { decideRoute, buildTaskPromptFromInbox } from "./channelRouter";
+import {
+  PENDING_CAP_PER_CONVERSATION, PENDING_INBOX_STATUSES, clampRawRef,
+  INBOX_TEXT_MAX, INBOX_ATTACHMENTS_JSON_MAX,
+} from "./channel";
+import { decideRoute, buildTaskPromptFromInbox, buildDisplayTextFromInbox } from "./channelRouter";
 import {
   hashApprovalPayload,
   buildBridgePayload,
@@ -63,7 +66,10 @@ type AgentThursdayAgentRPC = {
     waitingForHuman: boolean;
     currentObstacle: { blocked: boolean } | null;
   }>;
-  submitTask(task: string): Promise<{ ok: boolean; taskId: string; loopTriggered: boolean; replyText: string }>;
+  submitTask(
+    task: string,
+    opts?: { displayText?: string },
+  ): Promise<{ ok: boolean; taskId: string; loopTriggered: boolean; replyText: string }>;
   approvePendingTool(toolCallId: string, approved: boolean): Promise<{ ok: boolean }>;
   // explicit channel-ingress readiness predicate.
   getChannelIngressReadiness(): Promise<{
@@ -72,9 +78,37 @@ type AgentThursdayAgentRPC = {
     currentTaskId: string | null;
     currentTaskLifecycle: string | null;
   }>;
+  // registry pointer accessor (only invoked on the
+  // registry DO; safe shape so the RPC compiles in this file).
+  getActiveContextId(): Promise<{
+    contextId: string;
+    reason: string | null;
+    createdAt: number;
+  }>;
 };
 
-const AGENT_THURSDAY_INSTANCE_NAME = "agent-thursday-dev";
+// `AGENT_THURSDAY_REGISTRY_INSTANCE_NAME` (was `AGENT_THURSDAY_INSTANCE_NAME`)
+// is the registry DO that owns `context_active`. It is **not** the
+// default chat target anymore; ChannelHub looks up the canonical
+// active context via `getActiveContextId()` on this registry and
+// routes inbound messages there. Falls back to the registry only
+// when the active pointer is empty or RPC fails.
+const AGENT_THURSDAY_REGISTRY_INSTANCE_NAME = "agent-thursday-dev-fresh-108a-1";
+
+// — recognise DO isolate memory-pressure errors so
+// `routePending` can leave the inbox row retryable (`received`) instead
+// of permanently consuming it as `failed`. The CF runtime surfaces these
+// resets in a few different shapes depending on which RPC layer caught
+// them; match the common ones.
+function isMemoryResetError(msg: string): boolean {
+  const m = msg.toLowerCase();
+  return (
+    m.includes("exceeded its memory limit")
+    || (m.includes("isolate") && m.includes("reset"))
+    || m.includes("durable object reset")
+    || m.includes("memory limit")
+  );
+}
 
 type InboxRow = {
   id: string;
@@ -288,7 +322,16 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     const candidateId = parsed.id ?? crypto.randomUUID();
     const senderUid = parsed.sender.providerUserId;
     const signalsJson = JSON.stringify(parsed.addressedSignals);
-    const attachmentsJson = JSON.stringify(parsed.attachments);
+    // cap inbound text and attachments JSON before persist.
+    // Prevents a pathological large payload from later memory-resetting
+    // any DO that reads the row (snapshot, route, dialog).
+    const text = parsed.text.length > INBOX_TEXT_MAX
+      ? `${parsed.text.slice(0, INBOX_TEXT_MAX)}…(+${parsed.text.length - INBOX_TEXT_MAX})`
+      : parsed.text;
+    const attachmentsRaw = JSON.stringify(parsed.attachments);
+    const attachmentsJson = attachmentsRaw.length > INBOX_ATTACHMENTS_JSON_MAX
+      ? `${attachmentsRaw.slice(0, INBOX_ATTACHMENTS_JSON_MAX)}…(+${attachmentsRaw.length - INBOX_ATTACHMENTS_JSON_MAX})`
+      : attachmentsRaw;
     const rawRef = clampRawRef(parsed.rawRef ?? null);
     const receivedAt = parsed.receivedAt ?? now;
 
@@ -306,7 +349,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
         ${candidateId}, ${parsed.provider}, ${parsed.conversationId}, ${parsed.providerMessageId},
         ${senderUid}, ${parsed.chatType},
         ${parsed.addressedToAgent ? 1 : 0}, ${signalsJson},
-        ${parsed.text}, ${attachmentsJson}, ${rawRef}, ${status},
+        ${text}, ${attachmentsJson}, ${rawRef}, ${status},
         ${receivedAt}, ${now}
       )
     `;
@@ -396,7 +439,13 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     // Read AgentThursdayAgent state once per batch — cheap RPC and avoids racing
     // with our own submits within this loop.
     // explicit readiness instead of inferring from `currentTask` string.
-    const readiness = await this.fetchAgentThursdayReadiness();
+    // resolve canonical active context ONCE per batch and
+    // reuse the same route for both readiness and submit so the two
+    // signals can never disagree mid-loop. Without this, a `switchContext`
+    // landing between readiness and submit could send the message to a
+    // different DO than the one whose readiness we trusted.
+    const route = await this.getAgentThursdayRoute();
+    const readiness = await this.fetchAgentThursdayReadinessVia(route.stub);
     const agentThursdayBusy = !readiness.canAccept;
     const decisions: Array<{
       inboxId: string;
@@ -450,14 +499,58 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
         let replyText = "";
         try {
           const prompt = buildTaskPromptFromInbox(item);
-          const stub = await this.getAgentThursdayStub();
-          const result = await stub.submitTask(prompt);
+          const display = buildDisplayTextFromInbox(item);
+          // submit on the SAME route the readiness check
+          // ran against. `route` is resolved once per batch outside
+          // the per-item loop.
+          // pass `displayText` so the YOU line in the
+          // Web/mobile dialog shows the user's raw text without
+          // channel metadata or safety suffix; agent still gets the
+          // full `prompt` for routing/safety context.
+          const result = await route.stub.submitTask(prompt, { displayText: display });
           handoffTaskId = result.taskId;
           replyText = result.replyText ?? "";
           finalStatus = "handled";
         } catch (e) {
-          finalStatus = "failed";
-          decision.reason = `${decision.reason} | submit failed: ${String(e instanceof Error ? e.message : e).slice(0, 200)}`;
+          const errMsg = String(e instanceof Error ? e.message : e);
+          // fail-soft on DO isolate memory resets, with
+          // _real_ retry semantics. (parked rows as `deferred`
+          // but `routePending` only scans `received`, so the row was
+          // effectively orphaned — same outcome the user reported.)
+          //
+          // Behavior: revert the `processing` mark back to `received`,
+          // record a marker in `route_reason`, and `continue` so the
+          // shared post-process UPDATE that writes `route_action` /
+          // `routed_at` does NOT consume the row. Next `routePending`
+          // pass picks it up naturally.
+          //
+          // Duplicate-submit guard: if the previous submit had partially
+          // succeeded (agent already running the task), the next pass's
+          // `getChannelIngressReadiness()` will return canAccept=false
+          // and the row enters busy-skip, NOT a second submit. So no
+          // explicit retry counter is needed for that race.
+          if (isMemoryResetError(errMsg)) {
+            const marker = `memory-reset retryable: ${errMsg.slice(0, 200)}`;
+            this.sql`
+              UPDATE channel_inbox SET
+                status = 'received',
+                route_reason = ${marker},
+                updated_at = ${Date.now()}
+              WHERE id = ${item.id}
+            `;
+            decisions.push({
+              inboxId: item.id,
+              providerMessageId: item.providerMessageId,
+              action: decision.action,
+              reason: marker,
+              finalStatus: "received",
+              handoffTaskId: null,
+            });
+            continue;
+          } else {
+            finalStatus = "failed";
+            decision.reason = `${decision.reason} | submit failed: ${errMsg.slice(0, 200)}`;
+          }
         }
 
         // auto-reply: enqueue assistant text to outbox + deliver.
@@ -540,6 +633,21 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   private async fetchAgentThursdayReadiness(): Promise<{ canAccept: boolean; reason: string }> {
     try {
       const stub = await this.getAgentThursdayStub();
+      return await this.fetchAgentThursdayReadinessVia(stub);
+    } catch (e) {
+      const msg = String(e instanceof Error ? e.message : e).slice(0, 120);
+      return { canAccept: false, reason: `readiness RPC failed: ${msg}` };
+    }
+  }
+
+  /**
+   * readiness against an already-resolved stub. Used by
+   * `routePending` so the readiness check and the per-item submit
+   * share a single resolved route (no double active-pointer lookup,
+   * no race window).
+   */
+  private async fetchAgentThursdayReadinessVia(stub: AgentThursdayAgentRPC): Promise<{ canAccept: boolean; reason: string }> {
+    try {
       const r = await stub.getChannelIngressReadiness();
       return { canAccept: r.canAccept, reason: r.reason };
     } catch (e) {
@@ -548,17 +656,60 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     }
   }
 
-  private async getAgentThursdayStub(): Promise<AgentThursdayAgentRPC> {
+  /**
+   * paired `{ name, stub }` for whichever AgentThursdayAgent
+   * instance currently owns the canonical active context.
+   *
+   * Resolution order:
+   *   1. RPC the registry DO (`AGENT_THURSDAY_REGISTRY_INSTANCE_NAME`) for
+   *      `getActiveContextId()`.
+   *   2. If a non-empty `contextId` comes back, route to that instance.
+   *   3. Otherwise — registry RPC failed or pointer empty — fall back
+   *      to the registry instance itself (bootstrap path).
+   *
+   * Returning `{ name, stub }` paired means callers can guarantee
+   * "readiness query and submit hit the same DO" without re-resolving;
+   * the previous code path looked the registry up twice and the
+   * pointer could in principle race between calls.
+   *
+   * Recursion-safe: the registry lookup uses the registry instance
+   * name directly; it never reads from itself via the active pointer.
+   */
+  private async getAgentThursdayRoute(): Promise<{ name: string; stub: AgentThursdayAgentRPC }> {
     // Cross-DO RPC: getAgentByName's generic constraint expects an `Agent`
     // subclass. We don't import AgentThursdayAgent here (would create a server.ts ⇄
     // channelHub.ts cycle), so we satisfy the constraint with the base
     // Agent<Env> type and cast the returned stub back to the structural RPC
     // shape we actually use.
-    const stub = await getAgentByName<Env, Agent<Env>>(
-      this.env.AgentThursdayAgent as unknown as AgentNamespace<Agent<Env>>,
-      AGENT_THURSDAY_INSTANCE_NAME,
-    );
-    return stub as unknown as AgentThursdayAgentRPC;
+    const ns = this.env.AgentThursdayAgent as unknown as AgentNamespace<Agent<Env>>;
+    let resolved = AGENT_THURSDAY_REGISTRY_INSTANCE_NAME;
+    try {
+      const registry = await getAgentByName<Env, Agent<Env>>(ns, AGENT_THURSDAY_REGISTRY_INSTANCE_NAME);
+      const active = await (registry as unknown as AgentThursdayAgentRPC).getActiveContextId();
+      if (
+        typeof active.contextId === "string"
+        && active.contextId.length > 0
+        && active.contextId.length <= 200
+      ) {
+        resolved = active.contextId;
+      }
+    } catch {
+      // Registry unreachable — keep `resolved = AGENT_THURSDAY_REGISTRY_INSTANCE_NAME`
+      // so the bootstrap / fallback path still routes somewhere.
+    }
+    const stub = await getAgentByName<Env, Agent<Env>>(ns, resolved);
+    return { name: resolved, stub: stub as unknown as AgentThursdayAgentRPC };
+  }
+
+  /**
+   * single-stub convenience for callers that don't need
+   * to know the resolved name. Routes via `getAgentThursdayRoute()` so it
+   * always follows the canonical active context. Replaces the
+   * previous hardcoded-DEMO_INSTANCE behavior.
+   */
+  private async getAgentThursdayStub(): Promise<AgentThursdayAgentRPC> {
+    const { stub } = await this.getAgentThursdayRoute();
+    return stub;
   }
 
   private async lookupSenderRole(
@@ -1029,10 +1180,19 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     } as Record<string, number>;
     for (const r of approvalCounts) if (r.status in approvals) approvals[r.status] = Number(r.n);
 
+    // SQL-side preview for big text/JSON columns.
+    // The snapshot is debug-only; the dialog/delivery surfaces query
+    // separately via specific by-id reads. Capping `text`,
+    // `attachments_json`, and `payload_json` to ~4000 chars keeps the
+    // snapshot bounded even if a single row carries a giant paste,
+    // attachment list, or approval payload. (`raw_ref` is already
+    // capped at ingest by `clampRawRef`.)
     const recentInboxRows = this.sql<InboxRow>`
       SELECT id, provider, conversation_id, provider_message_id, sender_provider_user_id,
              chat_type, addressed_to_agent, addressed_signals_json,
-             text, attachments_json, raw_ref, status, created_at, updated_at,
+             substr(text, 1, 4000) AS text,
+             substr(attachments_json, 1, 4000) AS attachments_json,
+             raw_ref, status, created_at, updated_at,
              route_action, route_reason, routed_at, handoff_task_id
       FROM channel_inbox
       ORDER BY created_at DESC LIMIT 10
@@ -1041,7 +1201,9 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
 
     const recentOutboxRows = this.sql<OutboxRow>`
       SELECT id, provider, conversation_id, reply_to_provider_message_id,
-             text, payload_json, status, error, attempt_count, created_at, sent_at,
+             substr(text, 1, 4000) AS text,
+             substr(payload_json, 1, 4000) AS payload_json,
+             status, error, attempt_count, created_at, sent_at,
              kind, approval_id
       FROM channel_outbox
       ORDER BY created_at DESC LIMIT 10
@@ -1061,10 +1223,15 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       approvalId: r.approval_id,
     }));
 
+    // preview large columns (`payload_json`, `audit`).
     const recentApprovalRows = this.sql<ApprovalRow>`
-      SELECT id, kind, title, warning, reason, payload_json, payload_hash,
+      SELECT id, kind, title, warning, reason,
+             substr(payload_json, 1, 4000) AS payload_json,
+             payload_hash,
              target_tool_call_id, provider, conversation_id, outbox_id,
-             status, resolved_scope, resolved_actor, audit, expires_at, created_at, resolved_at
+             status, resolved_scope, resolved_actor,
+             substr(audit, 1, 4000) AS audit,
+             expires_at, created_at, resolved_at
       FROM channel_approvals
       ORDER BY created_at DESC LIMIT 10
     `;

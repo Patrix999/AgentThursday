@@ -1,3 +1,11 @@
+// Deprecated by  v2.5: the task title is now rendered as a
+// "user" message inside `SummaryStream`, and the lifecycle / loopStage
+// / ladderTier / ready badges moved into `TopStatusBar`. This component
+// is kept for back-compat in case any external surface still imports
+// it; remove after a sweep confirms no consumers.
+//
+// Original component below is preserved verbatim.
+
 import type { TaskView } from "../../shared/schema";
 
 export function CurrentTaskCard({ task }: { task: TaskView | null }) {

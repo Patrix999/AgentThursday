@@ -142,19 +142,26 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
     // notice and reconnect. `scheduleEvery` is idempotent per the Agent
     // base contract; safe to call on every onStart wake.
     //
-    // Picked 20s because:
-    //   - Discord heartbeat interval is ~41s; if heartbeat watchdog hasn't
-    //     forced a close yet, the alarm catches the rest within ~20s
-    //   - Faster than the 30s cap of nextBackoffMs so backoff still matters
-    //     for in-DO retry, but slower than a tight loop on auth failure
-    //     (fatal close codes already set desired_state='stopped' and skip)
-    await this.scheduleEvery(20, "watchdogTick");
+    // interval bumped from 20s → 120s as a cost/noise
+    // tradeoff. The in-socket heartbeat ACK watchdog (Discord's own
+    // ~41s heartbeat round-trip path) is the primary signal for live
+    // socket health; this alarm only exists to catch the case where
+    // the DO hibernated and the close handler never fired. 120s is
+    // long enough to drop wake/log noise dramatically while still
+    // bounded for a "lost the socket without notice" recovery —
+    // worst-case extra dead time is ~100s vs the prior 20s, which is
+    // acceptable for a fallback path. Faster than 5min so we don't
+    // pay the prompt-cache cliff per hibernation cycle, but slower
+    // than the heartbeat watchdog so it doesn't compete.
+    await this.scheduleEvery(120, "watchdogTick");
   }
 
   /**
-   *  patch — periodic watchdog. Called every 20s by Agent's alarm
-   * scheduler (survives DO hibernation). If desired_state is "running" but
-   * we don't have a live WebSocket, reconnect.
+   *  patch / periodic watchdog. Called every 120s
+   * by Agent's alarm scheduler (survives DO hibernation). If desired_state
+   * is "running" but we don't have a live WebSocket, reconnect. The
+   * in-socket heartbeat ACK watchdog still owns moment-to-moment
+   * socket health; this alarm is the hibernation-aware fallback only.
    *
    * Must be a PUBLIC method named in `keyof this` so `scheduleEvery` can
    * refer to it. Takes no payload — all state lives in gateway_state.

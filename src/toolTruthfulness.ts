@@ -164,3 +164,17 @@ export function renderTruthfulnessWarning(fabricated: string[]): string {
   const list = fabricated.map(t => `\`${t}\``).join(", ");
   return `⚠️ Truthfulness gate: this reply claims tool call(s) ${list} were made, but the trace shows no such dispatch. Treat the reported result as unverified.`;
 }
+
+/**
+ *  v3 (2026-04-30) — render the user-visible warning when the
+ * assistant emits tool-call-shaped JSON in plain text (fenced ```json
+ * block or raw `{"type":"function","name":...}` schema) but no real
+ * tool dispatch event was logged in the round. Distinct from the
+ * fabricated-claim wording because the failure mode is "the model
+ * produced a tool-call schema as text instead of invoking it" —
+ * caught after live observation of Kimi sporadically dropping into
+ * that mode.
+ */
+export function renderInlineJsonWarning(): string {
+  return `⚠️ Truthfulness gate: this reply emits tool-call-shaped JSON inline but the trace shows no actual tool dispatch. The assistant likely produced a tool-call schema as text instead of invoking it. Treat the reply as unverified.`;
+}

@@ -115,7 +115,10 @@ function Actions({
 
 function Card({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="rounded border border-slate-800 bg-slate-900/60 p-4">
+    <div
+      className="rounded border border-slate-800 bg-slate-900/60 p-4"
+      data-testid="pending-approval-card"
+    >
       <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
       <div className="mt-2">{children}</div>
     </div>

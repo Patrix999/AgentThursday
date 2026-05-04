@@ -5,10 +5,10 @@ type Props = {
 };
 
 /**
- * Card 127 — File preview panel. v1 surfaces which file was read,
+ * File preview panel. v1 surfaces which file was read,
  * from which content source, with what byte cap. The actual file
  * content is NOT in the `event_log` payload (returned to agent
- * directly), so this panel doesn't show an excerpt. Card 128 will
+ * directly), so this panel doesn't show an excerpt.  will
  * add workspace mutation/diff focus; this card is read-side only.
  */
 export function FilePreviewPanel(props: Props) {

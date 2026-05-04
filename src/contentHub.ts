@@ -1,5 +1,5 @@
 /**
- * ContentHub — `ContentHubAgent` Durable Object.
+ *  ContentHub — `ContentHubAgent` Durable Object.
  *
  *  added: registry skeleton, types, hardcoded `agentthursday-github`,
  *                 static `getSources` callable.
@@ -14,7 +14,7 @@
  *   - External writes / push / commit / PR
  *   - LLM tool registration — done in `AgentThursdayAgent.getTools()` in server.ts
  *
- * Boundary rationale (ADR §1, §4): kept as its own DO so external
+ * Boundary rationale ( ADR §1, §4): kept as its own DO so external
  * Content Source state (registry, cache, audit) does not leak into
  * AgentThursdayAgent.event_log or Tier 0 workspace storage.
  */
@@ -499,7 +499,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     if (!source) {
       return { ok: false, error: { code: "source-not-found", reason: `unknown source: ${input.sourceId}`, sourceId: input.sourceId } };
     }
-    // Local-fs provider branch. No network, no token,
+    //  v2 Local-fs provider branch. No network, no token,
     // content-hash revision; everything else (path safety, audit shape,
     // ContentRef provenance) stays uniform with GitHub via the shared
     // ContentSourceConnector contract.
@@ -651,7 +651,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     if (!source) {
       return { ok: false, error: { code: "source-not-found", reason: `unknown source: ${input.sourceId}`, sourceId: input.sourceId } };
     }
-    // Local-fs provider branch. Synchronous in-process
+    //  v2 Local-fs provider branch. Synchronous in-process
     // fixture lookup; no network, no token, content-hash revision. Honors
     // the shared ContentReadResponse contract so audit shape stays uniform.
     if (source.provider === "local-fs") {

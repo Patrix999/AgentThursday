@@ -33,12 +33,13 @@ export function MobileComposer({ snapshot }: Props) {
   }
 
   return (
-    <div className="border-t border-slate-800 bg-slate-900 p-3 space-y-2">
+    <div className="border-t border-slate-800 bg-slate-900 p-3 space-y-2" data-testid="mobile-composer">
       {a.pendingApproval && (
         <div className="flex flex-wrap gap-2">
           <button
             disabled={a.busy}
             onClick={() => void a.approve()}
+            data-testid="composer-approve"
             className="flex-1 min-w-[120px] min-h-[44px] px-4 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-base font-semibold"
           >
             {a.busy ? "…" : "Approve"}
@@ -46,6 +47,7 @@ export function MobileComposer({ snapshot }: Props) {
           <button
             disabled={a.busy}
             onClick={() => void a.reject()}
+            data-testid="composer-reject"
             className="flex-1 min-w-[120px] min-h-[44px] px-4 rounded bg-rose-600 hover:bg-rose-500 disabled:opacity-40 disabled:cursor-not-allowed text-base font-semibold"
           >
             {a.busy ? "…" : "Reject"}
@@ -59,11 +61,13 @@ export function MobileComposer({ snapshot }: Props) {
           onKeyDown={onKey}
           disabled={a.busy}
           placeholder="Submit a task…"
+          data-testid="composer-textarea"
           className="flex-1 min-h-[44px] bg-slate-800 text-slate-200 placeholder-slate-500 rounded px-3 py-2 resize-none h-14 outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-60 text-base"
         />
         <button
           disabled={a.busy || !text.trim()}
           onClick={onSend}
+          data-testid="composer-send"
           className="min-h-[44px] min-w-[64px] px-4 rounded bg-sky-600 hover:bg-sky-500 disabled:opacity-40 disabled:cursor-not-allowed text-base font-semibold"
         >
           {a.busy ? "…" : "Send"}

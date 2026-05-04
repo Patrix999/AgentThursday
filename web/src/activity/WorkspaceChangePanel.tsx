@@ -7,15 +7,15 @@ type Props = {
 };
 
 /**
- * Card 128 — Workspace mutation panel. Surfaces write-shaped agent
+ * Workspace mutation panel. Surfaces write-shaped agent
  * actions (checkpoint writes today + future workspace file ops) and
  * provides an "Open in workspace" affordance when the mutation
  * carries a real file path.
  *
  * The "Open in workspace" button dispatches a custom DOM event
- * (`agent-thursday:workspace:focus-path`) that `WorkspaceFileManager`
+ * (`AGENT_THURSDAY:workspace:focus-path`) that `WorkspaceFileManager`
  * listens for. This avoids cross-cutting state lift while still
- * letting Card 128 wire focus into the existing read-only file
+ * letting  wire focus into the existing read-only file
  * manager. Manual user focus is NOT stolen — focus only happens on
  * an explicit click.
  */

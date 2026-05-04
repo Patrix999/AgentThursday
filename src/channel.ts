@@ -8,12 +8,20 @@
 const RAW_REF_MAX = 200;
 const PENDING_CAP_PER_CONVERSATION = 50;
 
+// hard caps on inbound text + attachments JSON.
+// A pathological webhook (or pasted novel) can otherwise persist a
+// row whose later read trips the DO isolate memory limit. The agent
+// only ever reads the first couple thousand chars when building the
+// task prompt, so a 16k cap is generous.
+const INBOX_TEXT_MAX = 16_000;
+const INBOX_ATTACHMENTS_JSON_MAX = 16_000;
+
 export const CHANNEL_HUB_INSTANCE = "channel-hub";
 
 export const PENDING_INBOX_STATUSES = ["received", "routed", "processing", "deferred"] as const;
 export type PendingInboxStatus = typeof PENDING_INBOX_STATUSES[number];
 
-export { RAW_REF_MAX, PENDING_CAP_PER_CONVERSATION };
+export { RAW_REF_MAX, PENDING_CAP_PER_CONVERSATION, INBOX_TEXT_MAX, INBOX_ATTACHMENTS_JSON_MAX };
 
 /**
  * sha256 → first 16 hex chars (64 bits). Enough collision-resistant id

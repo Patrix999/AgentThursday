@@ -117,6 +117,25 @@ export function buildTaskPromptFromInbox(row: ChannelInboxItem): string {
     ``,
     row.text,
     ``,
-    `(This message arrived via the channel layer. Respond by addressing the sender; do not speak as the human operator. Do not include secrets in any reply or memory entry.)`,
+    `(This message arrived via the channel layer. Respond by addressing the sender; do not speak as the human the operator. Do not include secrets in any reply or memory entry.)`,
   ].join("\n");
+}
+
+/**
+ * build the **user-visible** display text for a
+ * channel inbox row. The result is what shows up as the YOU line on
+ * the Web/mobile main dialog (`summaryStream`).
+ *
+ * v1: just the raw provider text. We **deliberately do not** prepend
+ * the provider/chat-type/conversation/provider_message_id metadata
+ * block, the safety suffix, or any addressing instruction — those
+ * belong to the agent's task prompt (see `buildTaskPromptFromInbox`),
+ * not to the human-facing dialog.
+ *
+ * Future iterations may extract a single-mention "addressed segment"
+ * (e.g., text between `<@small_d>` and the next `<@…>`); the kanban's
+ * §可选增强 calls this out as nice-to-have but not required for v1.
+ */
+export function buildDisplayTextFromInbox(row: ChannelInboxItem): string {
+  return row.text;
 }
