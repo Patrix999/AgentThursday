@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { WorkspaceSnapshot } from "../../shared/schema";
 import { useInspect } from "../hooks/useInspect";
 import { contextChipLabel } from "../components/contextChip";
+import { GithubLink } from "../components/GithubLink";
 
 type Props = {
   snapshot: WorkspaceSnapshot | null;
@@ -83,6 +84,10 @@ export function MobileStatusRow({ snapshot, lastRefreshedAt }: Props) {
             </span>
           )}
         </div>
+        {/* Keep the GitHub link in a non-scrolling trailing slot so
+            it's always tappable on 360px without being pushed out by
+            overflowing pills. */}
+        <GithubLink className="shrink-0 inline-flex items-center justify-center text-slate-400 hover:text-slate-100 active:text-slate-100 px-1.5 py-1 rounded" />
       </div>
     </header>
   );

@@ -519,9 +519,47 @@ const DOGFOOD_TASK = "如何使用新构建的 agent 开发当前项目？";
 const ESTIMATED_TOOLS_OVERHEAD_TOKENS = 3_000;
 const ESTIMATED_OTHER_OVERHEAD_TOKENS = 500;
 
-// `pickModelMaxTokens` ( heuristic) was replaced
-// by the typed `pickModelContextProfile()` in `contextWindowRegistry.ts`.
+// `pickModelMaxTokens` (heuristic) was replaced by the typed
+// `pickModelContextProfile()` in `contextWindowRegistry.ts`.
 // All callers now read modelMaxTokens + thresholds from the registry.
+
+// Bounded chars/4 estimate of dialog tokens from persisted messages.
+// Used as a fallback when runtime token usage is unavailable (DO cold
+// start / post-deploy reset wipes `_sessionTok`/`_taskTok`).
+// Bounded:
+//   - last 60 messages only (matches the dialog-turn budget elsewhere);
+//   - per-message text capped to 8000 chars before estimation, so a
+//     single huge tool payload cannot dominate the estimate or push
+//     the loop into a memory-hot read.
+// Returns null when no usable text is available.
+const DIALOG_FALLBACK_MESSAGE_LIMIT = 60;
+const DIALOG_FALLBACK_PER_MSG_CHAR_CAP = 8_000;
+function estimateDialogTokensFromMessages(messages: ReadonlyArray<unknown>): number | null {
+  if (!messages || messages.length === 0) return null;
+  const start = Math.max(0, messages.length - DIALOG_FALLBACK_MESSAGE_LIMIT);
+  let totalChars = 0;
+  for (let i = start; i < messages.length; i++) {
+    const msg = messages[i] as { parts?: unknown; content?: unknown } | null | undefined;
+    if (!msg || typeof msg !== "object") continue;
+    let msgChars = 0;
+    const parts = (msg as { parts?: unknown }).parts;
+    if (Array.isArray(parts)) {
+      for (const p of parts) {
+        if (!p || typeof p !== "object") continue;
+        const t = (p as { text?: unknown }).text;
+        if (typeof t === "string") msgChars += t.length;
+      }
+    } else if (typeof (msg as { content?: unknown }).content === "string") {
+      msgChars += ((msg as { content: string }).content).length;
+    }
+    if (msgChars > DIALOG_FALLBACK_PER_MSG_CHAR_CAP) {
+      msgChars = DIALOG_FALLBACK_PER_MSG_CHAR_CAP;
+    }
+    totalChars += msgChars;
+  }
+  if (totalChars === 0) return null;
+  return Math.ceil(totalChars / 4);
+}
 
 type EventLogRow = { event_type: string; payload: string; created_at: number; trace_id: string | null };
 
@@ -2894,7 +2932,12 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     const tokenTask = (this._taskTok.taskId !== null && (this._taskTok.in > 0 || this._taskTok.out > 0))
       ? { in: this._taskTok.in, out: this._taskTok.out, total: this._taskTok.total }
       : null;
-    const contextBudget = this._computeContextBudget(tokenTask?.total ?? null, tokenSession?.total ?? null);
+    const dialogFallback = estimateDialogTokensFromMessages(messages);
+    const contextBudget = this._computeContextBudget(
+      tokenTask?.total ?? null,
+      tokenSession?.total ?? null,
+      dialogFallback,
+    );
     return { ...view, tokenSession, tokenTask, contextBudget };
   }
 
@@ -2903,7 +2946,18 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   // tool schema definitions. Estimate uses `chars / 4` (no tokenizer
   // dep). `modelMaxTokens` falls back to `null` for unmapped models —
   // UI must render `source:"unavailable"` honestly.
-  private _computeContextBudget(taskTok: number | null, sessionTok: number | null): ContextInspectResult["contextBudget"] {
+  //
+  // When provider/runtime token usage isn't available (DO cold start
+  // or post-deploy isolate reset wiped `_sessionTok` / `_taskTok` but
+  // persisted dialog messages still exist), accept a bounded
+  // `dialogTokenFallback` estimate from message text so the UI never
+  // shows the dialog as "unavailable" when there's actually dialog
+  // history to draw from.
+  private _computeContextBudget(
+    taskTok: number | null,
+    sessionTok: number | null,
+    dialogTokenFallback: number | null,
+  ): ContextInspectResult["contextBudget"] {
     const modelId = this.agentThursdayState.modelProfile?.model ?? "";
     // : registry profile is the source of truth for both
     // model max tokens AND threshold ratios. Unknown models fall to
@@ -2932,7 +2986,18 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     const systemOverheadTokens = soulTok + toolsTok + otherTok;
     // Prefer task tokens (current task usage) over session for "visible
     // dialog" budgeting; fall back to session if no task is active.
-    const visibleDialogTokens = taskTok !== null ? taskTok : sessionTok;
+    // If both runtime token counters are null (DO cold start /
+    // post-deploy reset wiped them) but persisted dialog messages
+    // still exist, fall back to a bounded chars/4 estimate from
+    // message text. UI shows the dialog as estimated rather than
+    // "unavailable".
+    const runtimeDialogTokens = taskTok !== null ? taskTok : sessionTok;
+    const visibleDialogTokens =
+      runtimeDialogTokens !== null
+        ? runtimeDialogTokens
+        : (dialogTokenFallback !== null && dialogTokenFallback > 0)
+        ? dialogTokenFallback
+        : null;
     // : even when dialog tokens are unavailable (cold context,
     // no inference yet), surface `systemOverheadTokens` as the used
     // baseline so the rail shows a non-empty slate band + threshold

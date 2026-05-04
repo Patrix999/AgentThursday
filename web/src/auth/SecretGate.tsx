@@ -4,8 +4,37 @@ import { getSecret, setSecret, clearSecret, authHeaders } from "./secret";
 type GateState =
   | { kind: "checking" }
   | { kind: "ok" }
-  | { kind: "needs-secret"; reason: "empty" | "wrong" }
+  | { kind: "needs-secret"; reason: "empty" | "wrong"; prefill?: string }
   | { kind: "misconfigured" };
+
+// Read `?token=<secret>` from the current URL without auto-saving it.
+// The token is surfaced to the SecretPrompt as a prefill so the user
+// still has to confirm submission. After a successful submit the
+// token is removed from the URL via `history.replaceState` so a
+// copy/paste of the address bar (or the browser history entry) no
+// longer carries the secret.
+const URL_TOKEN_PARAM = "token";
+function readUrlToken(): string {
+  try {
+    const u = new URL(window.location.href);
+    const t = u.searchParams.get(URL_TOKEN_PARAM);
+    return typeof t === "string" ? t : "";
+  } catch {
+    return "";
+  }
+}
+function clearUrlToken(): void {
+  try {
+    const u = new URL(window.location.href);
+    if (!u.searchParams.has(URL_TOKEN_PARAM)) return;
+    u.searchParams.delete(URL_TOKEN_PARAM);
+    const next = u.pathname + (u.searchParams.toString() ? `?${u.searchParams.toString()}` : "") + u.hash;
+    window.history.replaceState(window.history.state, "", next);
+  } catch {
+    // No-op: leaving the token in the URL is degraded but non-fatal;
+    // the user can manually edit or close the tab.
+  }
+}
 
 /**
  * SecretGate runs once at app boot and re-runs whenever a request 401s.
@@ -18,7 +47,10 @@ export function SecretGate({ children }: { children: React.ReactNode }) {
 
   async function probe(silent: boolean) {
     if (!getSecret()) {
-      setState({ kind: "needs-secret", reason: "empty" });
+      // Surface URL `?token=` as a prefill, never as an auto-save.
+      // User must confirm via the prompt's submit button.
+      const prefill = readUrlToken();
+      setState({ kind: "needs-secret", reason: "empty", prefill: prefill || undefined });
       return;
     }
     if (!silent) setState({ kind: "checking" });
@@ -26,7 +58,10 @@ export function SecretGate({ children }: { children: React.ReactNode }) {
       const res = await fetch("/api/workspace", { headers: authHeaders() });
       if (res.status === 401) {
         clearSecret();
-        setState({ kind: "needs-secret", reason: "wrong" });
+        // Keep the URL prefill available across a 401 so the user can
+        // correct typos without rebuilding the link.
+        const prefill = readUrlToken();
+        setState({ kind: "needs-secret", reason: "wrong", prefill: prefill || undefined });
         return;
       }
       if (res.status === 503) {
@@ -74,14 +109,37 @@ export function SecretGate({ children }: { children: React.ReactNode }) {
   }
 
   if (state.kind === "needs-secret") {
-    return <SecretPrompt reason={state.reason} onSubmit={(s) => { setSecret(s); void probe(true); }} />;
+    return (
+      <SecretPrompt
+        reason={state.reason}
+        prefill={state.prefill ?? ""}
+        onSubmit={(s) => {
+          setSecret(s);
+          // Strip ?token= from URL only AFTER an explicit user submit,
+          // so the token is never silently persisted.
+          clearUrlToken();
+          void probe(true);
+        }}
+      />
+    );
   }
 
   return <>{children}</>;
 }
 
-function SecretPrompt({ reason, onSubmit }: { reason: "empty" | "wrong"; onSubmit: (s: string) => void }) {
-  const [value, setValue] = useState("");
+function SecretPrompt({
+  reason,
+  prefill,
+  onSubmit,
+}: {
+  reason: "empty" | "wrong";
+  prefill: string;
+  onSubmit: (s: string) => void;
+}) {
+  // Initialise from prefill (URL ?token=) but require an explicit
+  // submit; never auto-save. Users see the prefilled value and either
+  // accept or correct it.
+  const [value, setValue] = useState(prefill);
   return (
     <FullScreen>
       <form

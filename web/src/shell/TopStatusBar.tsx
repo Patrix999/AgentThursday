@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { WorkspaceSnapshot } from "../../shared/schema";
 import { useInspect } from "../hooks/useInspect";
 import { contextChipLabel } from "../components/contextChip";
+import { GithubLink } from "../components/GithubLink";
 
 type Props = {
   snapshot: WorkspaceSnapshot | null;
@@ -87,6 +88,7 @@ export function TopStatusBar({ snapshot, lastRefreshedAt, onToggleInspect, inspe
           </span>
         )}
         <div className="flex-1" />
+        <GithubLink />
         {onToggleInspect && (
           <button
             onClick={onToggleInspect}

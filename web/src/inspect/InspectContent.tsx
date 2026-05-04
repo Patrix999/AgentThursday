@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { InspectSnapshot } from "../../shared/schema";
 import { LadderTimeline } from "./LadderTimeline";
 import { TraceList } from "./TraceList";
@@ -115,11 +115,34 @@ export function InspectContent({ data, loading, error }: Props) {
 }
 
 function Tabs({ current, onChange }: { current: Tab; onChange: (t: Tab) => void }) {
-  // — `min-w-0 overflow-x-auto no-scrollbar` keeps the
-  // desktop strip from pushing the page wider; per-button
-  // `flex-shrink-0 whitespace-nowrap` keeps labels intact.
+  // `min-w-0 overflow-x-auto no-scrollbar` keeps the desktop strip from
+  // pushing the page wider; per-button `flex-shrink-0 whitespace-nowrap`
+  // keeps labels intact.
+  //
+  // Translate vertical mouse wheel to horizontal scroll when the strip
+  // has horizontal overflow and the user's wheel input is dominantly
+  // vertical (`|deltaY| > |deltaX|`). Trackpad horizontal gestures
+  // (deltaX dominant) keep their native behavior. Only consume the
+  // event when we actually scroll, so vertical page scrolling on
+  // viewports where the strip fits without overflow is not blocked.
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  function onWheel(e: React.WheelEvent<HTMLDivElement>): void {
+    const el = stripRef.current;
+    if (!el) return;
+    const hasHorizontalOverflow = el.scrollWidth > el.clientWidth;
+    if (!hasHorizontalOverflow) return;
+    const dx = e.deltaX;
+    const dy = e.deltaY;
+    if (Math.abs(dy) <= Math.abs(dx)) return;
+    el.scrollLeft += dy;
+    e.preventDefault();
+  }
   return (
-    <div className="no-scrollbar min-w-0 overflow-x-auto border-b border-slate-800 bg-slate-900/80">
+    <div
+      ref={stripRef}
+      onWheel={onWheel}
+      className="no-scrollbar min-w-0 overflow-x-auto border-b border-slate-800 bg-slate-900/80"
+    >
       <div className="flex w-max">
         {TAB_LIST.map((t) => (
           <button
