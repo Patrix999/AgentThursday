@@ -46,11 +46,16 @@ export function SecretGate({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<GateState>({ kind: "checking" });
 
   async function probe(silent: boolean) {
+    const prefill = readUrlToken();
+    if (prefill) {
+      // URL token is an explicit auth handoff and must take precedence
+      // over any locally cached secret. Always show the auth page so
+      // the user can confirm or correct it.
+      setState({ kind: "needs-secret", reason: "empty", prefill });
+      return;
+    }
     if (!getSecret()) {
-      // Surface URL `?token=` as a prefill, never as an auto-save.
-      // User must confirm via the prompt's submit button.
-      const prefill = readUrlToken();
-      setState({ kind: "needs-secret", reason: "empty", prefill: prefill || undefined });
+      setState({ kind: "needs-secret", reason: "empty" });
       return;
     }
     if (!silent) setState({ kind: "checking" });
@@ -58,10 +63,7 @@ export function SecretGate({ children }: { children: React.ReactNode }) {
       const res = await fetch("/api/workspace", { headers: authHeaders() });
       if (res.status === 401) {
         clearSecret();
-        // Keep the URL prefill available across a 401 so the user can
-        // correct typos without rebuilding the link.
-        const prefill = readUrlToken();
-        setState({ kind: "needs-secret", reason: "wrong", prefill: prefill || undefined });
+        setState({ kind: "needs-secret", reason: "wrong" });
         return;
       }
       if (res.status === 503) {
