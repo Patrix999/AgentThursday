@@ -190,7 +190,7 @@ AgentThursday 会把这类风险显式暴露出来：
 
 ## 🧪 上手体验
 
-- https://agent-thursday.domain-4c7.workers.dev/
+- https://agentthursday.com/
 - 联系我获取 auth key
 
 ---
