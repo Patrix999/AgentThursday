@@ -16,7 +16,7 @@ type Intent = NonNullable<InspectSnapshot["actionUiIntents"]>[number];
  *  will introduce per-tool components and we don't want to
  * over-design the chrome before that lands.
  *
- * Visual hierarchy goal (kanban §"Make tool/action cards visually
+ * Visual hierarchy goal (workflow §"Make tool/action cards visually
  * prominent"): clear title, small type badge, relative timestamp,
  * accent color, and enough breathing room to read as a card — not a
  * row in a debug table.

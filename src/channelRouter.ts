@@ -133,7 +133,7 @@ export function buildTaskPromptFromInbox(row: ChannelInboxItem): string {
  * not to the human-facing dialog.
  *
  * Future iterations may extract a single-mention "addressed segment"
- * (e.g., text between `<@small_d>` and the next `<@…>`); the kanban's
+ * (e.g., text between `<@small_d>` and the next `<@…>`); the workflow's
  * §可选增强 calls this out as nice-to-have but not required for v1.
  */
 export function buildDisplayTextFromInbox(row: ChannelInboxItem): string {

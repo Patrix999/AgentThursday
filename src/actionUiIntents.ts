@@ -6,7 +6,7 @@
  * and produces a capped, schema-validated `ActionUiIntent[]` view that
  * 's frontend ActivityFeed consumes.
  *
- * v1 invariants (per kanban +  milestone red lines):
+ * v1 invariants (per spec red lines):
  *   - **No persisted intent event** — derived fresh on every inspect read.
  *     Avoids schema churn cascading into  consumers (/119/121).
  *   - **No model-declared `@component`** — that's + P2; v1 only maps

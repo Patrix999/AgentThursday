@@ -237,7 +237,7 @@ const SOUL = `你是 AgentThursday Agent —— 操作员的云原生工作 agen
 
 ## 工具调用规则（强制）
 你拥有工具可以调用。遇到可执行动作时，你必须优先调用对应工具，不得仅用文字声称"已完成"。
-- 推进 kanban 卡状态 → 必须调用 advance_kanban_card 工具
+- 推进任务卡状态 → 必须调用 advance_kanban_card 工具
 - 写入进度 checkpoint → 必须调用 write_checkpoint 工具
 - 查看项目状态 → 必须调用 review_project_status 工具
 - 读写 workspace 文件 → 必须调用 read / write / edit 工具
@@ -1096,7 +1096,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
 
     // capture supplier-side step signal for the current
     // submitTask round. Wrapped in try/catch so a malformed StepContext
-    // shape never breaks the main step loop (kanban: fail-soft).
+    // shape never breaks the main step loop (workflow: fail-soft).
     //  extends this with optional tool-call / tool-result names so
     // the persisted summary event has grep-friendly identifiers, not just
     // counts. Names are capped at the call site to keep payload bounded.
@@ -1241,7 +1241,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
         },
       }),
       advance_kanban_card: tool({
-        description: "推进当前 kanban 卡，记录推进结果（需要人类确认）",
+        description: "推进当前任务卡，记录推进结果（需要人类确认）",
         inputSchema: z.object({
           card_ref: z.string().describe("卡片引用，如 card-55"),
           description: z.string().describe("推进描述"),
@@ -1250,7 +1250,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
         needsApproval: true,
         execute: async (input) => {
           this.sql`INSERT INTO kanban_mutations (card_ref, mutation_type, description, diff_hint, created_at) VALUES (${input.card_ref}, ${"status-advance"}, ${input.description}, ${input.diff_hint}, ${Date.now()})`;
-          const ar: ActionResult = { actionType: "advance-kanban-card", outcome: "success", summary: `kanban mutation recorded — ${input.card_ref}: ${input.description.slice(0, 80)}`, recordedAt: Date.now() };
+          const ar: ActionResult = { actionType: "advance-kanban-card", outcome: "success", summary: `workflow mutation recorded — ${input.card_ref}: ${input.description.slice(0, 80)}`, recordedAt: Date.now() };
           this.setAgentThursdayState({ ...this.agentThursdayState, lastActionResult: ar, updatedAt: Date.now() });
           this.logEvent("tool.advance_kanban_card", { cardRef: input.card_ref, descriptionSnippet: input.description.slice(0, 80) });
           return { ok: true, card_ref: input.card_ref };
@@ -2056,7 +2056,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   // supplier-side degradation marker. Reads the per-task
   // signal collector populated by onStepFinish + onError, asks the pure
   // helper for a verdict, prepends a ⚠️ line if degraded. Fail-soft per
-  // kanban: any throw inside detection/render returns the input text
+  // workflow: any throw inside detection/render returns the input text
   // unchanged so the main reply path can never break.
   private applySupplierDegradationMarker(text: string): string {
     if (!text || text.trim().length === 0) return text;
@@ -2920,7 +2920,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     const soulTok = Math.ceil(SOUL.length / 4);
     // Tools schema overhead is hard to bound exactly without rebuilding
     // the registry; the v1 estimate is a fixed constant tuned to the
-    // current registry footprint (review/checkpoint/note/kanban + tier
+    // current registry footprint (review/checkpoint/note/registry + tier
     // 1-4 + memory + content_* + conversation_search ≈ 18 tools, each
     // averaging ~150-200 tokens of description+schema). Keeps the
     // number stable across hot paths and avoids serializing zod into
@@ -4761,7 +4761,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     } else if (s.currentObstacle?.blocked) {
       reason = `阻塞未解除: ${s.currentObstacle.reason}`;
     } else if (!hasArtifact) {
-      reason = "尚无真实 artifact（checkpoint / review note / applied kanban mutation），gate 关闭。";
+      reason = "尚无真实 artifact（checkpoint / review note / applied workflow mutation），gate 关闭。";
     } else if (lar.outcome !== "success") {
       reason = `最近 action 未成功（${lar.outcome}），gate 关闭。`;
     } else {
@@ -4819,7 +4819,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       {
         kind: "mutation-confirm-required",
         active: pendingMut > 0,
-        reason: pendingMut > 0 ? `${pendingMut} 条 kanban mutation 待 local executor confirm` : "无待确认 mutation",
+        reason: pendingMut > 0 ? `${pendingMut} 条 workflow mutation 待 local executor confirm` : "无待确认 mutation",
       },
       {
         kind: "review-gate-blocked",
@@ -5517,7 +5517,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       {
         actionType: "advance-kanban-card",
         verified: mutCount > 0,
-        evidence: mutCount > 0 ? `${mutCount} kanban mutation(s) in DB` : "kanban_mutations 表为空",
+        evidence: mutCount > 0 ? `${mutCount} workflow mutation(s) in DB` : "kanban_mutations 表为空",
       },
       {
         actionType: "last-action",
@@ -5576,7 +5576,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     let summary: string;
     if (totalRows === 0) {
       stage = "no-mutation";
-      summary = "尚未产生任何 kanban mutation。先运行 doWork（stub-verbose）再执行 advance-kanban-card。";
+      summary = "尚未产生任何 workflow mutation。先运行 doWork（stub-verbose）再执行 advance-kanban-card。";
     } else if (appliedCount === 0) {
       stage = "pending-only";
       summary = `${pendingCount} 条 pending mutation，尚未 apply。local executor 尚未确认任何修改。`;
@@ -6187,7 +6187,7 @@ function homePage(): Response {
 <pre id="recent-checkpoints">(no checkpoints written yet)</pre>
 
 <h2>RECENT KANBAN MUTATIONS ( real bounded)</h2>
-<pre id="recent-kanban-mutations">(no kanban mutations recorded yet)</pre>
+<pre id="recent-kanban-mutations">(no workflow mutations recorded yet)</pre>
 
 <h2>ACTION RESULT</h2>
 <pre id="action-result">(no action executed yet)</pre>
@@ -6427,7 +6427,7 @@ async function load() {
             \`\\n  \${m.description}\\n  hint: \${m.diff_hint}\` +
             (m.evidence ? \`\\n  evidence: \${m.evidence}\` : '')
           ).join('\\n─────────────────────────────────────────────\\n')
-        : '(no kanban mutations recorded yet)';
+        : '(no workflow mutations recorded yet)';
     }
     const lar = d.status.lastActionResult;
     document.getElementById('action-result').textContent = lar
@@ -6648,7 +6648,7 @@ export default {
       // summaryStream), agentThursdayState (waitingForHuman / pendingHelpRequest
       // → replyNeed), loopReview.summary, approvalPolicy.interventions,
       // pendingToolApproval, deliverableGate, pendingMutations
-      // (kanban mutations are recorded on the DO that produced them).
+      // (workflow mutations are recorded on the DO that produced them).
       // Registry/global concerns (model profile gateway, intelligence
       // signal cache) live elsewhere and are not part of this snapshot.
       const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);

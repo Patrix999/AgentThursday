@@ -6,7 +6,7 @@
  * and future  (`recommendedAction` derivation) read these profiles
  * to interpret runtime signals against an explicit baseline.
  *
- * v1 invariants (per kanban +  milestone red lines):
+ * v1 invariants (per spec red lines):
  *   - This module does NOT route, retry, switch, pause, or score models.
  *   - Profiles are engineering facts and observed risks, not global
  *     intelligence rankings.
@@ -17,7 +17,7 @@
  *   - `getModel()` in `src/server.ts` continues to hardcode Kimi; Manager
  *     prompts MAY read these profiles but v1 dispatch is unchanged.
  *
- * Out of scope (per kanban):
+ * Out of scope (per spec):
  *   - dynamic profile updates from canary data (deferred to +)
  *   - per-task 4-state degradation summary ()
  *   - any change to `supplier.signal.summary` event shape

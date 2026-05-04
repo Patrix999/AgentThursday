@@ -80,7 +80,7 @@ export function isStreamTruncatedError(err: unknown): boolean {
  * returned us nothing actionable. We do NOT flag "stop" / "tool-calls" /
  * "length" / "content-filter" — those are real, normal terminal reasons.
  *
- * Conservative on purpose: kanban specifies "no marker is better than
+ * Conservative on purpose: spec specifies "no marker is better than
  * noisy marker in v1". Models that legitimately end on "unknown" or
  * "other" should not trigger; we flag those only when paired with a
  * tool-call presence signal (handled in detectSupplierDegradation).
@@ -136,7 +136,7 @@ export function detectSupplierDegradation(t: SupplierTaskSignals): {
 }
 
 /**
- * Render the user-facing warning marker. Chinese by default per kanban
+ * Render the user-facing warning marker. Chinese by default per spec
  * §"Suggested marker text" — the operator's primary operating language for this
  * project is Chinese, and this aligns with the  warning style.
  *

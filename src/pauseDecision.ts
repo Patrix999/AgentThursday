@@ -15,7 +15,7 @@
  *   - rendering a short reminder when the user sends non-resume text while
  *     the loop is paused
  *
- * v1 invariants (per kanban +  milestone red lines):
+ * v1 invariants (per spec red lines):
  *   - Only `state === "needs_human"` triggers pause; never `degraded`,
  *     never `blocked`, never `normal`.
  *   - Config must be read at decision time, not cached at module load,

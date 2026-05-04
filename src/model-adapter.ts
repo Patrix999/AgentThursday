@@ -133,7 +133,7 @@ class VerboseAdapter implements ModelAdapter {
     };
     const nextAction: NextAction = completion
       ? { title: "提交当前成果进入 code review", reason: "structured analysis complete，进入 review 阶段", committed: true }
-      : { title: "开具下一张 kanban 卡，定义可交付条目", reason: "已完成状态分析，需进入实现规划", committed: true };
+      : { title: "开具下一张 任务卡，定义可交付条目", reason: "已完成状态分析，需进入实现规划", committed: true };
     const obstacle: ObstacleState = { blocked: false, reason: "", suggestedUnblockAction: "" };
     return { text, usedProfile: modelProfile, progress, nextAction, obstacle };
   }
