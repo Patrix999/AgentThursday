@@ -7,7 +7,7 @@
  * a structured slice with raw prompt content / large tool payloads
  * stripped or truncated.
  *
- * Red lines (see  milestone):
+ * Red lines:
  *   - never expose system prompts / SOUL / secrets
  *   - never include reasoning parts (private)
  *   - never dump tool input/output in inspect payload — expose only tool metadata

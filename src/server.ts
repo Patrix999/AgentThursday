@@ -846,7 +846,7 @@ function buildWorkspaceSnapshot(input: {
     pendingApproval = {
       id: `mutation-${m.id}`,
       kind: "mutation",
-      reason: `Kanban mutation requires confirmation: ${m.mutation_type}`,
+      reason: `Workflow mutation requires confirmation: ${m.mutation_type}`,
       diffSnippet: `${m.description}\n${m.diff_hint}`.slice(0, 600),
       cardRef: m.card_ref || null,
       mutationId: m.id,
@@ -2876,7 +2876,6 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   }
 
   // ── Context Lifecycle: inspect + reset ────────────────
-  // See docs/milestones/-context-lifecycle-management.md.
   // `inspectContext` returns a sanitized view (no system prompts / SOUL /
   // secrets / raw tool payloads); `resetContext` clears transient LLM
   // messages while preserving durable state (checkpoints, memory, workspace,
@@ -6186,7 +6185,7 @@ function homePage(): Response {
 <h2>RECENT CHECKPOINTS (real write)</h2>
 <pre id="recent-checkpoints">(no checkpoints written yet)</pre>
 
-<h2>RECENT KANBAN MUTATIONS ( real bounded)</h2>
+<h2>RECENT WORKFLOW MUTATIONS (real bounded)</h2>
 <pre id="recent-kanban-mutations">(no workflow mutations recorded yet)</pre>
 
 <h2>ACTION RESULT</h2>
@@ -6335,7 +6334,7 @@ async function load() {
       box.className = 'review-box mut-' + mr.stage;
       document.getElementById('mut-review-stage').textContent = 'STAGE: ' + mr.stage.toUpperCase().replace(/-/g, ' ');
       const readyEl = document.getElementById('mut-review-ready');
-      readyEl.textContent = mr.readyForNextMilestone ? '✓ ready for next milestone' : '✗ not ready for next milestone';
+      readyEl.textContent = mr.readyForNextMilestone ? '✓ ready to advance' : '✗ not ready to advance';
       readyEl.className = mr.readyForNextMilestone ? 'ready-yes' : 'ready-no';
       document.getElementById('mut-review-detail').textContent =
         \`pending: \${mr.pendingCount}  |  applied: \${mr.appliedCount}  |  failed: \${mr.failedCount}  |  rejected: \${mr.rejectedCount}  |  hasEvidence: \${mr.hasEvidence}  |  effectiveProgress: \${mr.effectiveProgress}\`;
@@ -6347,7 +6346,7 @@ async function load() {
       box.className = 'review-box real-' + rar.stage;
       document.getElementById('real-review-stage').textContent = 'STAGE: ' + rar.stage.toUpperCase().replace(/-/g, ' ');
       const readyEl = document.getElementById('real-review-ready');
-      readyEl.textContent = rar.readyForNextMilestone ? '✓ ready for next milestone' : '✗ not ready for next milestone';
+      readyEl.textContent = rar.readyForNextMilestone ? '✓ ready to advance' : '✗ not ready to advance';
       readyEl.className = rar.readyForNextMilestone ? 'ready-yes' : 'ready-no';
       document.getElementById('real-review-detail').textContent =
         \`real actions: \${rar.realActionCount}  |  artifacts: \${rar.artifactCount}  |  effectiveProgress: \${rar.effectiveProgress}  |  recoveryReady: \${rar.recoveryReady}\`;
@@ -7420,8 +7419,7 @@ export default {
       return json(result);
     }
 
-    // Context lifecycle (inspect + reset). See
-    // docs/milestones/-context-lifecycle-management.md. `context.new`
+    // Context lifecycle (inspect + reset). `context.new`
     // is deferred until Think SDK exposes traceable multi-thread sessions.
     if (url.pathname === "/cli/context/inspect" && request.method === "GET") {
       const lastNRaw = url.searchParams.get("lastN");
