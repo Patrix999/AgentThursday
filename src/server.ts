@@ -2958,7 +2958,20 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     sessionTok: number | null,
     dialogTokenFallback: number | null,
   ): ContextInspectResult["contextBudget"] {
-    const modelId = this.agentThursdayState.modelProfile?.model ?? "";
+    // Prefer the runtime-observed model id from the most recent
+    // inference step over the persisted `agentThursdayState.modelProfile`
+    // configuration. The persisted profile is only ever written by
+    // the default initial value and explicit `setModelProfile()` RPCs;
+    // in production the actual inference model is selected via the
+    // Workers AI binding (Kimi etc), which bypasses `setModelProfile`.
+    // Reading `_lastStepModel` first lets the registry hit the real
+    // model's window (e.g. Kimi 256K) instead of the DEFAULT 128K
+    // fallback. `setModelProfile` semantics are unchanged: we never
+    // write `_lastStepModel` back into state.
+    const modelId =
+      this._lastStepModel?.modelId
+      ?? this.agentThursdayState.modelProfile?.model
+      ?? "";
     // : registry profile is the source of truth for both
     // model max tokens AND threshold ratios. Unknown models fall to
     // the registry's DEFAULT (128K + 0.5/0.7/0.85), so the budget
