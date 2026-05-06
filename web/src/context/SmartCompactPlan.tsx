@@ -4,15 +4,16 @@ import type {
   CompactPlanApplyResult,
 } from "../../shared/schema";
 import { compactPlan, applyCompactPlan } from "../api/contextActions";
+import { getDebugReadonlyNotice } from "../debugSurfaceMode";
 
 /**
- *  v2 Anchor-aware compact plan preview UI.
+ * v2 Anchor-aware compact plan preview UI.
  *
  * Sits inside ContextPanel's "Future actions" alongside the legacy
- *  CompactAction. Two-step flow: preview a plan, then explicit
+ * CompactAction. Two-step flow: preview a plan, then explicit
  * apply. Renders only backend-supplied previews — never builds its own
  * snapshot of message content. Refreshes the inspect surface via the
- * same `agent-thursday:context:compacted` event the legacy flow uses.
+ * same `agentthursday:context:compacted` event the legacy flow uses.
  */
 
 type Stage =
@@ -32,10 +33,10 @@ const DEFAULT_STRATEGY = {
   pressureThreshold: 20,
 };
 
-export function SmartCompactPlan() {
+export function SmartCompactPlan({ actionsEnabled = true }: { actionsEnabled?: boolean }) {
   const [stage, setStage] = useState<Stage>({ kind: "idle" });
   // opt-in semantic advisor scaffold. Default off so apply
-  // behavior remains identical to  unless the operator
+  // behavior remains identical to unless the operator
   // explicitly toggles it. With no model client wired server-side
   // (current state) the apply path falls back to the deterministic
   // summary; the response carries `appliedRanges[i].semanticAdvisor`
@@ -44,6 +45,10 @@ export function SmartCompactPlan() {
   const [useSemanticAdvisor, setUseSemanticAdvisor] = useState(false);
 
   async function preview() {
+    if (!actionsEnabled) {
+      setStage({ kind: "plan-error", message: getDebugReadonlyNotice() });
+      return;
+    }
     setStage({ kind: "loading-plan" });
     const res = await compactPlan(DEFAULT_STRATEGY);
     if (res.ok && res.data) {
@@ -57,6 +62,10 @@ export function SmartCompactPlan() {
   }
 
   async function apply(plan: CompactPlanResult) {
+    if (!actionsEnabled) {
+      setStage({ kind: "apply-error", plan, message: getDebugReadonlyNotice() });
+      return;
+    }
     setStage({ kind: "applying", plan });
     const res = await applyCompactPlan(
       plan,
@@ -66,7 +75,7 @@ export function SmartCompactPlan() {
     );
     if (res.ok && res.data) {
       setStage({ kind: "applied", plan, result: res.data });
-      window.dispatchEvent(new Event("agent-thursday:context:compacted"));
+      window.dispatchEvent(new Event("agentthursday:context:compacted"));
       return;
     }
     const message = (res.data as unknown as { error?: string })?.error
@@ -80,11 +89,11 @@ export function SmartCompactPlan() {
       <div className="flex items-center gap-2 text-[11px] text-slate-300">
         <span className="font-semibold">Smart compact plan</span>
         <span className="text-[10px] text-sky-400/80 italic">
-           v2 — anchor-aware, explicit apply
+ v2 — anchor-aware, explicit apply
         </span>
       </div>
       <p className="mt-1 text-[10px] text-slate-500">
-        Builds an anchor-aware plan via –140: preserves first-K
+        Builds an anchor-aware plan via Cards 138–140: preserves first-K
         rules, explicit anchors, recent working set, and unresolved
         compaction hazards; proposes contiguous middle ranges as
         compaction candidates. The plan is read-only until you click
@@ -95,7 +104,9 @@ export function SmartCompactPlan() {
         <button
           type="button"
           onClick={preview}
-          className="mt-2 rounded border border-sky-700/70 bg-sky-950/40 px-2 py-1 text-[10px] text-sky-200 hover:bg-sky-900/40"
+          aria-disabled={!actionsEnabled || undefined}
+          title={actionsEnabled ? "Preview smart compact plan" : getDebugReadonlyNotice()}
+          className={`mt-2 rounded border px-2 py-1 text-[10px] ${actionsEnabled ? "border-sky-700/70 bg-sky-950/40 text-sky-200 hover:bg-sky-900/40" : "border-slate-700 bg-slate-900/80 text-slate-500 cursor-not-allowed"}`}
         >
           Preview smart compact plan
         </button>
@@ -124,6 +135,7 @@ export function SmartCompactPlan() {
           onToggleSemanticAdvisor={setUseSemanticAdvisor}
           onApply={() => apply(stage.plan)}
           onDismiss={() => setStage({ kind: "idle" })}
+          actionsEnabled={actionsEnabled}
         />
       )}
     </div>
@@ -137,6 +149,7 @@ function PlanView({
   onToggleSemanticAdvisor,
   onApply,
   onDismiss,
+  actionsEnabled,
 }: {
   plan: CompactPlanResult;
   stage: Stage;
@@ -144,6 +157,7 @@ function PlanView({
   onToggleSemanticAdvisor: (next: boolean) => void;
   onApply: () => void;
   onDismiss: () => void;
+  actionsEnabled: boolean;
 }) {
   const hasRanges = plan.ranges.length > 0;
   const result = stage.kind === "applied" ? stage.result : null;
@@ -184,7 +198,9 @@ function PlanView({
         <button
           type="button"
           onClick={onApply}
-          className="rounded border border-amber-700/70 bg-amber-950/40 px-2 py-1 text-[10px] text-amber-200 hover:bg-amber-900/40"
+          aria-disabled={!actionsEnabled || undefined}
+          title={actionsEnabled ? "Apply compact plan" : getDebugReadonlyNotice()}
+          className={`rounded border px-2 py-1 text-[10px] ${actionsEnabled ? "border-amber-700/70 bg-amber-950/40 text-amber-200 hover:bg-amber-900/40" : "border-slate-700 bg-slate-900/80 text-slate-500 cursor-not-allowed"}`}
         >
           Apply plan
         </button>
@@ -230,7 +246,7 @@ function SemanticAdvisorToggle({
           Sends <span className="font-mono">semanticAdvisor:true</span> with{" "}
           <span className="font-mono">trigger:"manual"</span>. No model client is
           configured server-side, so the advisor records a fallback audit row
-          and the deterministic  summary is used. Toggle off to keep
+          and the deterministic summary is used. Toggle off to keep
           default behavior unchanged.
         </div>
       </span>
@@ -379,7 +395,7 @@ function ApplyResultView({ result }: { result: CompactPlanApplyResult }) {
       {result.deadRecordDetected && (
         <div className="rounded border border-rose-700/70 bg-rose-950/40 px-2 py-1 text-rose-200">
           ⚠ Dead-record detected — a compaction was stored but did not
-          take effect ( spike Case 5). The audit log records
+          take effect (spike Case 5). The audit log records
           which range/compaction id triggered this.
         </div>
       )}

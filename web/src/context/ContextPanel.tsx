@@ -27,9 +27,11 @@ import {
   type SanitizedMessage,
 } from "./contextPieces";
 import { SmartCompactPlan } from "./SmartCompactPlan";
+import { getDebugReadonlyNotice, isDebugActionEnabled } from "../debugSurfaceMode";
+import { useDebugSurfaceMode } from "../hooks/useDebugSurfaceMode";
 
 /**
- * Context Inspect Web Tab.
+ *Context Inspect Web Tab.
  *
  * Deep-view complement to 's always-visible left rail. Lives
  * inside the Inspect drawer's tab strip; consumes 's
@@ -37,7 +39,7 @@ import { SmartCompactPlan } from "./SmartCompactPlan";
  * panel only mounts when the tab is active, so polling is implicitly
  * lazy via React lifecycle — no explicit `enabled` flag needed).
  *
- * Sections (per  UX requirements):
+ * Sections (per UX requirements):
  *   1. Context summary / pressure
  *   2. Token availability
  *   3. Visible messages / turns
@@ -47,7 +49,7 @@ import { SmartCompactPlan } from "./SmartCompactPlan";
  * Red lines:
  *   - no actual compact mutation
  *   - no in-UI reset button (CLI reference only; reset stays manual
- *     until  / a dedicated confirmation flow lands)
+ *     until / a dedicated confirmation flow lands)
  *   - no system/SOUL/reasoning content displayed
  *   - tool input/output never rendered (not even server's truncated
  *     preview); only `toolName` surfaces
@@ -57,6 +59,8 @@ export function ContextPanel() {
   const pressure = useMemo(() => classifyContextPressure(data), [data]);
 
   const protectedSystemCount = data?.byRole.system ?? 0;
+  const debugSurfaceMode = useDebugSurfaceMode();
+  const contextActionsEnabled = debugSurfaceMode === null ? false : isDebugActionEnabled(debugSurfaceMode);
 
   return (
     <section className="m-4 space-y-4 text-xs text-slate-200">
@@ -74,7 +78,7 @@ export function ContextPanel() {
         <>
           <EmptyState />
           <SectionHeader title="Future actions" />
-          <FutureActions totalMessageCount={0} />
+          <FutureActions totalMessageCount={0} actionsEnabled={contextActionsEnabled} />
         </>
       )}
 
@@ -131,7 +135,7 @@ export function ContextPanel() {
           <MessageList messages={data.visibleMessages} />
 
           <SectionHeader title="Future actions" />
-          <FutureActions totalMessageCount={data.totalMessageCount} />
+          <FutureActions totalMessageCount={data.totalMessageCount} actionsEnabled={contextActionsEnabled} />
           <SectionHeader title="Compaction history" />
           <CompactionHistory />
         </>
@@ -174,27 +178,27 @@ function MessageList({ messages }: { messages: SanitizedMessage[] }) {
   );
 }
 
-function FutureActions({ totalMessageCount }: { totalMessageCount: number }) {
+function FutureActions({ totalMessageCount, actionsEnabled }: { totalMessageCount: number; actionsEnabled: boolean }) {
   return (
     <div className="rounded border border-slate-800 bg-slate-900/60 p-3 space-y-4">
-      <ContextIdentity />
-      <ResetAction totalMessageCount={totalMessageCount} />
-      <NewContextAction totalMessageCount={totalMessageCount} />
-      <CompactAction totalMessageCount={totalMessageCount} />
-      <SmartCompactPlan />
+      <ContextIdentity actionsEnabled={actionsEnabled} />
+      <ResetAction totalMessageCount={totalMessageCount} actionsEnabled={actionsEnabled} />
+      <NewContextAction totalMessageCount={totalMessageCount} actionsEnabled={actionsEnabled} />
+      <CompactAction totalMessageCount={totalMessageCount} actionsEnabled={actionsEnabled} />
+      <SmartCompactPlan actionsEnabled={actionsEnabled} />
     </div>
   );
 }
 
 /**
- * v3 context identity summary. Renders the active
+ *context identity summary. Renders the active
  * contextId + creation reason at the top of FutureActions so the
  * operator can see which logical context they are operating on.
- * Refreshes on `agent-thursday:context:compacted` (the same event the legacy
- * compact and  reset paths dispatch) and on the new
- * `agent-thursday:context:switched` event dispatched by `<NewContextAction>`.
+ * Refreshes on `agentthursday:context:compacted` (the same event the legacy
+ * compact and reset paths dispatch) and on the new
+ * `agentthursday:context:switched` event dispatched by `<NewContextAction>`.
  */
-function ContextIdentity() {
+function ContextIdentity({ actionsEnabled }: { actionsEnabled: boolean }) {
   const [active, setActive] = useState<ActiveContext | null>(null);
   const [history, setHistory] = useState<ContextHistoryEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -217,16 +221,20 @@ function ContextIdentity() {
     function onRefresh() {
       void load();
     }
-    window.addEventListener("agent-thursday:context:compacted", onRefresh);
-    window.addEventListener("agent-thursday:context:switched", onRefresh);
+    window.addEventListener("agentthursday:context:compacted", onRefresh);
+    window.addEventListener("agentthursday:context:switched", onRefresh);
     return () => {
       mounted = false;
-      window.removeEventListener("agent-thursday:context:compacted", onRefresh);
-      window.removeEventListener("agent-thursday:context:switched", onRefresh);
+      window.removeEventListener("agentthursday:context:compacted", onRefresh);
+      window.removeEventListener("agentthursday:context:switched", onRefresh);
     };
   }, []);
 
   async function onSwitch(contextId: string) {
+    if (!actionsEnabled) {
+      setSwitchError(getDebugReadonlyNotice());
+      return;
+    }
     if (switching) return;
     setSwitching(contextId);
     setSwitchError(null);
@@ -238,8 +246,8 @@ function ContextIdentity() {
       // the same refresh events the new-context flow uses so inspect /
       // pressure rail / compactions all re-fetch against the newly
       // active DO.
-      window.dispatchEvent(new Event("agent-thursday:context:compacted"));
-      window.dispatchEvent(new Event("agent-thursday:context:switched"));
+      window.dispatchEvent(new Event("agentthursday:context:compacted"));
+      window.dispatchEvent(new Event("agentthursday:context:switched"));
     } else {
       const message = (res.data as unknown as { error?: string })?.error
         ?? res.error
@@ -299,7 +307,7 @@ function ContextIdentity() {
                         ? "cursor-progress text-slate-500"
                         : "text-slate-300 hover:bg-slate-800"
                   }`}
-                  title={c.isActive ? "Currently active" : `Switch to ${c.contextId}`}
+                  title={c.isActive ? "Currently active" : actionsEnabled ? `Switch to ${c.contextId}` : getDebugReadonlyNotice()}
                 >
                   <span className="font-mono text-slate-400">{shortContextId(c.contextId)}</span>
                   <span className={c.isActive ? "text-sky-300" : switching === c.contextId ? "text-amber-300" : "text-slate-500"}>
@@ -336,19 +344,23 @@ type NewContextStage =
 const DEFAULT_NEW_CONTEXT_REASON = "manual-ui-new";
 
 /**
- * v3 confirmation-gated `new context` action. UI copy
+ *confirmation-gated `new context` action. UI copy
  * deliberately distinguishes this from `<ResetAction>`: reset KEEPS the
  * same context identity and only clears messages; new opens a fresh
  * `contextId` and audit-links the previous one. v1 still clears
- * messages in the same DO (per  spec; full multi-DO routing is
+ * messages in the same DO (per spec; full multi-DO routing is
  * deferred to ) — the confirmation copy and result view say so
  * explicitly via `rawMessagesPreservedInOldContext: false` so the
  * operator does not mistake this for a true multi-context switch yet.
  */
-function NewContextAction({ totalMessageCount }: { totalMessageCount: number }) {
+function NewContextAction({ totalMessageCount, actionsEnabled }: { totalMessageCount: number; actionsEnabled: boolean }) {
   const [stage, setStage] = useState<NewContextStage>({ kind: "idle" });
 
   function open() {
+    if (!actionsEnabled) {
+      setStage({ kind: "error", message: getDebugReadonlyNotice() });
+      return;
+    }
     setStage({ kind: "confirming", reason: DEFAULT_NEW_CONTEXT_REASON });
   }
   function cancel() {
@@ -356,13 +368,17 @@ function NewContextAction({ totalMessageCount }: { totalMessageCount: number }) 
   }
   async function confirm() {
     if (stage.kind !== "confirming") return;
+    if (!actionsEnabled) {
+      setStage({ kind: "error", message: getDebugReadonlyNotice() });
+      return;
+    }
     const reason = stage.reason.trim().length > 0 ? stage.reason.trim() : DEFAULT_NEW_CONTEXT_REASON;
     setStage({ kind: "running" });
     const res = await newContext({ reason });
     if (res.ok && res.data) {
       setStage({ kind: "done", result: res.data });
-      window.dispatchEvent(new Event("agent-thursday:context:compacted"));
-      window.dispatchEvent(new Event("agent-thursday:context:switched"));
+      window.dispatchEvent(new Event("agentthursday:context:compacted"));
+      window.dispatchEvent(new Event("agentthursday:context:switched"));
     } else {
       const message = (res.data as unknown as { error?: string })?.error
         ?? res.error
@@ -376,7 +392,7 @@ function NewContextAction({ totalMessageCount }: { totalMessageCount: number }) 
       <div className="flex items-center gap-2 text-[11px] text-slate-300">
         <span className="font-semibold">New context (audit-linked)</span>
         <span className="text-[10px] text-violet-400/80 italic">
-          v3 — fresh contextId · v1 fallback (clears in same DO)
+fresh contextId · v1 fallback (clears in same DO)
         </span>
       </div>
       <p className="mt-1 text-[10px] text-slate-500">
@@ -394,7 +410,9 @@ function NewContextAction({ totalMessageCount }: { totalMessageCount: number }) 
           type="button"
           onClick={open}
           data-destructive="new-context"
-          className="mt-2 rounded border border-violet-700/70 bg-violet-950/40 px-2 py-1 text-[10px] text-violet-200 hover:bg-violet-900/40"
+          aria-disabled={!actionsEnabled || undefined}
+          title={actionsEnabled ? "Open new-context confirmation" : getDebugReadonlyNotice()}
+          className={`mt-2 rounded border px-2 py-1 text-[10px] ${actionsEnabled ? "border-violet-700/70 bg-violet-950/40 text-violet-200 hover:bg-violet-900/40" : "border-slate-700 bg-slate-900/80 text-slate-500 cursor-not-allowed"}`}
         >
           New context
         </button>
@@ -467,7 +485,7 @@ function NewContextConfirm({
         <li>
           <span className="font-semibold text-amber-200">v1 fallback:</span> raw transcripts of
           the old context are NOT preserved — they are cleared in the same Durable Object.
-          Only the audit trail and per-context event_log entries survive.  (deferred)
+          Only the audit trail and per-context event_log entries survive. (deferred)
           will add per-context DO routing for true multi-context switching.
         </li>
         <li>
@@ -482,7 +500,7 @@ function NewContextConfirm({
           value={reason}
           maxLength={200}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="e.g. switching from  work to M8 planning"
+          placeholder="e.g. switching from work to M8 planning"
           className="mt-0.5 w-full rounded bg-slate-950/70 border border-slate-700 px-2 py-1 text-[11px] text-slate-200 placeholder-slate-600 focus:outline-none focus:border-violet-500"
         />
       </label>
@@ -558,19 +576,23 @@ type ResetStage =
 const DEFAULT_RESET_REASON = "manual-ui-reset";
 
 /**
- * v3 confirmation-gated reset action. The destructive
+ *confirmation-gated reset action. The destructive
  * nature of reset is shown explicitly: the confirmation copy lists what
  * is cleared (transient model-visible messages, token counters) and
  * what is preserved (durable memory, checkpoints, workspace, event_log,
  * task metadata, model profile). After success we dispatch the same
- * `agent-thursday:context:compacted` event the legacy compact path uses so the
+ * `agentthursday:context:compacted` event the legacy compact path uses so the
  * inspect surface and pressure rail re-fetch.
  */
-function ResetAction({ totalMessageCount }: { totalMessageCount: number }) {
+function ResetAction({ totalMessageCount, actionsEnabled }: { totalMessageCount: number; actionsEnabled: boolean }) {
   const [stage, setStage] = useState<ResetStage>({ kind: "idle" });
   const resettable = totalMessageCount > 0;
 
   function open() {
+    if (!actionsEnabled) {
+      setStage({ kind: "error", message: getDebugReadonlyNotice() });
+      return;
+    }
     setStage({ kind: "confirming", reason: DEFAULT_RESET_REASON });
   }
   function cancel() {
@@ -578,12 +600,16 @@ function ResetAction({ totalMessageCount }: { totalMessageCount: number }) {
   }
   async function confirm() {
     if (stage.kind !== "confirming") return;
+    if (!actionsEnabled) {
+      setStage({ kind: "error", message: getDebugReadonlyNotice() });
+      return;
+    }
     const reason = stage.reason.trim().length > 0 ? stage.reason.trim() : DEFAULT_RESET_REASON;
     setStage({ kind: "running" });
     const res = await resetContext({ reason });
     if (res.ok && res.data) {
       setStage({ kind: "done", result: res.data });
-      window.dispatchEvent(new Event("agent-thursday:context:compacted"));
+      window.dispatchEvent(new Event("agentthursday:context:compacted"));
     } else {
       const message = (res.data as unknown as { error?: string })?.error
         ?? res.error
@@ -597,7 +623,7 @@ function ResetAction({ totalMessageCount }: { totalMessageCount: number }) {
       <div className="flex items-center gap-2 text-[11px] text-slate-300">
         <span className="font-semibold">Reset transient context</span>
         <span className="text-[10px] text-rose-400/80 italic">
-          v3 — destructive · audit-logged · durable state preserved
+destructive · audit-logged · durable state preserved
         </span>
       </div>
       <p className="mt-1 text-[10px] text-slate-500">
@@ -611,13 +637,16 @@ function ResetAction({ totalMessageCount }: { totalMessageCount: number }) {
           type="button"
           onClick={open}
           disabled={!resettable}
+          aria-disabled={!actionsEnabled || undefined}
           data-destructive="reset-context"
           className={`mt-2 rounded border px-2 py-1 text-[10px] ${
-            resettable
-              ? "border-rose-700/70 bg-rose-950/40 text-rose-200 hover:bg-rose-900/40"
-              : "cursor-not-allowed border-slate-700 bg-slate-900/80 text-slate-500"
+            !resettable
+              ? "cursor-not-allowed border-slate-700 bg-slate-900/80 text-slate-500"
+              : actionsEnabled
+                ? "border-rose-700/70 bg-rose-950/40 text-rose-200 hover:bg-rose-900/40"
+                : "border-slate-700 bg-slate-900/80 text-slate-500 cursor-not-allowed"
           }`}
-          title={resettable ? "Confirm before resetting transient context" : "Context already empty"}
+          title={!resettable ? "Context already empty" : actionsEnabled ? "Confirm before resetting transient context" : getDebugReadonlyNotice()}
         >
           Reset transient context
         </button>
@@ -761,12 +790,16 @@ type CompactStage =
   | { kind: "done"; result: CompactContextResult }
   | { kind: "error"; message: string };
 
-function CompactAction({ totalMessageCount }: { totalMessageCount: number }) {
+function CompactAction({ totalMessageCount, actionsEnabled }: { totalMessageCount: number; actionsEnabled: boolean }) {
   const defaultLastN = Math.max(0, totalMessageCount - 5);
   const compactable = defaultLastN >= 2;
   const [stage, setStage] = useState<CompactStage>({ kind: "idle" });
 
   function open() {
+    if (!actionsEnabled) {
+      setStage({ kind: "error", message: getDebugReadonlyNotice() });
+      return;
+    }
     setStage({ kind: "confirming", reason: "", lastN: defaultLastN });
   }
   function cancel() {
@@ -774,6 +807,10 @@ function CompactAction({ totalMessageCount }: { totalMessageCount: number }) {
   }
   async function confirm() {
     if (stage.kind !== "confirming") return;
+    if (!actionsEnabled) {
+      setStage({ kind: "error", message: getDebugReadonlyNotice() });
+      return;
+    }
     const { reason, lastN } = stage;
     setStage({ kind: "running" });
     const res = await compactContext({
@@ -782,7 +819,7 @@ function CompactAction({ totalMessageCount }: { totalMessageCount: number }) {
     });
     if (res.ok && res.data) {
       setStage({ kind: "done", result: res.data });
-      window.dispatchEvent(new Event("agent-thursday:context:compacted"));
+      window.dispatchEvent(new Event("agentthursday:context:compacted"));
     } else {
       const message = (res.data as unknown as { error?: string })?.error
         ?? res.error
@@ -806,12 +843,15 @@ function CompactAction({ totalMessageCount }: { totalMessageCount: number }) {
           type="button"
           onClick={open}
           disabled={!compactable}
+          aria-disabled={!actionsEnabled || undefined}
           className={`mt-2 rounded border px-2 py-1 text-[10px] ${
-            compactable
-              ? "border-amber-700/70 bg-amber-950/40 text-amber-200 hover:bg-amber-900/40"
-              : "cursor-not-allowed border-slate-700 bg-slate-900/80 text-slate-500"
+            !compactable
+              ? "cursor-not-allowed border-slate-700 bg-slate-900/80 text-slate-500"
+              : actionsEnabled
+                ? "border-amber-700/70 bg-amber-950/40 text-amber-200 hover:bg-amber-900/40"
+                : "border-slate-700 bg-slate-900/80 text-slate-500 cursor-not-allowed"
           }`}
-          title={compactable ? "Open compaction confirmation" : `Need at least 7 messages (have ${totalMessageCount})`}
+          title={!compactable ? `Need at least 7 messages (have ${totalMessageCount})` : actionsEnabled ? "Open compaction confirmation" : getDebugReadonlyNotice()}
         >
           Compact this range
         </button>
@@ -990,10 +1030,10 @@ function CompactionHistory() {
     function onCompacted() {
       void load();
     }
-    window.addEventListener("agent-thursday:context:compacted", onCompacted);
+    window.addEventListener("agentthursday:context:compacted", onCompacted);
     return () => {
       active = false;
-      window.removeEventListener("agent-thursday:context:compacted", onCompacted);
+      window.removeEventListener("agentthursday:context:compacted", onCompacted);
     };
   }, []);
 
