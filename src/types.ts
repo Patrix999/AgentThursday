@@ -70,6 +70,13 @@ export type AgentThursdayState = {
   currentTaskObject: TaskObject | null;
   lastCheckpoint: string | null;
   modelProfile: ModelProfile;
+  // last model id observed by an actual inference step.
+  // Distinct from `modelProfile` (configured / user-intended): this is
+  // populated by the onStepFinish hook and persisted so the
+  // resolver survives DO hibernation / isolate resets without
+  // dropping back to the configured fallback. Never written by
+  // `setModelProfile()`; the two fields stay semantically separate.
+  lastObservedModel?: ModelProfile | null;
   committedAction: NextAction | null;
   currentObstacle: ObstacleState | null;
   pendingHelpRequest: HelpRequest | null;

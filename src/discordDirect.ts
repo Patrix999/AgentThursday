@@ -1,12 +1,12 @@
 /**
- * direct Discord adapter (pure helpers).
+ *direct Discord adapter (pure helpers).
  *
  * Cloudflare Worker constraint: no persistent Gateway WebSocket. So this
  * adapter:
  *   1. Receives via Discord **HTTP Interactions** (slash commands + button
  *      clicks) — with Ed25519 signature verification, no `X-AgentThursday-Secret`.
  *   2. Receives normal MESSAGE_CREATE-style events via an auth-gated test
- *      path `POST /api/channel/discord/direct` (same payload shape as 
+ *      path `POST /api/channel/discord/direct` (same payload shape as
  *      so future gateway-runners can post the same body).
  *
  * Pure helpers only here (verify / filter / normalize / splitter / button
@@ -61,7 +61,7 @@ export type DirectDiscordConfig = {
   ignoreNoMentionInGuild: boolean;
   allowBots: "none" | "mentions" | "all";
   /**
-   *  §A-1 conservative defaults: empty allowedUserIds /
+   * §A-1 conservative defaults: empty allowedUserIds /
    * allowedChannelIds means DENY (not allow). Dev mode bypasses these so
    * local smoke can run without a real allowlist. Reuses 's
    * existing dev escape hatch (`AGENT_THURSDAY_ALLOW_INSECURE_DEV`); semantics are
@@ -115,6 +115,39 @@ export type DirectFilterInput = {
 export type DirectFilterResult =
   | { accept: true }
   | { accept: false; reason: string };
+
+/**
+ * derive `isDm` for the direct-filter pipeline with the
+ * right precedence:
+ *
+ *   1. Explicit `chatType` if present (`"dm"` → DM; `"channel"` /
+ *      `"group"` → not DM).
+ *   2. Explicit `isDm` boolean (`true` → DM; `false` → not DM).
+ *   3. Heuristic `guildId == null` → DM.
+ *
+ * Polling REST `GET /channels/{id}/messages` returns guild messages
+ * without `guild_id`, so the heuristic alone misclassifies them as
+ * DMs and bypasses `DISCORD_IGNORE_NO_MENTION`. set
+ * `isDm:false`/`chatType:"channel"` on the polling payload; this
+ * helper makes the filter actually honour those fields instead of
+ * re-deriving.
+ *
+ * Pure shape — exported for unit-style smoke from `applyDirectFilters`'s
+ * call sites. Accepts a structurally-compatible input rather than
+ * importing the full `OpenClawDiscordInbound` type to keep
+ * `discordDirect.ts` independent of `discordBridge.ts`.
+ */
+export function deriveDirectFilterIsDm(payload: {
+  chatType?: "dm" | "group" | "channel" | null;
+  isDm?: boolean | null;
+  guildId?: string | null;
+}): boolean {
+  if (payload.chatType === "dm") return true;
+  if (payload.chatType === "channel" || payload.chatType === "group") return false;
+  if (payload.isDm === true) return true;
+  if (payload.isDm === false) return false;
+  return payload.guildId == null;
+}
 
 export function applyDirectFilters(input: DirectFilterInput, cfg: DirectDiscordConfig): DirectFilterResult {
   // Self-loopback (we never ingest our own bot messages)
@@ -217,13 +250,13 @@ export type DiscordInteraction = z.infer<typeof DiscordInteractionSchema>;
 
 /**
  * Pull the slash-command text the user typed. Returns null if this isn't
- * a slash command we handle. v1 supports `/ask <prompt>` and `/agent-thursday <prompt>`.
+ * a slash command we handle. v1 supports `/ask <prompt>` and `/agentthursday <prompt>`.
  */
 export function extractSlashPrompt(interaction: DiscordInteraction): { command: string; prompt: string } | null {
   if (interaction.type !== 2) return null;
   const data = interaction.data as { name?: string; options?: Array<{ name?: string; value?: unknown }> } | undefined;
   if (!data?.name) return null;
-  const supported = new Set(["ask", "agent-thursday"]);
+  const supported = new Set(["ask", "agentthursday"]);
   if (!supported.has(data.name)) return null;
   const promptOpt = data.options?.find(o => o.name === "prompt" || o.name === "text" || o.name === "message");
   const value = promptOpt?.value;

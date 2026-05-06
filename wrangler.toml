@@ -105,11 +105,72 @@ DISCORD_ALLOWED_CHANNELS = ""
 DISCORD_IGNORE_NO_MENTION = "true"
 DISCORD_ALLOW_BOTS = "mentions"
 
+# Discord ingress mode.
+#
+#   gateway   (default) — DiscordGatewayAgent DO holds a persistent
+#             WebSocket to gateway.discord.gg; real-time MESSAGE_CREATE
+#             push, bot online/presence visible. Higher DO duration cost.
+#   polling   — No WebSocket. The DO alarm wakes every
+#             DISCORD_POLL_INTERVAL_SECONDS and fetches
+#             /channels/{id}/messages?after={cursor} for each allowed
+#             channel. Per-channel cursor is persisted. Lower duration
+#             cost; first-message latency = poll interval; no presence.
+#   disabled  — No WebSocket, no polling. /api/channel/discord/direct
+#             still accepts external bridge / interaction ingestion.
+#
+# See DEPLOY.md for the full cost / latency / presence / rate-limit
+# tradeoff table.
+DISCORD_INGRESS_MODE = "gateway"
+DISCORD_POLL_INTERVAL_SECONDS = "60"
+
+# Discord user ids whose DM channels are polled in `polling` mode
+# (gateway mode receives DMs via WS push so this var is ignored).
+# Each id is resolved to a DM channel via REST `POST /users/@me/channels`
+# (idempotent) and polled the same way as a guild channel, but with
+# `chatType:"dm"`. Non-secret operational config; values are Discord
+# snowflake user ids. Empty / unset → no DM polling.
+DISCORD_POLL_DM_USER_IDS = ""
+
 # dialogue pause-loop gate.
 # Default OFF: diagnostics still log/surface `needs_human`, but the loop does not pause.
 # Set to "true" to enable conversational pause/resume on current-task
 # `degradation.summary.state === "needs_human"`.
 AGENT_THURSDAY_PAUSE_ON_NEEDS_HUMAN = "false"
+
+# tool truthfulness gate mode.
+# Non-secret operational config. Modes:
+#   "warn"      (default) — prepend a one-line ⚠️ Truthfulness warning
+#                to the user-visible reply when the model claims tool
+#                results that the trace does not back. Production
+#                should keep this on.
+#   "log-only"  — record `tool.truthfulness.violation` events but do
+#                NOT prepend the warning. Diagnostic mode only;
+#                useful when investigating false positives.
+#   "off"       — disable detection entirely. Avoid in production.
+# Lives here (not in `wrangler secret put`) so a `git diff` shows the
+# current mode and `npm run deploy` is enough to roll changes; only
+# real secrets (`AGENT_THURSDAY_SHARED_SECRET`, `DISCORD_BOT_TOKEN`,
+# `DISCORD_PUBLIC_KEY`, `GITHUB_TOKEN`) go through `wrangler secret put`.
+AGENT_THURSDAY_TRUTHFULNESS_GATE = "warn"
+
+# debug surface mode for the Web UI.
+#
+#   enable    (default) Inspect entry, context chip / ContextRail, and debug
+#             action buttons are all visible and executable. Current behaviour.
+#   readonly  Inspect entry + context chip + ContextRail visible, navigation
+#             still usable; debug action buttons render but their onClick
+#             shows a readonly notice instead of hitting the API. Good for
+#             safe demos.
+#   disable   Inspect entry, context chip rail and any debug affordance
+#             hidden in the UI; the chip itself stays visible (the
+#             ContextIndicatorDialog stays available) and opens the
+#             read-only Context indicator dialog. Direct `/inspect`
+#             shows a disabled notice.
+#
+# Backend endpoints stay auth-gated regardless; this flag only controls the
+# UI surface. Mode is exposed to the SPA via auth-gated `GET /api/config`
+# so flipping mode is a `wrangler deploy` away — no web rebuild required.
+AGENT_THURSDAY_DEBUG_SURFACE_MODE = "readonly"
 
 # npx wrangler secret put DISCORD_BOT_TOKEN
 # npx wrangler secret put DISCORD_PUBLIC_KEY
@@ -133,4 +194,8 @@ class_name = "Sandbox"
 class_name = "Sandbox"
 image = "./Dockerfile"
 instance_type = "lite"
-max_instances = 1
+# bumped from 1 to 3 so verifier / parallel work can use distinct
+# `sandbox_id`s without the second one queueing forever behind the
+# first. Each instance is the smallest tier, so the cost ceiling
+# stays low even at 3 simultaneous containers.
+max_instances = 3

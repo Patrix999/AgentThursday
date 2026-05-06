@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Unified Object Model Schema and Worker Contract
+ *Unified Object Model Schema and Worker Contract
  *
  * Single source of truth for the data the new Web shell (),
  * Current Task View (), and inspect surface () consume.
@@ -13,23 +13,23 @@ import { z } from "zod";
  *   ---------------------------------|------------------------|-------------------------------------
  *   taskObject (TaskObject)          | M2 task lifecycle      | TaskView
  *   cliSession (CliSession)          | M3 cli session         | SessionView
- *   lastActionResult (ActionResult)  |  action result     | ArtifactView (kind="actionResult")
+ *   lastActionResult (ActionResult)  | action result     | ArtifactView (kind="actionResult")
  *   developerLoopReview              | M2 reviewer            | summary text → MessageView (kind="summary")
  *                                    |                        | + traces → TraceEvent[] (inspect)
- *   pendingToolApproval              |  tool approval     | ApprovalView (kind="tool")
+ *   pendingToolApproval              | tool approval     | ApprovalView (kind="tool")
  *   pendingKanbanMutations[]         | M2 mutation            | ApprovalView (kind="mutation")
- *   debugTrace.recentToolEvents[]    |  trace             | ToolEvent[] (inspect only)
- *   debugTrace.lastLadderTier        |  ladder            | TaskView.ladderTier + .ladderReason
- *   debugTrace.lastAssistantSummary  |                    | MessageView (kind="assistant")
+ *   debugTrace.recentToolEvents[]    | trace             | ToolEvent[] (inspect only)
+ *   debugTrace.lastLadderTier        | ladder            | TaskView.ladderTier + .ladderReason
+ *   debugTrace.lastAssistantSummary  | | MessageView (kind="assistant")
  *   deliverableGate.deliverable      | M2 deliverable         | ArtifactView (kind="deliverable")
  *
- *  user-layer reads only:
+ * user-layer reads only:
  *   session, currentTask, summaryStream, pendingApproval, replyNeed, latestResult
- *  inspect-layer reads only:
+ * inspect-layer reads only:
  *   inspectEntry (presence flags) + GET /api/inspect (full data)
  *
  * The /cli/* legacy endpoints stay live for TUI; a follow-up cleanup card
- * will retire them after  ships.
+ * will retire them after ships.
  */
 
 export const SessionViewSchema = z.object({
@@ -116,7 +116,7 @@ export const WorkspaceSnapshotSchema = z.object({
   // canonical active context identity (registry
   // `context_active` pointer). The client uses this to reconcile its
   // localStorage cache: if the value differs, the client updates
-  // `agent-thursday.contextId` and re-fetches under the canonical id. Carries
+  // `agentthursday.contextId` and re-fetches under the canonical id. Carries
   // ONLY the identity string; never any system prompt / SOUL / tool
   // payload / hidden context content.
   activeContextId: z.string(),
@@ -125,7 +125,7 @@ export type WorkspaceSnapshot = z.infer<typeof WorkspaceSnapshotSchema>;
 
 /**
  * Inspect surface shapes — the real data producer arrives in .
- *  only declares the contract and ships a stub returning empty arrays.
+ * only declares the contract and ships a stub returning empty arrays.
  */
 
 export const TraceEventSchema = z.object({
@@ -231,8 +231,8 @@ export const ContentAuditSummarySchema = z.object({
 });
 export type ContentAuditSummary = z.infer<typeof ContentAuditSummarySchema>;
 
-// degradation diagnostics surface compact view schemas.
-// These mirror the JSON payloads emitted by  events.
+//degradation diagnostics surface compact view schemas.
+// These mirror the JSON payloads emitted by Cards 117/119/102 events.
 // `.passthrough()` lets the panel ride forward when those payloads grow;
 // it does NOT promote unknown fields into the typed view, just keeps them
 // for the raw `trace` consumer that already lives in `InspectSnapshot`.
@@ -289,12 +289,12 @@ export const DegradationDiagnosticsSchema = z.object({
 });
 export type DegradationDiagnostics = z.infer<typeof DegradationDiagnosticsSchema>;
 
-// Action UI Intent backend view-model schemas. Mirror
+//Action UI Intent backend view-model schemas. Mirror
 // the types in `src/actionUiIntents.ts`; both kept in sync. The
 // component.props field is `z.unknown()` because each component name
 // has its own loose shape (DegradationCard sees a different prop set
 // than PauseCard); v1 trusts the backend builder and renders defensively.
-// Context lifecycle (inspect / reset) view-model schemas.
+//Context lifecycle (inspect / reset) view-model schemas.
 // Mirror the types in `src/contextLifecycle.ts`. `parts` is a discriminated
 // union in the helper; expressed here as one passthrough object so future
 // part shapes ride forward without breaking the API.
@@ -332,7 +332,7 @@ export const ContextInspectResultSchema = z.object({
     out: z.number().int().nonnegative(),
     total: z.number().int().nonnegative(),
   }).nullable(),
-  // context budget surface. Rail displays "全高 = 模型
+  //context budget surface. Rail displays "全高 = 模型
   // context window"; numbers only, no SOUL / system prompt / tool schema
   // text leaks here. v1 uses chars/4 estimation (no tokenizer dep) and
   // a small per-model max-window mapping; unknown models report
@@ -360,8 +360,40 @@ export const ContextInspectResultSchema = z.object({
     }),
     source: z.enum(["estimated", "provider", "unavailable"]),
   }),
+  // current model resolution surface. Makes the four
+  // semantic layers (configured / lastObserved / effective / per-use
+  // selection) visible to inspect/debug so a future routing policy
+  // landing won't surprise consumers. Optional so older clients keep
+  // working; new client reads it from inspect.
+  currentModelResolution: z
+    .object({
+      configured: z.object({
+        provider: z.string().nullable(),
+        modelId: z.string().nullable(),
+      }).nullable(),
+      lastObserved: z.object({
+        provider: z.string().nullable(),
+        modelId: z.string().nullable(),
+      }).nullable(),
+      effective: z.object({
+        provider: z.string().nullable(),
+        modelId: z.string().nullable(),
+      }).nullable(),
+      budgetModel: z.object({
+        provider: z.string().nullable(),
+        modelId: z.string().nullable(),
+        source: z.enum(["configured", "observed", "effective", "fallback", "conservative"]),
+      }).nullable(),
+      awarenessModel: z.object({
+        provider: z.string().nullable(),
+        modelId: z.string().nullable(),
+        source: z.enum(["configured", "observed", "effective", "fallback"]),
+      }).nullable(),
+    })
+    .optional(),
 });
 export type ContextInspectResult = z.infer<typeof ContextInspectResultSchema>;
+export type CurrentModelResolution = NonNullable<ContextInspectResult["currentModelResolution"]>;
 
 export const ContextResetResultSchema = z.object({
   ok: z.boolean(),
@@ -373,7 +405,7 @@ export const ContextResetResultSchema = z.object({
 });
 export type ContextResetResult = z.infer<typeof ContextResetResultSchema>;
 
-// v3 Context history / new-context (v1 reset-style fallback).
+//Context history / new-context (v1 reset-style fallback).
 // True multi-DO context switching is deferred to ; v1 closes the
 // active context_history row, opens a new one with a fresh contextId, and
 // clears messages in the same DO. Old transcripts are NOT preserved (only
@@ -409,7 +441,7 @@ export const NewContextResultSchema = z.object({
   beforeMessageCount: z.number().int().nonnegative(),
   afterMessageCount: z.number().int().nonnegative(),
   preservedDurableState: z.boolean(),
-  // v3 per-context DO routing flips this to `true` for
+  //per-context DO routing flips this to `true` for
   // contexts created from v2 onwards. v1-era contexts (created before
   // routing was in place) are still flagged `false` in their original
   // audit rows because their raw transcripts were cleared in the
@@ -424,7 +456,7 @@ export const NewContextResultSchema = z.object({
 });
 export type NewContextResult = z.infer<typeof NewContextResultSchema>;
 
-// v3 switch active context to an existing context_history
+//switch active context to an existing context_history
 // id. Audit-only on the registry DO; per-context DOs continue to own
 // their messages independently. `previousContextId` may equal
 // `newContextId` if the operator switches to the already-active context
@@ -438,9 +470,9 @@ export const SwitchContextResultSchema = z.object({
 });
 export type SwitchContextResult = z.infer<typeof SwitchContextResultSchema>;
 
-// Conversation Archive ingestion. `drainForArchive`
+//Conversation Archive ingestion. `drainForArchive`
 // runs on a per-context DO and returns its full sanitized message log
-// (no `lastN` cap, intentionally — the  public snapshot caps
+// (no `lastN` cap, intentionally — the public snapshot caps
 // at 200 which would silently truncate older contexts during
 // archival). `archiveChunks` runs on the registry DO and writes the
 // chunks into the canonical `conversation_archive` table.
@@ -485,11 +517,11 @@ export const ArchiveFlushResultSchema = z.object({
 });
 export type ArchiveFlushResult = z.infer<typeof ArchiveFlushResultSchema>;
 
-// `conversation_search` over the registry's
+//`conversation_search` over the registry's
 // `conversation_archive`. Defaults: cross-context (no `contextId`
 // filter); topK clamped to [1, 10] with default 3; snippet cap 300
 // chars per hit. Hits include source refs but NOT raw tool payloads
-// or system content ( sanitization preserved upstream during
+// or system content (sanitization preserved upstream during
 // archive ingestion).
 export const ConversationSearchInputSchema = z.object({
   query: z.string().min(1).max(500),
@@ -540,7 +572,7 @@ export const ConversationSearchResultSchema = z.object({
 });
 export type ConversationSearchResult = z.infer<typeof ConversationSearchResultSchema>;
 
-// archive / retrieval Inspect surface. Read-only
+//archive / retrieval Inspect surface. Read-only
 // summary the operator inspects to see what was archived, what was
 // searched, and where failures landed. Hard-capped so the default
 // payload never carries full archive text.
@@ -597,12 +629,12 @@ export const ArchiveInspectSummarySchema = z.object({
 });
 export type ArchiveInspectSummary = z.infer<typeof ArchiveInspectSummarySchema>;
 
-// Continuous Context Hygiene loop v1.
+//Continuous Context Hygiene loop v1.
 // `runContextHygiene` evaluates context pressure and decides:
 //   - skipped: pressure below threshold, nothing to do
 //   - proposed: pressure high but a risk gate fired; plan recorded but
 //     not applied
-//   - auto-applied: pressure high, all gates clear; 
+//   - auto-applied: pressure high, all gates clear;
 //     applyCompactPlan succeeded
 //   - failed: applyCompactPlan threw or returned partial rejection
 // Manual-trigger only in v1; scheduled triggers are opt-in via a
@@ -670,7 +702,7 @@ export const HygieneRunResultSchema = z.object({
 });
 export type HygieneRunResult = z.infer<typeof HygieneRunResultSchema>;
 
-// auditable compact MVP. Mirrors `Session.addCompaction`
+//auditable compact MVP. Mirrors `Session.addCompaction`
 // shape; the `summaryPreview` here is capped server-side so a long
 // summary doesn't bloat the inspect API. `compactedRangeSize` is the
 // authoritative count of messages folded into this overlay (always
@@ -717,9 +749,9 @@ export const CompactionsListSchema = z.object({
 });
 export type CompactionsList = z.infer<typeof CompactionsListSchema>;
 
-//  v2 Context snapshot for anchor-aware planning. Mirrors
+// v2 Context snapshot for anchor-aware planning. Mirrors
 // `buildContextSnapshot` in `src/contextLifecycle.ts`. `parts` reuses the
-// passthrough  schema so any future part shapes ride forward
+// passthrough schema so any future part shapes ride forward
 // without breaking the API. `compactedRanges` resolves message-ID
 // endpoints against the FULL message log so unresolved entries
 // (synthetic-as-from / no longer present) are surfaced honestly via
@@ -756,7 +788,7 @@ export const ContextSnapshotResultSchema = z.object({
 });
 export type ContextSnapshotResult = z.infer<typeof ContextSnapshotResultSchema>;
 
-//  v2 deterministic anchor classifier output. Per-message
+// v2 deterministic anchor classifier output. Per-message
 // classification (anchors AND non-anchors) so the planner can also see
 // which messages are NOT preserved. `reasons` is a list, not a single
 // label, so callers can audit every rule that fired.
@@ -795,7 +827,7 @@ export const ContextAnchorsResultSchema = z.object({
 });
 export type ContextAnchorsResult = z.infer<typeof ContextAnchorsResultSchema>;
 
-//  v2 compact plan / apply split. The plan is a read-only
+// v2 compact plan / apply split. The plan is a read-only
 // dry-run proposal of safe ID-based compaction ranges; apply takes a plan
 // back and re-runs all pre-flight checks against a fresh snapshot before
 // each `addCompaction` call. No automatic compaction; no LLM summary.
@@ -823,7 +855,7 @@ export const CompactPlanPreservedSchema = z.object({
   preview: z.string(),
 });
 
-//  v2 medium-tier anchors lifted into the compact
+// v2 medium-tier anchors lifted into the compact
 // summary. Optional + omitted when empty so older plans / clients
 // continue to parse cleanly.
 export const SummaryPreservedAnchorSchema = z.object({
@@ -870,7 +902,7 @@ export const CompactPlanResultSchema = z.object({
 });
 export type CompactPlanResult = z.infer<typeof CompactPlanResultSchema>;
 
-//  v2 semantic summary advisor audit. Optional + emitted
+// v2 semantic summary advisor audit. Optional + emitted
 // only when the advisor was invoked (input.semanticAdvisor === true on
 // apply). `qualityFlags` documents validator outcomes; `fallbackReason`
 // is null on success and populated when the deterministic summary was
@@ -984,19 +1016,19 @@ export const InspectSnapshotSchema = z.object({
   // over the same audit rows. Best-effort: cross-DO fetch failures leave
   // this field undefined without breaking the rest of the snapshot.
   contentEvidence: ContentAuditSummarySchema.optional(),
-  // read-only degradation diagnostics. Indexed view of
-  // events  already log into event_log. Optional so a DO
+  //read-only degradation diagnostics. Indexed view of
+  // events Cards 117/119/102 already log into event_log. Optional so a DO
   // with no degradation events yet returns clean.
   degradationDiagnostics: DegradationDiagnosticsSchema.optional(),
-  // Action UI Intent index for Action-aware Gen UI.
+  //Action UI Intent index for Action-aware Gen UI.
   // Derived on read from event_log; capped at 30 newest-first. Optional
-  // so older clients ignore the field;  frontend will consume.
+  // so older clients ignore the field; frontend will consume.
   actionUiIntents: z.array(ActionUiIntentSchema).optional(),
 });
 export type InspectSnapshot = z.infer<typeof InspectSnapshotSchema>;
 
 /**
- * workspace file manager (read-only).
+ *workspace file manager (read-only).
  * Maps `@cloudflare/shell` `Workspace.readDir` / `readFile` / `stat` outputs
  * into a stable contract the web client consumes. Hidden paths
  * (`.dev.vars`, `.env`, `.wrangler`, `node_modules`, `.git`) are filtered
@@ -1027,7 +1059,7 @@ export const WorkspaceFileContentSchema = z.object({
 export type WorkspaceFileContent = z.infer<typeof WorkspaceFileContentSchema>;
 
 /**
- * Tier 3 headless browser tool contract.
+ *Tier 3 headless browser tool contract.
  *
  * The agent (and the smoke endpoint) sends `BrowserRunRequest` and gets back
  * `BrowserRunResult`. SSRF defenses + size caps live in `src/browser.ts`.
@@ -1062,7 +1094,7 @@ export const BrowserRunResultSchema = z.object({
 export type BrowserRunResult = z.infer<typeof BrowserRunResultSchema>;
 
 /**
- * Agent Memory v1.
+ *Agent Memory v1.
  * See docs/design/agent-memory-v1.md for the full design.
  *
  * Taxonomy mirrors Cloudflare's Agent Memory blog (2026-04-17): facts,
@@ -1100,7 +1132,7 @@ export type MemoryRecallMatch = z.infer<typeof MemoryRecallMatchSchema>;
 /**
  * GET /api/memory snapshot. Compact, leak-free shape for Web user layer.
  * Counts by type + recent active facts/instructions/events/tasks.
- *  §F-18: "show active facts/instructions and recent events/tasks".
+ * §F-18: "show active facts/instructions and recent events/tasks".
  */
 export const MemorySnapshotSchema = z.object({
   counts: z.object({
@@ -1118,9 +1150,11 @@ export const MemorySnapshotSchema = z.object({
 export type MemorySnapshot = z.infer<typeof MemorySnapshotSchema>;
 
 /**
- * ChannelHub envelopes & storage row schemas.
+ *ChannelHub envelopes & storage row schemas.
  *
  * Provider-agnostic. Discord-first but no schema field is Discord-specific.
+ * See `docs/milestones/multi-channel-communication-middle-layer.md`
+ * and `docs/design/review-notes.md`.
  *
  * v1 P0 outbound is text-only — no `presentation.blocks/tone` (premature
  * pollution per review §5). Approval is reserved as a future `kind`
@@ -1199,7 +1233,7 @@ const OutboundTextMessageSchema = z.object({
  * fallback + structured `approval` block so the bridge can attach buttons
  * if its surface supports them. Scope buttons mirror Hermes:
  * once / session / always / deny. `always` is gated behind an env flag
- * ( §C-13); when gating is on, the bridge should hide/disable that
+ * (§C-13); when gating is on, the bridge should hide/disable that
  * button and the resolve endpoint downgrades it to "session".
  */
 export const ApprovalScopeSchema = z.enum(["once", "session", "always", "deny"]);
@@ -1488,9 +1522,9 @@ export const ApprovalResolveResultSchema = z.object({
 export type ApprovalResolveResult = z.infer<typeof ApprovalResolveResultSchema>;
 
 // ============================================================================
-// ContentHub: provider-agnostic content source layer.
+//ContentHub: provider-agnostic content source layer.
 //
-//  ships schemas + a hardcoded `agentthursday-github` registry entry only.
+// ships schemas + a hardcoded `agentthursday-github` registry entry only.
 // /109 fill in real GitHub network reads/list/search.
 //
 // Design constraints (ADR §3, §4):
@@ -1544,10 +1578,10 @@ export type ContentSourceScope = z.infer<typeof ContentSourceScopeSchema>;
 export const ContentSourceAuthModeSchema = z.enum(["public", "secret", "oauth", "mcp", "browser", "none"]);
 export type ContentSourceAuthMode = z.infer<typeof ContentSourceAuthModeSchema>;
 
-//  v2 explicit per-source capability declaration. Forward
+// v2 explicit per-source capability declaration. Forward
 // compatible: undefined `capabilities` on existing v1 sources is permitted
 // and treated as "all true" by callers that haven't adopted the field yet.
-//  fan-out search will filter sources by `capabilities.search:true`
+// fan-out search will filter sources by `capabilities.search:true`
 // instead of provider-name matching, so honest declarations matter.
 export const ContentSourceCapabilitiesSchema = z.object({
   read: z.boolean(),
@@ -1648,7 +1682,7 @@ export type ContentSearchCoverage = z.infer<typeof ContentSearchCoverageSchema>;
 // request/response envelopes for content_list and content_read.
 // Discriminated `{ ok: true, result } | { ok: false, error }` shape so both
 // the API endpoint and the LLM tool wrapper can forward without exception
-// machinery. `error.code` enumerates the structured failure modes 
+// machinery. `error.code` enumerates the structured failure modes
 // produces; the list grows in +.
 
 export const ContentErrorCodeSchema = z.enum([
@@ -1727,7 +1761,7 @@ export const ContentErrorSchema = z.object({
   sourceId: z.string().optional(),
   path: z.string().optional(),
   status: z.number().int().nullable().optional(),
-  //  §7.1 — quota / upstream-failure errors carry an explicit
+  // §7.1 — quota / upstream-failure errors carry an explicit
   // fallback hint so the caller can opt in to `strategy: "bounded-local"`.
   // Only set on search errors; other endpoints leave these undefined.
   fallbackAvailable: z.boolean().optional(),
@@ -1763,7 +1797,7 @@ export const ContentListRequestSchema = z.object({
 export type ContentListRequest = z.infer<typeof ContentListRequestSchema>;
 
 // request/response envelopes for content_search. Mirrors the
-//  read/list discriminated-union pattern so clients forward errors
+// read/list discriminated-union pattern so clients forward errors
 // without exception machinery. Default strategy is `api-search` (fail-loud
 // on quota); `bounded-local` is opt-in degraded grep over the connector's
 // list+read path, always carries `searchCoverage:"partial"`.
@@ -1771,7 +1805,7 @@ export const ContentSearchRequestSchema = z.object({
   // `sourceId` and `sourceIds` are mutually exclusive, fail-loud:
   //  - exactly one must be provided
   //  - presenting both, or neither, is a 400 at the request boundary
-  // Single-source mode (`sourceId`) keeps  behavior unchanged.
+  // Single-source mode (`sourceId`) keeps behavior unchanged.
   // Multi-source mode (`sourceIds`) returns a `perSource` array; top-level
   // `hits` is empty stub to preserve schema shape.
   sourceId: z.string().min(1).optional(),
@@ -1794,7 +1828,7 @@ export const ContentSearchResponseSchema = z.discriminatedUnion("ok", [
 export type ContentSearchResponse = z.infer<typeof ContentSearchResponseSchema>;
 
 // ────────────────────────────────────────────────────────────────────
-// read-only memory candidate inspect surface.
+//read-only memory candidate inspect surface.
 //
 // View-only schema for "things that *might* be worth promoting to
 // long-term memory, but the operator hasn't acted on yet". v1 is a
@@ -1870,7 +1904,7 @@ export const MemoryCandidatesResultSchema = z.object({
 export type MemoryCandidatesResult = z.infer<typeof MemoryCandidatesResultSchema>;
 
 // Connector contract — TS interface, not zod (it's an internal shape, not
-// API-surface JSON).  adds the GitHub implementation.
+// API-surface JSON). adds the GitHub implementation.
 export interface ContentSourceConnector {
   readonly meta: ContentSource;
 

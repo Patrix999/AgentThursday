@@ -11,7 +11,7 @@ import { tool } from "ai";
 import { toolApprovalUpdate, applyToolUpdate } from "agents/chat";
 import { z } from "zod";
 import type { AgentNamespace } from "agents";
-import type { AgentThursdayState, HumanResponse, RuntimeMode, RecoveryPolicy, RecoveryReview, RecoveryTimelineItem, ActionResult, OutcomeVerification, MutationReview, TaskObject, TaskLifecycle, LoopContract, DeliverableConvergence, ApprovalPolicy, DeveloperLoopReview, CliSession, CliResultView, M3CliLoopStep, M3CliLoopDemo, M4TuiWorkflowStep, M4TuiWorkflowDemo } from "./types";
+import type { AgentThursdayState, ModelProfile, HumanResponse, RuntimeMode, RecoveryPolicy, RecoveryReview, RecoveryTimelineItem, ActionResult, OutcomeVerification, MutationReview, TaskObject, TaskLifecycle, LoopContract, DeliverableConvergence, ApprovalPolicy, DeveloperLoopReview, CliSession, CliResultView, M3CliLoopStep, M3CliLoopDemo, M4TuiWorkflowStep, M4TuiWorkflowDemo } from "./types";
 import { getIntelligenceSignal, getProfileAwareness } from "./intelligence";
 import {
   WorkspaceSnapshotSchema,
@@ -78,6 +78,7 @@ import {
 } from "./semanticSummaryAdvisor";
 import type {
   ContextInspectResult,
+  CurrentModelResolution,
   ContextResetResult,
   CompactContextResult,
   StoredCompactionView,
@@ -109,7 +110,7 @@ import type {
   HygieneDecision,
 } from "./schema";
 
-// v3 fresh context id. Crypto-random when available
+//fresh context id. Crypto-random when available
 // (Cloudflare Workers expose `crypto.randomUUID`); falls back to a
 // time + random base-36 hash for the unlikely no-crypto path so the id
 // remains unique for audit purposes.
@@ -188,7 +189,7 @@ import {
   shouldPauseForNeedsHuman,
 } from "./pauseDecision";
 import { buildActionUiIntents, type ActionUiIntentSourceRow } from "./actionUiIntents";
-import { pickModelContextProfile, type ModelContextProfile } from "./contextWindowRegistry";
+import { pickModelContextProfile, DEFAULT_CONTEXT_PROFILE, type ModelContextProfile } from "./contextWindowRegistry";
 import {
   ChannelMessageEnvelopeSchema,
   ChannelInboundResultSchema,
@@ -218,6 +219,7 @@ import {
   verifyDiscordSignature,
   loadDirectDiscordConfig,
   applyDirectFilters,
+  deriveDirectFilterIsDm,
   DiscordInteractionSchema,
   extractSlashPrompt,
   normalizeSlashInteraction,
@@ -237,7 +239,7 @@ const SOUL = `你是 AgentThursday Agent —— 操作员的云原生工作 agen
 
 ## 工具调用规则（强制）
 你拥有工具可以调用。遇到可执行动作时，你必须优先调用对应工具，不得仅用文字声称"已完成"。
-- 推进任务卡状态 → 必须调用 advance_kanban_card 工具
+- 推进 kanban 卡状态 → 必须调用 advance_kanban_card 工具
 - 写入进度 checkpoint → 必须调用 write_checkpoint 工具
 - 查看项目状态 → 必须调用 review_project_status 工具
 - 读写 workspace 文件 → 必须调用 read / write / edit 工具
@@ -318,7 +320,7 @@ agent_memories（remember 过的 fact / event / task）跟当前 dialog 是
 
 ## Content Sources vs Workspace（ affordance）
 
-Tier 0 workspace 是**你自己的**活跃工作区——scratch、drafts、任务输出、你显式创建的 artifacts。它**不会**自动同步 AgentThursday 源码、GitHub repos、OneDrive/Dropbox 文件夹、协作文档、邮件附件或网页内容。
+你是云端 agent，**默认没有本机 repo checkout**。Tier 0 workspace 是**你自己的**活跃工作区——scratch、drafts、任务输出、你显式创建的 artifacts。它**不会**自动同步 AgentThursday 源码、GitHub repos、OneDrive/Dropbox 文件夹、协作文档、邮件附件或网页内容。
 
 外部项目代码与人类协作资料统称 **Content Sources**。**当前部署中 ContentHub 工具（\`content_sources\` / \`content_list\` / \`content_read\` / \`content_search\`）已生产可用**，必须通过它们访问外部内容，并在推理与回答中保留 provenance（\`sourceId\` / \`pathOrId\` / \`revision\`）。
 
@@ -357,7 +359,7 @@ Tier 0 workspace 是**你自己的**活跃工作区——scratch、drafts、任�
 
 const DEMO_INSTANCE = "agent-thursday-dev-fresh-108a-1";
 
-// v3 per-context DO routing. Reads `X-AgentThursday-Context-Id`
+//per-context DO routing. Reads `X-AgentThursday-Context-Id`
 // from the request header and uses it as the DO instance name.
 //
 // header semantics tightened for the "single active session
@@ -474,7 +476,7 @@ async function resolveCanonicalActiveContextRoute(
   return { name, stub };
 }
 
-// tool names the truthfulness gate watches for in assistant
+//tool names the truthfulness gate watches for in assistant
 // text. Must stay aligned with `getTools()` registration; if a new tool is
 // added, add its name here so claims about it are validated. Workspace tools
 // (read/write/list/edit) come from `createWorkspaceTools` and are addressed
@@ -495,37 +497,37 @@ const KNOWN_TOOL_NAMES: readonly string[] = [
   "write",
   "list",
   "edit",
-  // ContentHub external source tools.
+  //ContentHub external source tools.
   "content_sources",
   "content_list",
   "content_read",
-  // ContentHub literal search.
+  //ContentHub literal search.
   "content_search",
-  // agent-facing conversation archive search.
+  //agent-facing conversation archive search.
   "conversation_search",
 ];
 const DOGFOOD_TASK = "如何使用新构建的 agent 开发当前项目？";
 
-// model context window + threshold policy lives in
+//model context window + threshold policy lives in
 // `src/contextWindowRegistry.ts` as a typed registry. The previous
-// hardcoded 8K/24K absolutes didn't make sense
+// hardcoded 8K/24K absolutes (/156i) didn't make sense
 // against 256K/1M model windows; ratios scale across model sizes.
 // `_computeContextBudget` reads the registry; UI receives the
 // already-computed absolute values via `contextBudget`.
 
-// fixed estimates for tool schema + framing overhead
+//fixed estimates for tool schema + framing overhead
 // (chars/4 surrogate). Keeps inspect cheap; revisit if a real
 // tokenizer lands or registry grows substantially.
 const ESTIMATED_TOOLS_OVERHEAD_TOKENS = 3_000;
 const ESTIMATED_OTHER_OVERHEAD_TOKENS = 500;
 
-// `pickModelMaxTokens` (heuristic) was replaced by the typed
-// `pickModelContextProfile()` in `contextWindowRegistry.ts`.
+// `pickModelMaxTokens` (heuristic) was replaced
+// by the typed `pickModelContextProfile()` in `contextWindowRegistry.ts`.
 // All callers now read modelMaxTokens + thresholds from the registry.
 
-// Bounded chars/4 estimate of dialog tokens from persisted messages.
-// Used as a fallback when runtime token usage is unavailable (DO cold
-// start / post-deploy reset wipes `_sessionTok`/`_taskTok`).
+// §A — bounded chars/4 estimate of dialog tokens from persisted
+// messages. Used as a fallback when runtime token usage is unavailable
+// (DO cold start / post-deploy reset wipes `_sessionTok`/`_taskTok`).
 // Bounded:
 //   - last 60 messages only (matches the dialog-turn budget elsewhere);
 //   - per-message text capped to 8000 chars before estimation, so a
@@ -592,7 +594,7 @@ const DIALOG_PREVIEW_SUFFIX_RE = /\(\+\d+ chars?\)/;
 const DIALOG_LOOP_LAST_MSG_RE = /(^|\n)\[last msg\]\s/;
 
 function buildWorkspaceSnapshot(input: {
-  agentThursdayState: AgentThursdayState;
+  agentthursdayState: AgentThursdayState;
   cliSession: CliSession;
   loopReview: DeveloperLoopReview;
   approvalPolicy: ApprovalPolicy;
@@ -615,7 +617,7 @@ function buildWorkspaceSnapshot(input: {
   // text that followed it (or null if tool-only). The route handler
   // calls `getDialogTurns()`; this builder matches each
   // `task.submitted` event to a turn by `userText` so pairing is
-  // robust to event_log's 20-row cap (v1 used index-based
+  // robust to event_log's 20-row cap (153z4 v1 used index-based
   // pairing and misaligned in production).
   dialogTurns: { userText: string; assistantText: string | null }[];
   // independent `task.submitted` event window (60 newest
@@ -624,15 +626,21 @@ function buildWorkspaceSnapshot(input: {
   // Optional for backwards compatibility; falls back to eventLog
   // filter when omitted.
   taskSubmittedEvents?: EventLogRow[];
+  // newest-first `task.reply.finalized` events. Each one
+  // carries the bounded user-visible reply (post truthfulness gate /
+  // supplier marker / 156g1 ack / 120 pause append) so the Web
+  // `summaryStream` can render the same warning-bearing text Discord
+  // and CLI receive. Optional for back-compat with older callers.
+  taskReplyFinalizedEvents?: EventLogRow[];
 }): WorkspaceSnapshot {
-  const { agentThursdayState, cliSession, loopReview, approvalPolicy, pendingToolApproval, debugTrace, deliverableGate, pendingMutations, eventLog, lastResetAt, activeContextId, dialogTurns, taskSubmittedEvents } = input;
+  const { agentthursdayState, cliSession, loopReview, approvalPolicy, pendingToolApproval, debugTrace, deliverableGate, pendingMutations, eventLog, lastResetAt, activeContextId, dialogTurns, taskSubmittedEvents, taskReplyFinalizedEvents } = input;
   const eventLogCount = eventLog.length;
   const now = Date.now();
 
   const session: SessionView = {
     sessionId: cliSession.sessionId,
     instanceName: cliSession.instanceName,
-    agentState: agentThursdayState.status,
+    agentState: agentthursdayState.status,
     loopStage: cliSession.loopStage,
     autoContinue: cliSession.autoContinue,
   };
@@ -699,7 +707,7 @@ function buildWorkspaceSnapshot(input: {
   //      naturally interleaves them as YOU → AGT → YOU → AGT.
   //
   //      149e3 (clean YOU display), 149e3a (multi-text-part
-  //      aggregation) defensive filter (no SUM),
+  //      aggregation), 153z2 defensive filter, 156d (no SUM),
   //      149c reset boundary — all preserved.
   // prefer the independent `task.submitted` window when
   // the route passed it (60 newest), so the dialog isn't capped by
@@ -712,6 +720,26 @@ function buildWorkspaceSnapshot(input: {
     .filter((r) => r.event_type === "task.submitted" && r.created_at > lastResetAt)
     .sort((a, b) => a.created_at - b.created_at)
     .slice(-60);
+  // index `task.reply.finalized` events by `taskId` so the
+  // pairing loop below can prefer the warning-bearing user-visible
+  // reply over the SDK message log's raw assistant text. Keep the
+  // newest finalized event per task (multiple submits per task should
+  // not happen, but the resolved event is whichever came latest).
+  const finalReplySource: EventLogRow[] = taskReplyFinalizedEvents
+    ?? eventLog.filter((r) => r.event_type === "task.reply.finalized");
+  const finalReplyByTaskId = new Map<string, string>();
+  for (const r of finalReplySource) {
+    if (r.event_type !== "task.reply.finalized") continue;
+    if (r.created_at <= lastResetAt) continue;
+    try {
+      const p = JSON.parse(r.payload) as { taskId?: unknown; replyText?: unknown };
+      if (typeof p.taskId !== "string") continue;
+      if (typeof p.replyText !== "string") continue;
+      const existing = finalReplyByTaskId.get(p.taskId);
+      // Newest wins; events are newest-first in `finalReplySource`.
+      if (existing === undefined) finalReplyByTaskId.set(p.taskId, p.replyText);
+    } catch { /* skip malformed payload */ }
+  }
   const consumed: boolean[] = new Array(dialogTurns.length).fill(false);
   let lastEventHadAgt = false;
   for (let i = 0; i < userTaskEvents.length; i++) {
@@ -744,8 +772,18 @@ function buildWorkspaceSnapshot(input: {
     const isLastEvent = i === userTaskEvents.length - 1;
     if (matchIdx >= 0) {
       consumed[matchIdx] = true;
-      const at = dialogTurns[matchIdx].assistantText;
-      if (at !== null) {
+      // prefer the finalized user-visible reply (which
+      // includes truthfulness gate / supplier degradation prepends
+      // and the 156g1 ack / 120 pause append) over the SDK message
+      // log's raw assistant text. The two are otherwise identical
+      // when no warning fired, so this is safe even on quiet rounds.
+      // Falls back to the dialogTurns text when no finalized event
+      // exists (older rounds before the event was logged, or
+      // tool-only turns where finalize was skipped).
+      const finalReply = (taskId !== null) ? finalReplyByTaskId.get(taskId) : undefined;
+      const rawAt = dialogTurns[matchIdx].assistantText;
+      const at = finalReply ?? rawAt;
+      if (at !== null && at !== undefined) {
         summaryStream.push({
           id: `assistant-${taskId ?? row.created_at}-${matchIdx}`,
           kind: "assistant",
@@ -765,8 +803,8 @@ function buildWorkspaceSnapshot(input: {
   // (legacy behavior for fresh DOs). Once reset is in the log,
   // synthetic items only re-emerge after real post-reset activity
   // bumps an anchor.
-  const taskAnchor = agentThursdayState.currentTaskObject?.updatedAt ?? 0;
-  const actionAnchor = agentThursdayState.lastActionResult?.recordedAt ?? 0;
+  const taskAnchor = agentthursdayState.currentTaskObject?.updatedAt ?? 0;
+  const actionAnchor = agentthursdayState.lastActionResult?.recordedAt ?? 0;
   const syntheticAnchor = Math.max(taskAnchor, actionAnchor);
   const allowSyntheticFallback = lastResetAt === 0 && syntheticAnchor === 0;
   const syntheticAt = syntheticAnchor > 0
@@ -775,7 +813,7 @@ function buildWorkspaceSnapshot(input: {
       ? now
       : null;
 
-  // fallback for "latest user round has no assistant text yet".
+  // 2b — fallback for "latest user round has no assistant text yet".
   //      Fires only when the most recent `task.submitted` event
   //      didn't get a non-null `assistantText` from `dialogTurns`
   //      (either no matching turn at all, or the turn was
@@ -783,12 +821,12 @@ function buildWorkspaceSnapshot(input: {
   //      dialog shows something for the trailing user turn instead
   //      of a blank gap.
   //
-  //       had a 2a→2b chain; 153z4a drops the redundant
+  //      had a 2a→2b chain; 153z4a drops the redundant
   //      pre-2a single-AGT push because the turn-aware loop above
   //      already emits the latest assistant from message log when
   //      one exists.
   if (!lastEventHadAgt && userTaskEvents.length > 0) {
-    const lar = agentThursdayState.lastActionResult;
+    const lar = agentthursdayState.lastActionResult;
     if (lar && lar.summary && lar.recordedAt > lastResetAt) {
       summaryStream.push({
         id: `assistant-action-${lar.recordedAt}`,
@@ -799,7 +837,7 @@ function buildWorkspaceSnapshot(input: {
     }
   }
 
-  // REMOVED in .
+  // 2c — REMOVED in .
   //
   // Background: 153z added `loopReview.summary` as a final AGT
   // fallback so flows with no real assistant text would still show
@@ -884,7 +922,7 @@ function buildWorkspaceSnapshot(input: {
     pendingApproval = {
       id: `mutation-${m.id}`,
       kind: "mutation",
-      reason: `Workflow mutation requires confirmation: ${m.mutation_type}`,
+      reason: `Kanban mutation requires confirmation: ${m.mutation_type}`,
       diffSnippet: `${m.description}\n${m.diff_hint}`.slice(0, 600),
       cardRef: m.card_ref || null,
       mutationId: m.id,
@@ -893,11 +931,11 @@ function buildWorkspaceSnapshot(input: {
   }
 
   let replyNeed: WorkspaceSnapshot["replyNeed"] = null;
-  if (agentThursdayState.waitingForHuman && agentThursdayState.pendingHelpRequest) {
-    const hr = agentThursdayState.pendingHelpRequest;
+  if (agentthursdayState.waitingForHuman && agentthursdayState.pendingHelpRequest) {
+    const hr = agentthursdayState.pendingHelpRequest;
     replyNeed = {
       question: `${hr.whyBlocked}\n\nNeeded: ${hr.neededFromHuman}`,
-      sinceAt: agentThursdayState.updatedAt,
+      sinceAt: agentthursdayState.updatedAt,
     };
   }
 
@@ -910,8 +948,8 @@ function buildWorkspaceSnapshot(input: {
       textSummary: deliverableGate.deliverable.resultSummary,
       createdAt: deliverableGate.deliverable.producedAt ?? now,
     };
-  } else if (agentThursdayState.lastActionResult) {
-    const ar = agentThursdayState.lastActionResult;
+  } else if (agentthursdayState.lastActionResult) {
+    const ar = agentthursdayState.lastActionResult;
     latestResult = {
       id: `actionResult-${ar.recordedAt}`,
       kind: "actionResult",
@@ -1040,7 +1078,7 @@ function buildM4TuiWorkflowDemo(session: CliSession, loopReview: DeveloperLoopRe
 
 
 export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
-  private readonly defaultAgentThursdayState: AgentThursdayState = {
+  private readonly defaultAgentthursdayState: AgentThursdayState = {
     agentId: "default",
     project: "AgentThursday",
     status: "idle",
@@ -1067,11 +1105,11 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   private _taskTok = { taskId: null as string | null, in: 0, out: 0, total: 0 };
   private _lastStepModel: { provider: string; modelId: string } | null = null;
   private _lastStepIn: number | null = null;
-  // supplier-side degradation signal collector for the
+  //supplier-side degradation signal collector for the
   // current submitTask round. Reset at the top of submitTask, populated by
   // onStepFinish + onError, read at reply finalization.
   private _currentTaskSupplierSignals: SupplierTaskSignals = emptySupplierTaskSignals();
-  //  truthfulness verdict for the same round, so
+  //truthfulness verdict for the same round, so
   // the `supplier.signal.summary` event_log row can include
   // `truthfulnessViolationSeen` + `truthfulnessCategory` without changing
   // applyTruthfulnessGate's user-visible behavior. Reset at submitTask top.
@@ -1123,19 +1161,41 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       this._sessionTok = { in: this._sessionTok.in + inp, out: this._sessionTok.out + out, total: this._sessionTok.total + tot, hasData: true };
       this._lastStepIn = inp;
     }
-    const currentTaskId = this.agentThursdayState.currentTaskObject?.id ?? null;
+    const currentTaskId = this.agentthursdayState.currentTaskObject?.id ?? null;
     if (this._taskTok.taskId !== currentTaskId) {
       this._taskTok = { taskId: currentTaskId, in: 0, out: 0, total: 0 };
     }
     if (inp > 0 || out > 0) {
       this._taskTok = { ...this._taskTok, in: this._taskTok.in + inp, out: this._taskTok.out + out, total: this._taskTok.total + tot };
     }
-    if (ctx.model) this._lastStepModel = { provider: ctx.model.provider, modelId: ctx.model.modelId };
+    if (ctx.model) {
+      this._lastStepModel = { provider: ctx.model.provider, modelId: ctx.model.modelId };
+      // also persist the observation so the resolver
+      // survives DO hibernation / isolate resets. `_lastStepModel` is
+      // an in-memory cache; without persistence, a hibernate cycle
+      // wipes it and `contextBudget` falls back to the configured
+      // `stub-concise` placeholder, dropping the rail's window from
+      // the real model's 256K back to the DEFAULT 128K. We write to
+      // the dedicated `lastObservedModel` slot, NOT `modelProfile`,
+      // so `setModelProfile` semantics and the configured/observed
+      // distinction stay intact.
+      const observed: ModelProfile = { provider: ctx.model.provider, model: ctx.model.modelId };
+      const prevObserved = this.agentthursdayState.lastObservedModel ?? null;
+      if (
+        !prevObserved
+        || prevObserved.provider !== observed.provider
+        || prevObserved.model !== observed.model
+      ) {
+        try {
+          this.setAgentthursdayState({ ...this.agentthursdayState, lastObservedModel: observed });
+        } catch { /* fail-soft: state write must never break the step loop */ }
+      }
+    }
 
-    // capture supplier-side step signal for the current
+    //capture supplier-side step signal for the current
     // submitTask round. Wrapped in try/catch so a malformed StepContext
-    // shape never breaks the main step loop (workflow: fail-soft).
-    //  extends this with optional tool-call / tool-result names so
+    // shape never breaks the main step loop (kanban: fail-soft).
+    // extends this with optional tool-call / tool-result names so
     // the persisted summary event has grep-friendly identifiers, not just
     // counts. Names are capped at the call site to keep payload bounded.
     try {
@@ -1164,7 +1224,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     } catch { /* fail-soft: never block the step loop on signal collection */ }
   }
 
-  // capture stream-truncated / finish_reason regression
+  //capture stream-truncated / finish_reason regression
   // errors raised by the model adapter. The saga's specific symptom on
   // the Llama family was workers-ai-provider's flush() rejecting on
   // missing finish_reason. We never store the raw error string in state —
@@ -1190,7 +1250,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       }
     } catch { /* fail-soft */ }
 
-    // Preserve Agent/Think default error semantics.  detection must
+    // Preserve Agent/Think default error semantics. detection must
     // be fail-soft, but it must not accidentally swallow unrelated server or
     // websocket errors.
     return arguments.length >= 2
@@ -1220,9 +1280,9 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     };
   }
 
-  private get agentThursdayState(): AgentThursdayState { return this.getConfig() ?? this.defaultAgentThursdayState; }
-  private setAgentThursdayState(s: AgentThursdayState): void { this.configure(s); }
-  // model dispatch discriminator.
+  private get agentthursdayState(): AgentThursdayState { return this.getConfig() ?? this.defaultAgentthursdayState; }
+  private setAgentthursdayState(s: AgentThursdayState): void { this.configure(s); }
+  //model dispatch discriminator.
   // Findings so far:
   // - gpt-oss 120b/20b, GLM, Kimi, and Llama Scout can emit raw/inline function JSON.
   // - Fresh DO with Llama Scout still fabricated inline execute JSON instead of framework tool_call.
@@ -1249,7 +1309,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
           const s = this.getSafeState();
           const knowledge = this.readKnowledge();
           const ar: ActionResult = { actionType: "review-project-status", outcome: "success", summary: `task: ${(s.currentTask ?? "none").slice(0, 80)}`, recordedAt: Date.now() };
-          this.setAgentThursdayState({ ...this.agentThursdayState, lastActionResult: ar, updatedAt: Date.now() });
+          this.setAgentthursdayState({ ...this.agentthursdayState, lastActionResult: ar, updatedAt: Date.now() });
           this.logEvent("tool.review_project_status", { task: s.currentTask });
           return { status: s.status, currentTask: s.currentTask, lastCheckpoint: s.lastCheckpoint, knowledge };
         },
@@ -1260,9 +1320,9 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
         execute: async (input) => {
           const k = input.key ?? `checkpoint-${Date.now().toString(36)}`;
           this.sql`INSERT INTO checkpoints (key, content, source, created_at) VALUES (${k}, ${input.content}, 'tool', ${Date.now()})`;
-          const checkpoint = `step:${Date.now()}:${(this.agentThursdayState.currentTask ?? "task").slice(0, 30).replace(/\s+/g, "-")}`;
+          const checkpoint = `step:${Date.now()}:${(this.agentthursdayState.currentTask ?? "task").slice(0, 30).replace(/\s+/g, "-")}`;
           const ar: ActionResult = { actionType: "write-checkpoint", outcome: "success", summary: input.content.slice(0, 120), recordedAt: Date.now() };
-          this.setAgentThursdayState({ ...this.agentThursdayState, lastCheckpoint: checkpoint, lastActionResult: ar, status: "idle", updatedAt: Date.now() });
+          this.setAgentthursdayState({ ...this.agentthursdayState, lastCheckpoint: checkpoint, lastActionResult: ar, status: "idle", updatedAt: Date.now() });
           this.logEvent("tool.write_checkpoint", { key: k, checkpoint });
           return { ok: true, key: k, checkpoint };
         },
@@ -1273,13 +1333,13 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
         execute: async (input) => {
           this.sql`INSERT INTO review_notes (content, source, created_at) VALUES (${input.content}, 'tool', ${Date.now()})`;
           const ar: ActionResult = { actionType: "review-note", outcome: "success", summary: input.content.slice(0, 120), recordedAt: Date.now() };
-          this.setAgentThursdayState({ ...this.agentThursdayState, lastActionResult: ar, updatedAt: Date.now() });
+          this.setAgentthursdayState({ ...this.agentthursdayState, lastActionResult: ar, updatedAt: Date.now() });
           this.logEvent("tool.review_note", { contentSnippet: input.content.slice(0, 100) });
           return { ok: true };
         },
       }),
       advance_kanban_card: tool({
-        description: "推进当前任务卡，记录推进结果（需要人类确认）",
+        description: "推进当前 kanban 卡，记录推进结果（需要人类确认）",
         inputSchema: z.object({
           card_ref: z.string().describe("卡片引用，如 card-55"),
           description: z.string().describe("推进描述"),
@@ -1288,8 +1348,8 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
         needsApproval: true,
         execute: async (input) => {
           this.sql`INSERT INTO kanban_mutations (card_ref, mutation_type, description, diff_hint, created_at) VALUES (${input.card_ref}, ${"status-advance"}, ${input.description}, ${input.diff_hint}, ${Date.now()})`;
-          const ar: ActionResult = { actionType: "advance-kanban-card", outcome: "success", summary: `workflow mutation recorded — ${input.card_ref}: ${input.description.slice(0, 80)}`, recordedAt: Date.now() };
-          this.setAgentThursdayState({ ...this.agentThursdayState, lastActionResult: ar, updatedAt: Date.now() });
+          const ar: ActionResult = { actionType: "advance-kanban-card", outcome: "success", summary: `kanban mutation recorded — ${input.card_ref}: ${input.description.slice(0, 80)}`, recordedAt: Date.now() };
+          this.setAgentthursdayState({ ...this.agentthursdayState, lastActionResult: ar, updatedAt: Date.now() });
           this.logEvent("tool.advance_kanban_card", { cardRef: input.card_ref, descriptionSnippet: input.description.slice(0, 80) });
           return { ok: true, card_ref: input.card_ref };
         },
@@ -1311,7 +1371,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return { ...base, execute: async (input: any, opts: any) => {
           const tier = (this._bundledModules && Object.keys(this._bundledModules).length > 0) ? 2 : 1;
-          //  Track B-3 — capped code preview for trace analysis.
+          // Track B-3 — capped code preview for trace analysis.
           // CodeInput shape is `{ code: string }` per `@cloudflare/codemode/shared`.
           const codePreview = typeof input?.code === "string" ? (input.code as string).slice(0, 200) : null;
           this.logEvent("tool.execute", {
@@ -1323,19 +1383,65 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
         } };
       })(),
       sandbox_exec: tool({
-        description: "Tier 4 — container sandbox: execute a shell command in a full OS environment. Use ONLY for tasks that require toolchains (Python, Go, Rust), package managers (apt, pip, npm install), repo-level builds, or long-running processes. Do NOT use for JS/TS logic or file I/O (use execute or workspace tools instead).",
+        description: "Tier 4 — container sandbox: execute a shell command in a full OS environment. The cloud agent does NOT have a local repo checkout — Tier 0 read/write/list/edit operates on the agent's scratch workspace (drafts, artifacts, intermediate files), it is NOT the AgentThursday source tree. To read project source, use Content Sources (content_list/content_read/content_search) or, when you need full repo state, `git clone` inside this sandbox. Use Tier 4 for: real toolchains, repo build/test, authorized git clone, and any long-running process. Preinstalled by the sandbox Dockerfile: git, curl, ca-certificates, jq, python3, ripgrep (`rg`); the base image also provides bash and the standard POSIX utilities (find, coreutils). `pip` / `python3-pip` is NOT preinstalled; if you genuinely need it run `apt-get install -y python3-pip` inside the sandbox with a generous `timeout_seconds` and accept that it may return `timed_out:true` on slow networks. `timeout_seconds` defaults to 120, clamped to [5, 300]; on timeout the call returns `{ success:false, timed_out:true, exit_code:124 }` so the loop releases without hanging on a stuck install.",
         inputSchema: z.object({
           command: z.string().describe("Shell command to execute"),
-          sandbox_id: z.string().optional().describe("Sandbox instance ID (default: 'agent-thursday')"),
+          sandbox_id: z.string().optional().describe("Sandbox instance ID (default: 'agentthursday')"),
+          timeout_seconds: z.number().int().min(5).max(300).optional().describe("Max wall-clock seconds before the call returns timed_out=true (clamped to [5, 300]; default 120)"),
         }),
         execute: async (input) => {
-          this.logEvent("tool.sandbox_exec", { tier: 4, command_preview: input.command.slice(0, 80), reason: "container OS execution", sandbox_id: input.sandbox_id ?? "agent-thursday" });
-          const sandbox = getSandbox(this.env.Sandbox, input.sandbox_id ?? "agent-thursday");
-          const result = await sandbox.exec(input.command);
-          return { stdout: result.stdout, stderr: result.stderr, exit_code: result.exitCode, success: result.success };
+          // bound the await on `sandbox.exec()` so a stuck
+          // command (most often `apt-get update` on flaky DNS) can't
+          // pin the agent loop. We can't reliably kill the underlying
+          // sandbox process from here — Promise.race releases our
+          // await; the sandbox may still finish its work in the
+          // background, but the agent gets a structured failure now
+          // and can move on.
+          const TIMEOUT_DEFAULT_SECONDS = 120;
+          const TIMEOUT_MIN_SECONDS = 5;
+          const TIMEOUT_MAX_SECONDS = 300;
+          const requested = typeof input.timeout_seconds === "number"
+            ? input.timeout_seconds
+            : TIMEOUT_DEFAULT_SECONDS;
+          const timeoutSeconds = Math.min(TIMEOUT_MAX_SECONDS, Math.max(TIMEOUT_MIN_SECONDS, Math.floor(requested)));
+          this.logEvent("tool.sandbox_exec", {
+            tier: 4,
+            command_preview: input.command.slice(0, 80),
+            reason: "container OS execution",
+            sandbox_id: input.sandbox_id ?? "agentthursday",
+            timeout_seconds: timeoutSeconds,
+          });
+          const sandbox = getSandbox(this.env.Sandbox, input.sandbox_id ?? "agentthursday");
+          const TIMEOUT_SENTINEL = Symbol.for("sandbox_exec_timeout");
+          const timeoutPromise = new Promise<typeof TIMEOUT_SENTINEL>((resolve) => {
+            setTimeout(() => resolve(TIMEOUT_SENTINEL), timeoutSeconds * 1000);
+          });
+          let raced: unknown;
+          try {
+            raced = await Promise.race([sandbox.exec(input.command), timeoutPromise]);
+          } catch (e) {
+            return {
+              stdout: "",
+              stderr: `sandbox_exec error: ${e instanceof Error ? e.message.slice(0, 200) : String(e).slice(0, 200)}`,
+              exit_code: 1,
+              success: false,
+              timed_out: false,
+            };
+          }
+          if (raced === TIMEOUT_SENTINEL) {
+            return {
+              stdout: "",
+              stderr: `sandbox_exec timed out after ${timeoutSeconds}s`,
+              exit_code: 124,
+              success: false,
+              timed_out: true,
+            };
+          }
+          const result = raced as { stdout: string; stderr: string; exitCode: number; success: boolean };
+          return { stdout: result.stdout, stderr: result.stderr, exit_code: result.exitCode, success: result.success, timed_out: false };
         },
       }),
-      // ── Agent Memory v1 (model-facing) ─────────────────────
+      // ──Agent Memory v1 (model-facing) ─────────────────────
       remember: tool({
         description: "Store a durable memory (fact / instruction / event / task). Use for stable knowledge worth recalling later (e.g. 'project uses GraphQL', 'when X, do Y'). Provide `key` for facts/instructions to enable supersession on update. DO NOT store secrets or transient noise. See docs/design/agent-memory-v1.md.",
         inputSchema: z.object({
@@ -1360,8 +1466,8 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
           // 200-char slice + whitespace collapse caps blast radius).
           const ackText = `已记下：${input.content.replace(/\s+/g, " ").trim().slice(0, 200)}`;
           this._currentTaskRememberAck = ackText;
-          const stateNow = this.agentThursdayState;
-          this.setAgentThursdayState({
+          const stateNow = this.agentthursdayState;
+          this.setAgentthursdayState({
             ...stateNow,
             lastActionResult: {
               actionType: "memory.remember",
@@ -1385,7 +1491,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
           return this.recallMemory(input);
         },
       }),
-      //  mitigation 1: temporarily hide low-priority
+      // mitigation 1: temporarily hide low-priority
       // memory management tools from the LLM tool spec to test the Kimi
       // tool-count/description-size threshold hypothesis. DO callables
       // remain available for API/inspect paths; only model-facing tools
@@ -1412,11 +1518,11 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
           }
         },
       }),
-      // ── ContentHub external source tools ──────────────
+      // ──ContentHub external source tools ──────────────
       // These are NOT Tier 0 workspace tools. They access **external**
       // Content Sources (currently only `agentthursday-github`) via the
-      // ContentHubAgent DO.  SOUL prompt covers usage rules;
-      //  will add `content_search`.
+      // ContentHubAgent DO. SOUL prompt covers usage rules;
+      // will add `content_search`.
       content_sources: tool({
         description: "List the external Content Sources currently registered (e.g. agentthursday-github). Use this when you need to discover which sources are available before reading. NOT a Tier 0 workspace tool — for your own scratch files use `read`/`list`.",
         inputSchema: z.object({
@@ -1431,7 +1537,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
           // propagate the current task id as audit trace id so
           // ContentHubAgent.audit_log rows can be correlated with the
           // AgentThursdayAgent event_log task.submitted entry that triggered them.
-          const traceId = this.agentThursdayState.currentTaskObject?.id ?? null;
+          const traceId = this.agentthursdayState.currentTaskObject?.id ?? null;
           return await stub.getSources({ includeHealth: input.includeHealth }, traceId);
         },
       }),
@@ -1448,7 +1554,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
             this.env.ContentHubAgent as unknown as AgentNamespace<ContentHubAgent>,
             CONTENT_HUB_INSTANCE,
           );
-          const traceId = this.agentThursdayState.currentTaskObject?.id ?? null;
+          const traceId = this.agentthursdayState.currentTaskObject?.id ?? null;
           return await stub.list({ sourceId: input.sourceId, path: input.path, ref: input.ref }, traceId);
         },
       }),
@@ -1466,11 +1572,11 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
             this.env.ContentHubAgent as unknown as AgentNamespace<ContentHubAgent>,
             CONTENT_HUB_INSTANCE,
           );
-          const traceId = this.agentThursdayState.currentTaskObject?.id ?? null;
+          const traceId = this.agentthursdayState.currentTaskObject?.id ?? null;
           return await stub.read({ sourceId: input.sourceId, path: input.path, ref: input.ref, maxBytes: input.maxBytes }, traceId);
         },
       }),
-      // ── ContentHub literal search ────────────────────
+      // ──ContentHub literal search ────────────────────
       // Default `api-search` strategy uses GitHub Code Search and is
       // fail-loud on quota exhaustion: error.code="quota-exhausted" with
       // fallbackAvailable=true and a hint to retry with `bounded-local`.
@@ -1478,7 +1584,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       // explicitly with `strategy:"bounded-local"` if it wants partial
       // coverage from cached/listed content.
       content_search: tool({
-        description: "Search Content Source(s) for a literal pattern. Provide EITHER `sourceId` (single source, hits in `result.hits[]`) OR `sourceIds: string[]` ( multi-source fan-out, results grouped in `result.perSource[]` with per-source `ok/hits/errorCode/latencyMs`; top-level `hits` is empty stub in this mode). Sources whose `capabilities.search` is not true (e.g. `local-fs`) return per-source `errorCode:\"capability-not-supported\"` rather than silently skipping. Default strategy `api-search` uses GitHub Code Search (fail-loud on quota — see error.fallbackHint). Pass `strategy:'bounded-local'` for a degraded grep over cached/listed content; the result then carries `searchMode:'degraded-grep'` + `searchCoverage:'partial'` + `searchedPaths` + `omittedReason` and MUST NOT be cited as authoritative. Hits include path, revision, line (when known), and a preview snippet.",
+        description: "Search Content Source(s) for a literal pattern. Provide EITHER `sourceId` (single source, hits in `result.hits[]`) OR `sourceIds: string[]` (multi-source fan-out, results grouped in `result.perSource[]` with per-source `ok/hits/errorCode/latencyMs`; top-level `hits` is empty stub in this mode). Sources whose `capabilities.search` is not true (e.g. `local-fs`) return per-source `errorCode:\"capability-not-supported\"` rather than silently skipping. Default strategy `api-search` uses GitHub Code Search (fail-loud on quota — see error.fallbackHint). Pass `strategy:'bounded-local'` for a degraded grep over cached/listed content; the result then carries `searchMode:'degraded-grep'` + `searchCoverage:'partial'` + `searchedPaths` + `omittedReason` and MUST NOT be cited as authoritative. Hits include path, revision, line (when known), and a preview snippet.",
         inputSchema: z.object({
           sourceId: z.string().min(1).optional().describe("Single-source mode: id of the Content Source (e.g. 'agentthursday-github'). Mutually exclusive with `sourceIds`."),
           sourceIds: z.array(z.string().min(1)).min(1).max(10).optional().describe("Multi-source fan-out mode: list of source ids to query in parallel. Mutually exclusive with `sourceId`. Results grouped by source in `result.perSource[]`."),
@@ -1505,7 +1611,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
             this.env.ContentHubAgent as unknown as AgentNamespace<ContentHubAgent>,
             CONTENT_HUB_INSTANCE,
           );
-          const traceId = this.agentThursdayState.currentTaskObject?.id ?? null;
+          const traceId = this.agentthursdayState.currentTaskObject?.id ?? null;
           return await stub.search({
             sourceId: input.sourceId,
             sourceIds: input.sourceIds,
@@ -1517,9 +1623,9 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
           }, traceId);
         },
       }),
-      // ── agent-facing conversation archive search ────
+      // ──agent-facing conversation archive search ────
       // The `conversationSearch()` callable + `/cli/context/conversation/search`
-      // route already exist () and live on the registry DO
+      // route already exist (Cards 151/152) and live on the registry DO
       // (DEMO_INSTANCE) where the `conversation_archive` table lives. This
       // wrapper exposes the same retrieval to the model so user questions
       // like "4 月 28 那天我们聊了什么" or "之前 Kimi 模型那段最后怎么定的"
@@ -1537,7 +1643,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
           snippetCap: z.number().int().positive().max(2000).optional().describe("Max snippet length per hit (default 300)."),
         }),
         execute: async (input) => {
-          const traceId = this.agentThursdayState.currentTaskObject?.id ?? undefined;
+          const traceId = this.agentthursdayState.currentTaskObject?.id ?? undefined;
           const callerContextId = this.name;
           this.logEvent("tool.conversation_search", {
             queryPreview: input.query.slice(0, 80),
@@ -1568,21 +1674,21 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
 
   private getSafeState(): AgentThursdayState {
     return {
-      ...this.defaultAgentThursdayState,
-      ...this.agentThursdayState,
-      currentTask: this.agentThursdayState.currentTask ?? null,
-      currentTaskObject: this.agentThursdayState.currentTaskObject ?? null,
-      lastCheckpoint: this.agentThursdayState.lastCheckpoint ?? null,
-      committedAction: this.agentThursdayState.committedAction ?? null,
-      currentObstacle: this.agentThursdayState.currentObstacle ?? null,
-      pendingHelpRequest: this.agentThursdayState.pendingHelpRequest ?? null,
-      lastHumanResponse: this.agentThursdayState.lastHumanResponse ?? null,
-      waitingForHuman: this.agentThursdayState.waitingForHuman ?? false,
-      resumeTrigger: this.agentThursdayState.resumeTrigger ?? null,
-      recoveryPolicy: this.agentThursdayState.recoveryPolicy ?? this.defaultAgentThursdayState.recoveryPolicy,
-      lastActionResult: this.agentThursdayState.lastActionResult ?? null,
-      runtimeMode: this.agentThursdayState.runtimeMode ?? this.defaultAgentThursdayState.runtimeMode,
-      updatedAt: this.agentThursdayState.updatedAt ?? Date.now(),
+      ...this.defaultAgentthursdayState,
+      ...this.agentthursdayState,
+      currentTask: this.agentthursdayState.currentTask ?? null,
+      currentTaskObject: this.agentthursdayState.currentTaskObject ?? null,
+      lastCheckpoint: this.agentthursdayState.lastCheckpoint ?? null,
+      committedAction: this.agentthursdayState.committedAction ?? null,
+      currentObstacle: this.agentthursdayState.currentObstacle ?? null,
+      pendingHelpRequest: this.agentthursdayState.pendingHelpRequest ?? null,
+      lastHumanResponse: this.agentthursdayState.lastHumanResponse ?? null,
+      waitingForHuman: this.agentthursdayState.waitingForHuman ?? false,
+      resumeTrigger: this.agentthursdayState.resumeTrigger ?? null,
+      recoveryPolicy: this.agentthursdayState.recoveryPolicy ?? this.defaultAgentthursdayState.recoveryPolicy,
+      lastActionResult: this.agentthursdayState.lastActionResult ?? null,
+      runtimeMode: this.agentthursdayState.runtimeMode ?? this.defaultAgentthursdayState.runtimeMode,
+      updatedAt: this.agentthursdayState.updatedAt ?? Date.now(),
     };
   }
 
@@ -1637,7 +1743,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
         created_at INTEGER NOT NULL
       )
     `;
-    // Agent Memory v1. Additive, idempotent. See
+    //Agent Memory v1. Additive, idempotent. See
     // docs/design/agent-memory-v1.md. Profile boundary = this DO.
     this.sql`
       CREATE TABLE IF NOT EXISTS agent_memories (
@@ -1655,9 +1761,9 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     `;
     this.sql`CREATE INDEX IF NOT EXISTS idx_agent_memories_type_active ON agent_memories(type, active)`;
     this.sql`CREATE INDEX IF NOT EXISTS idx_agent_memories_key ON agent_memories(key)`;
-    // v3  / 149 — context_history: one row per logical
-    // context (open or closed).  added the queries; the DDL was
-    // dropped during the  commit so a fresh DO would fail on
+    // / 149 — context_history: one row per logical
+    // context (open or closed). added the queries; the DDL was
+    // dropped during the commit so a fresh DO would fail on
     // first query. Carrying both DDLs forward together (idempotent).
     // The active context is now tracked separately via context_active
     // so switching back to a closed context can update the routing
@@ -1672,7 +1778,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       )
     `;
     this.sql`CREATE INDEX IF NOT EXISTS idx_context_history_ended ON context_history(ended_at)`;
-    // v3 single-row pointer to the registry's active
+    //single-row pointer to the registry's active
     // contextId. CHECK (id=1) enforces uniqueness so we can do
     // INSERT OR REPLACE without juggling multiple rows. Lives only on
     // the registry DO (DEMO_INSTANCE); per-context DOs create the table
@@ -1684,7 +1790,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
         activated_at INTEGER NOT NULL
       )
     `;
-    // Conversation Archive. The registry DO
+    //Conversation Archive. The registry DO
     // (DEMO_INSTANCE) is the canonical owner; per-context DOs run the
     // same DDL idempotently but never write to it (their reset path
     // RPCs the registry's `archiveChunks` callable, and the registry's
@@ -1693,7 +1799,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     //
     // `text` carries the original sanitized turn text (audit-quality);
     // `index_text` is an optional boilerplate-stripped variant for
-    // search index reuse.  stripBoilerplate is the source.
+    // search index reuse. stripBoilerplate is the source.
     this.sql`
       CREATE TABLE IF NOT EXISTS conversation_archive (
         chunk_id TEXT PRIMARY KEY,
@@ -1737,10 +1843,10 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       )
     `;
     this.sql`CREATE INDEX IF NOT EXISTS idx_archive_flushes_context ON conversation_archive_flushes(context_id)`;
-    // Conversation retrieval audit log. Records each
+    //Conversation retrieval audit log. Records each
     // `conversation_search` invocation: the (capped) query, filters,
     // returned refs (chunk_ids + their context_ids), and any caller-
-    // supplied trace/context/task identity.  will aggregate
+    // supplied trace/context/task identity. will aggregate
     // this log to score topics for memory promotion (frequency,
     // cross-context recurrence, used vs. returned).
     this.sql`
@@ -1758,11 +1864,11 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       )
     `;
     this.sql`CREATE INDEX IF NOT EXISTS idx_retrieval_log_created ON conversation_retrieval_log(created_at)`;
-    // context hygiene run audit. One row per
+    //context hygiene run audit. One row per
     // `runContextHygiene` invocation: trigger source, decision
     // (skipped|proposed|auto-applied|failed), risk gates that fired
     // (if any), pressure snapshot, before/after counts, and the
-    // archive flush id +  compact plan id when an auto-apply
+    // archive flush id + compact plan id when an auto-apply
     // happened. Lives on each per-context DO that ran hygiene on
     // itself; the registry isn't involved.
     this.sql`
@@ -1806,12 +1912,12 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     }
     const safeState = this.getSafeState();
     if (
-      safeState.recoveryPolicy !== this.agentThursdayState.recoveryPolicy ||
-      safeState.runtimeMode !== this.agentThursdayState.runtimeMode ||
-      safeState.waitingForHuman !== this.agentThursdayState.waitingForHuman ||
-      safeState.updatedAt !== this.agentThursdayState.updatedAt
+      safeState.recoveryPolicy !== this.agentthursdayState.recoveryPolicy ||
+      safeState.runtimeMode !== this.agentthursdayState.runtimeMode ||
+      safeState.waitingForHuman !== this.agentthursdayState.waitingForHuman ||
+      safeState.updatedAt !== this.agentthursdayState.updatedAt
     ) {
-      this.setAgentThursdayState(safeState);
+      this.setAgentthursdayState(safeState);
     }
     // Tier 2: pre-bundle npm modules for codemode sandbox. Degrade to {} on failure (Tier 1 fallback).
     try {
@@ -1838,7 +1944,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   }
 
   /**
-   *  → return up to `limit` most recent
+   * → 153z4a — return up to `limit` most recent
    * **user-anchored dialog turns** from the message log. Each turn
    * carries the user's text (aggregated text parts) and the
    * assistant text that followed it before the next user message
@@ -1932,7 +2038,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   //
   // Tool parts are NEVER included — `inputPreview` / `outputPreview`
   // are inspect-tab fields and must not leak into the main dialog
-  // (/c privacy contract;  forbidden patterns).
+  // (/c privacy contract; forbidden patterns).
   private getLastAssistantTextFull(): string {
     const msgs = this.getMessages();
     const lastAssistant = [...msgs].reverse().find(m => m.role === "assistant");
@@ -1999,7 +2105,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       const after = row.event_type.slice("tool.".length);
       const segments = after.split(".");
       let bareName = segments[0] ?? "";
-      //  Track B-1 — `tool.memory.<verb>` events use the "memory"
+      // Track B-1 — `tool.memory.<verb>` events use the "memory"
       // channel prefix but the model-facing tool name is the verb itself.
       // Map back so a real `recall` / `remember` dispatch correlates with
       // the matching claim in KNOWN_TOOL_NAMES.
@@ -2015,21 +2121,21 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       if (bareName) actualToolNames.add(bareName);
     }
 
-    //  Track B-4 — inline-JSON detection. A model that emits
+    // Track B-4 — inline-JSON detection. A model that emits
     // ```json blocks in plain text but never dispatches a tool is producing
     // a fabricated tool result outside the tool-call frame. Count fenced
     // JSON blocks so /api/inspect can classify the round even when the
     // bot's reply has no detectable claim.
     const fencedJsonCount = (text.match(/```json\b/gi) ?? []).length;
-    //  v3 (2026-04-30) — also count raw tool-call schema JSON in
-    // assistant text. Pattern observed live during  v3 demo: Kimi
+    // v3 (2026-04-30) — also count raw tool-call schema JSON in
+    // assistant text. Pattern observed live during v3 demo: Kimi
     // sporadically emits `{"type":"function","name":"<known-tool>",...}`
     // as plain text instead of going through the structured tool_calls
     // field. 's supplier marker doesn't catch this (toolCalls
     // structural field is empty + finishReason valid → no degradation
     // signal). Treat any raw schema occurrence with a known tool name
-    // as inline-JSON-without-dispatch evidence so  downgrades
-    // the task and  prepends a user-visible marker.
+    // as inline-JSON-without-dispatch evidence so downgrades
+    // the task and prepends a user-visible marker.
     let rawSchemaCount = 0;
     {
       // Count raw schemas outside fenced json blocks only, so a fenced
@@ -2056,8 +2162,8 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     const category: string = verdict.fabricated.length > 0 ? "fabricated-claim" : "inline-json-without-dispatch";
     this.logEvent("tool.truthfulness.violation", {
       taskId,
-      //  Track B-4 — `category` lets reviewers split fabricated
-      // tool-call claims (the original  case) from inline-JSON
+      // Track B-4 — `category` lets reviewers split fabricated
+      // tool-call claims (the original case) from inline-JSON
       // fabrications that slip past claim detection entirely.
       category,
       claimedTools: verdict.claims.map(c => c.tool),
@@ -2065,7 +2171,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       consistentTools: verdict.consistent,
       dispatchedToolNames,
       inlineJsonCount,
-      //  v3 — split fenced vs raw schema for diagnosis.
+      // v3 — split fenced vs raw schema for diagnosis.
       fencedJsonCount,
       rawSchemaCount,
       claimsCount: verdict.claims.length,
@@ -2073,15 +2179,15 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       mode: effectiveMode,
     });
 
-    // share verdict with the per-turn supplier summary
+    //share verdict with the per-turn supplier summary
     // event without changing user-visible behavior. Set BEFORE the early
     // returns below so log-only mode also persists the cross-link in
     // supplier.signal.summary.
     this._currentTaskTruthfulnessVerdict = { violationSeen: true, category };
 
     if (effectiveMode === "log-only") return text;
-    //  v3 — inline-JSON-without-dispatch also gets a user-visible
-    // marker now (previously log-only). Operator note: "这种错误应该抓到 downgrade".
+    // v3 — inline-JSON-without-dispatch also gets a user-visible
+    // marker now (previously log-only). operator: "这种错误应该抓到 downgrade".
     if (verdict.fabricated.length === 0) {
       const inlineWarning = renderInlineJsonWarning();
       return `${inlineWarning}\n\n${text}`;
@@ -2091,10 +2197,10 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return `${warning}\n\n${text}`;
   }
 
-  // supplier-side degradation marker. Reads the per-task
+  //supplier-side degradation marker. Reads the per-task
   // signal collector populated by onStepFinish + onError, asks the pure
   // helper for a verdict, prepends a ⚠️ line if degraded. Fail-soft per
-  // workflow: any throw inside detection/render returns the input text
+  // kanban: any throw inside detection/render returns the input text
   // unchanged so the main reply path can never break.
   private applySupplierDegradationMarker(text: string): string {
     if (!text || text.trim().length === 0) return text;
@@ -2108,7 +2214,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     }
   }
 
-  // persist a single per-turn `supplier.signal.summary`
+  //persist a single per-turn `supplier.signal.summary`
   // event_log row so reviewers can grep / inspect tool-decision path
   // signals after the fact. No prompts, no raw provider payloads, no
   // secrets, no raw error strings — only counts, enums, and bounded
@@ -2130,7 +2236,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       }));
       this.logEvent("supplier.signal.summary", {
         taskId,
-        //  convention — current task id doubles as cross-DO
+        // convention — current task id doubles as cross-DO
         // trace id elsewhere; keep null until a separate carrier exists.
         traceId: null,
         model: this._lastStepModel?.modelId ?? null,
@@ -2194,7 +2300,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
 
   @callable()
   async submitTask(task: string, opts?: { displayText?: string }): Promise<{ ok: boolean; taskId: string; loopTriggered: boolean; replyText: string }> {
-    // conversational resume from a prior `needs_human`
+    //conversational resume from a prior `needs_human`
     // pause. While paused, only explicit resume intents ("继续" /
     // "proceed" / "resume" / ...) may advance the current loop. Other
     // text receives a reminder and does NOT create a new task or call the
@@ -2211,11 +2317,11 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     //   - `isResumeIntent` is checked against `displayText` since
     //     resume keywords come from the human-visible content.
     // When omitted, `displayText` defaults to `task` and behavior is
-    // identical to .
+    // identical to pre-149e3.
     const display = opts?.displayText ?? task;
-    const wasWaitingForHuman = !!this.agentThursdayState.waitingForHuman;
+    const wasWaitingForHuman = !!this.agentthursdayState.waitingForHuman;
     const isExplicitResume = wasWaitingForHuman && isResumeIntent(display);
-    const prevTaskObj = this.agentThursdayState.currentTaskObject;
+    const prevTaskObj = this.agentthursdayState.currentTaskObject;
     if (wasWaitingForHuman && !isExplicitResume) {
       this.logEvent("loop.pause.awaiting_resume", {
         taskId: prevTaskObj?.id ?? null,
@@ -2241,9 +2347,9 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     // Explicit resume keeps the current paused task identity and does not
     // manufacture a new task titled "继续".
     const nextState = isExplicitResume || isResubmit
-      ? { ...this.agentThursdayState, currentTask: nextTaskTitle, currentTaskObject: taskObject, status: "running" as const, waitingForHuman: false, updatedAt: Date.now() }
-      : { ...this.agentThursdayState, currentTask: display, currentTaskObject: taskObject, status: "running" as const, waitingForHuman: false, lastActionResult: null, updatedAt: Date.now() };
-    this.setAgentThursdayState(nextState);
+      ? { ...this.agentthursdayState, currentTask: nextTaskTitle, currentTaskObject: taskObject, status: "running" as const, waitingForHuman: false, updatedAt: Date.now() }
+      : { ...this.agentthursdayState, currentTask: display, currentTaskObject: taskObject, status: "running" as const, waitingForHuman: false, lastActionResult: null, updatedAt: Date.now() };
+    this.setAgentthursdayState(nextState);
     if (isExplicitResume) {
       this.logEvent("loop.resume.needs_human", {
         taskId: taskObject.id,
@@ -2260,19 +2366,19 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     const taskSubmittedPayload: Record<string, unknown> = { task: display, taskId: taskObject.id, isResubmit };
     if (display !== task) taskSubmittedPayload.taskPrompt = task;
     this.logEvent("task.submitted", taskSubmittedPayload);
-    // snapshot message-log length BEFORE saveMessages so we
+    //snapshot message-log length BEFORE saveMessages so we
     // can collect ALL new assistant texts produced during this round, not
     // just the "last assistant message" ('s strategy lost results
     // when the model produced progress + tool call but no synthesis turn).
     const prevMsgLen = this.getMessages().length;
-    // truthfulness gate prep: snapshot timestamp BEFORE
+    //truthfulness gate prep: snapshot timestamp BEFORE
     // saveMessages so we can scope the "what tools actually dispatched in
     // THIS round" query to events emitted during the loop.
     const truthfulnessStartTs = Date.now();
-    // reset supplier-side signal collector for this round.
+    //reset supplier-side signal collector for this round.
     // Populated by onStepFinish + onError during saveMessages.
     this._currentTaskSupplierSignals = emptySupplierTaskSignals();
-    // reset truthfulness verdict for this round so a stale
+    //reset truthfulness verdict for this round so a stale
     // value from a previous turn never leaks into the supplier summary.
     this._currentTaskTruthfulnessVerdict = { violationSeen: false, category: null };
     // clear last round's remember ack so the fallback
@@ -2283,18 +2389,18 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       role: "user",
       parts: [{ type: "text", text: task }],
     }]);
-    // aggregate all assistant texts produced during this
+    //aggregate all assistant texts produced during this
     // submitTask round (replaces 's `getLastAssistantTextFull()`).
-    //  still in code as a fallback for inspect surfaces.
+    // still in code as a fallback for inspect surfaces.
     const rawReplyText = this.getNewAssistantTextsSince(prevMsgLen);
-    // tool-truthfulness gate. Detect tool-call claims in the
+    //tool-truthfulness gate. Detect tool-call claims in the
     // assistant text and cross-validate against `tool.*` events actually
     // logged during this round. Fabricated claims (claim without event) get
     // a warning line prepended to the user-visible reply + a structured
     // `tool.truthfulness.violation` event for inspect. Mode controlled by
     // env.AGENT_THURSDAY_TRUTHFULNESS_GATE: "warn" (default) | "log-only" | "off".
     const gatedReplyText = this.applyTruthfulnessGate(rawReplyText, truthfulnessStartTs, taskObject.id);
-    // supplier-side degradation marker. Coexists with Card
+    //supplier-side degradation marker. Coexists with Card
     // 102 (catches a different layer of failure: model/adapter signals
     // rather than user-facing claims). When both fire, the supplier marker
     // sits ABOVE the truthfulness marker so reviewers see the broader
@@ -2315,13 +2421,13 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     if ((!replyText || replyText.trim().length === 0) && this._currentTaskRememberAck) {
       replyText = this._currentTaskRememberAck;
     }
-    // persist per-turn supplier signal summary into
+    //persist per-turn supplier signal summary into
     // event_log so reviewers can grep / inspect tool-decision path
     // signals later without re-deploying diag endpoints. Fail-soft: the
     // helper swallows any throw so a logging glitch can't break the turn.
     this.logSupplierSignalSummary(taskObject.id);
-    // finalize currentTaskObject.status. Without this the
-    // object stays "active" forever,  readiness reports
+    //finalize currentTaskObject.status. Without this the
+    // object stays "active" forever, readiness reports
     // `lifecycle=active`, ChannelHub auto-route permanently busy-skips.
     // Map: completed/skipped → completed (the call returned cleanly);
     // anything else → failed (conservative; unknown is suspicious).
@@ -2332,11 +2438,11 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     // Re-read latest state — saveMessages can mutate it via tool calls.
     // Only finalize if currentTaskObject is still THIS submit; if another
     // submit raced us and overwrote it, leave the new object alone.
-    const latest = this.agentThursdayState;
+    const latest = this.agentthursdayState;
     const finalTaskObject = latest.currentTaskObject?.id === taskObject.id
       ? { ...latest.currentTaskObject, status: finalLifecycle, updatedAt: Date.now() }
       : latest.currentTaskObject;
-    this.setAgentThursdayState({
+    this.setAgentthursdayState({
       ...latest,
       status: "idle",
       currentTaskObject: finalTaskObject,
@@ -2348,10 +2454,10 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       saveMessagesStatus: result.status,
       stomped: latest.currentTaskObject?.id !== taskObject.id,
     });
-    // derive + persist per-task degradation summary.
+    //derive + persist per-task degradation summary.
     // Pure function call + single logEvent. Wrapped in try/catch so a
     // logging glitch can never break submitTask.
-    // when summary state === "needs_human" AND the
+    //when summary state === "needs_human" AND the
     // `AGENT_THURSDAY_PAUSE_ON_NEEDS_HUMAN` runtime gate is enabled, pause the
     // loop conversationally: append the pause message to replyText, set
     // waitingForHuman + lifecycle="waiting" so /status / continueTask
@@ -2380,13 +2486,13 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
           : pauseMessage;
         // Reuse existing waitingForHuman + status="waiting" machinery so
         // /status, continueTask (Force continue at line ~1427 checks
-        // `!s.waitingForHuman`), and  banner all reflect pause
+        // `!s.waitingForHuman`), and banner all reflect pause
         // coherently. Override the just-finalized lifecycle.
-        const stateNow = this.agentThursdayState;
+        const stateNow = this.agentthursdayState;
         const pausedTaskObject = stateNow.currentTaskObject?.id === taskObject.id
           ? { ...stateNow.currentTaskObject, status: "waiting" as const, updatedAt: Date.now() }
           : stateNow.currentTaskObject;
-        this.setAgentThursdayState({
+        this.setAgentthursdayState({
           ...stateNow,
           status: "waiting",
           waitingForHuman: true,
@@ -2401,6 +2507,39 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
         });
       }
     } catch { /* fail-soft: never break submitTask on summary/pause log */ }
+    // persist the final user-visible `replyText` (post
+    // truthfulness gate, supplier marker, 156g1 memory ack, and 120
+    // needs-human pause message) so `buildWorkspaceSnapshot` can
+    // surface the same warning-bearing text in the Web `summaryStream`
+    // that Discord/CLI receive. Without this, only Discord saw the
+    // ⚠️ Truthfulness gate / supplier degradation lines because Web
+    // re-paired user/assistant from the SDK message log, which holds
+    // the model's raw assistant text (no server-side prepends).
+    //
+    // We log to event_log rather than write back into the message log
+    // so warnings never enter the model's own context (avoiding a
+    // feedback loop where the gate's own warning influences the
+    // next round). Bounded to 4000 chars for safety; the warning
+    // prepend is small relative to the 4000 cap, so almost every
+    // reply fits unscathed. Skip empty replies to keep the table
+    // sparse.
+    try {
+      const finalReply = (replyText ?? "").trim();
+      if (finalReply.length > 0) {
+        const REPLY_CAP_CHARS = 4000;
+        const cappedReply = finalReply.length > REPLY_CAP_CHARS
+          ? finalReply.slice(0, REPLY_CAP_CHARS)
+          : finalReply;
+        const warningApplied = replyText !== rawReplyText;
+        this.logEvent("task.reply.finalized", {
+          taskId: taskObject.id,
+          replyText: cappedReply,
+          warningApplied,
+          source: "submitTask.finalReplyText",
+          replyLen: finalReply.length,
+        });
+      }
+    } catch { /* fail-soft: log glitch must not break submitTask */ }
     return { ok: true, taskId: taskObject.id, loopTriggered: result.status === "completed", replyText };
   }
 
@@ -2410,7 +2549,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return { ok: true, status: result.status };
   }
 
-  // codemode self-probe. Bypasses the model loop entirely;
+  //codemode self-probe. Bypasses the model loop entirely;
   // calls the executor directly with a trivial input. Returns ground truth
   // about whether `execute` is registered + actually functional in this
   // deployment, so reviewers don't have to trust the agent's word about
@@ -2541,6 +2680,21 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     `;
   }
 
+  @callable()
+  // fetch recent `task.reply.finalized` events for
+  // `buildWorkspaceSnapshot`'s pairing loop. Stays consistent with
+  // `getRecentTaskSubmittedEvents` (independent SQL query, 60-row
+  // newest-first window) so the user/assistant pairing has equal
+  // depth on both sides.
+  getRecentFinalizedReplyEvents(limit: number = 60): EventLogRow[] {
+    const cap = Math.max(1, Math.min(200, Math.floor(limit)));
+    return this.sql<EventLogRow>`
+      SELECT event_type, payload, created_at, trace_id FROM event_log
+      WHERE event_type = 'task.reply.finalized'
+      ORDER BY created_at DESC LIMIT ${cap}
+    `;
+  }
+
   /**
    * return the timestamp of the latest `context.reset` event,
    * or 0 if reset has never been recorded on this DO. Used by
@@ -2657,9 +2811,9 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   }
 
   @callable()
-  // index recent degradation events into a compact view
+  //index recent degradation events into a compact view
   // for the inspect panel. Read-only: queries existing event_log rows
-  // emitted by , parses payload as JSON, and tolerates
+  // emitted by Cards 117 / 119 / 102, parses payload as JSON, and tolerates
   // shape drift via fail-soft per-row try/catch. Cap recentSummaries to
   // keep the inspect response payload bounded.
   private getDegradationDiagnostics(): DegradationDiagnostics {
@@ -2721,8 +2875,8 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   }
 
   getInspectSnapshot(): InspectSnapshot {
-    // real producer for /api/inspect.
-    // No new storage; pulls from event_log + DO state.  schema is canonical.
+    //real producer for /api/inspect.
+    // No new storage; pulls from event_log + DO state. schema is canonical.
 
     // ladder: history of tier-bearing tool events, newest first
     const ladderRows = this.sql<EventLogRow>`
@@ -2798,12 +2952,12 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     // debugRaw: the existing debugTrace dump preserved for deep-dive debugging
     const debugRaw = this.getDebugTrace();
 
-    // index latest degradation events into a compact view
+    //index latest degradation events into a compact view
     // for the inspect panel. Read-only over existing event_log; null fields
     // when no degradation events have been logged yet.
     const degradationDiagnostics = this.getDegradationDiagnostics();
 
-    // derive Action UI Intents.
+    //derive Action UI Intents.
     //
     // : feed intents from a richer pool than `traceRows`
     // alone. The 200-row newest-first slice is dominated by
@@ -2878,12 +3032,12 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     const notes = Number((this.sql<{ n: number | bigint }>`SELECT COUNT(*) as n FROM review_notes`)[0]?.n ?? 0);
     const appliedMutations = Number((this.sql<{ n: number | bigint }>`SELECT COUNT(*) as n FROM kanban_mutations WHERE status = 'applied'`)[0]?.n ?? 0);
     const eventCount = Number((this.sql<{ n: number | bigint }>`SELECT COUNT(*) as n FROM event_log`)[0]?.n ?? 0);
-    const taskStartedAt = this.agentThursdayState.currentTaskObject?.createdAt ?? 0;
+    const taskStartedAt = this.agentthursdayState.currentTaskObject?.createdAt ?? 0;
     const taskCheckpoints = Number((this.sql<{ n: number | bigint }>`SELECT COUNT(*) as n FROM checkpoints WHERE created_at >= ${taskStartedAt}`)[0]?.n ?? 0);
     const taskNotes = Number((this.sql<{ n: number | bigint }>`SELECT COUNT(*) as n FROM review_notes WHERE created_at >= ${taskStartedAt}`)[0]?.n ?? 0);
     const taskAppliedMutations = Number((this.sql<{ n: number | bigint }>`SELECT COUNT(*) as n FROM kanban_mutations WHERE status = 'applied' AND created_at >= ${taskStartedAt}`)[0]?.n ?? 0);
     const msgCount = this.getMessages().length;
-    const mp = this.agentThursdayState.modelProfile;
+    const mp = this.agentthursdayState.modelProfile;
     return {
       checkpoints, notes, appliedMutations, eventCount,
       taskCheckpoints, taskNotes, taskAppliedMutations,
@@ -2913,7 +3067,8 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return { soul: SOUL, knowledge, lastMessage: this.getLastAssistantText() };
   }
 
-  // ── Context Lifecycle: inspect + reset ────────────────
+  // ──Context Lifecycle: inspect + reset ────────────────
+  // See docs/milestones/context-lifecycle-management.md.
   // `inspectContext` returns a sanitized view (no system prompts / SOUL /
   // secrets / raw tool payloads); `resetContext` clears transient LLM
   // messages while preserving durable state (checkpoints, memory, workspace,
@@ -2938,40 +3093,151 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       tokenSession?.total ?? null,
       dialogFallback,
     );
-    return { ...view, tokenSession, tokenTask, contextBudget };
+    const currentModelResolution = this.resolveCurrentModelProfile();
+    return { ...view, tokenSession, tokenTask, contextBudget, currentModelResolution };
   }
 
-  // ── context budget estimation ───────────────────────
+  // ──model resolution helper ──────────────────────────
+  // Two persisted slots and one in-memory observation feed three semantic
+  // layers (configured / lastObserved / effective) and two consumer-side
+  // selections (budgetModel / awarenessModel). The four-layer split
+  // exists so a future routing policy can land without forking each
+  // consumer's own ad-hoc fallback chain.
+  //
+  //   configured   — `agentthursdayState.modelProfile` (set by defaults +
+  //                  `setModelProfile()`; user-intended).
+  //   lastObserved — `_lastStepModel` (in-memory) ?? `agentthursdayState.lastObservedModel`
+  //                  (persisted by onStepFinish so it survives DO
+  //                  hibernation / isolate resets).
+  //   effective    — v1: `lastObserved ?? configured`. Future routing
+  //                  policy (mid-conversation switch, A/B routing,
+  //                  alias resolution) replaces this single line.
+  //   budgetModel  — context window / compact thresholds. CONSERVATIVE
+  //                  on configured/observed mismatch: when both exist
+  //                  and resolve to different registry entries, we
+  //                  pick the SMALLER window. Rationale: a mid-task
+  //                  switch from a big-window to a small-window model
+  //                  must not keep using the older budget, otherwise
+  //                  autoCompact won't fire in time.
+  //   awarenessModel — `intelligence.signal` / `getProfileAwareness` /
+  //                  SOUL profile awareness. v1: prefer `lastObserved`
+  //                  so awareness reflects the actual model the user
+  //                  just talked to; fall back to `configured`.
+  //
+  // Invariants (§1):
+  //   - `setModelProfile()` only ever writes `agentthursdayState.modelProfile`.
+  //   - `onStepFinish()` only ever writes `agentthursdayState.lastObservedModel`.
+  //   - The two state slots stay distinct; no path collapses them.
+  private resolveCurrentModelProfile(): CurrentModelResolution {
+    const configuredRaw = this.agentthursdayState.modelProfile;
+    const configured = configuredRaw && configuredRaw.model
+      ? { provider: configuredRaw.provider ?? null, modelId: configuredRaw.model }
+      : null;
+
+    // Persisted observation () survives hibernate; in-memory
+    // cache wins when present (cheaper) but they should match within
+    // the same isolate.
+    const stepObs = this._lastStepModel
+      ? { provider: this._lastStepModel.provider ?? null, modelId: this._lastStepModel.modelId }
+      : null;
+    const persistedObs = this.agentthursdayState.lastObservedModel
+      ? { provider: this.agentthursdayState.lastObservedModel.provider ?? null, modelId: this.agentthursdayState.lastObservedModel.model }
+      : null;
+    const lastObserved = stepObs ?? persistedObs;
+
+    // v1 effective: observed ?? configured. Future routing policy
+    // hooks here without changing consumer call sites.
+    const effective = lastObserved ?? configured;
+
+    // budgetModel — conservative on configured/observed mismatch, but
+    // ONLY when `configured` represents a real user-intended model.
+    // : the default `stub-concise` / `stub-verbose` placeholders
+    // (and any model id that doesn't resolve to a real registry entry)
+    // must NOT trigger the conservative smaller-window path — otherwise
+    // an observed Kimi 256K gets clipped back to the stub's DEFAULT 128K
+    // every time a real inference lands. The check is registry-based
+    // (resolves to DEFAULT) plus an explicit stub-provider gate so future
+    // unmapped real models get logged as observed instead of mistreated
+    // as a fake "user wants smaller window" intent.
+    const configuredIsPlaceholder = (() => {
+      if (!configured) return true;
+      // Stub provider/model used by the initial agent state.
+      if (
+        configuredRaw?.provider === "deterministic"
+        && (configuredRaw?.model === "stub-concise" || configuredRaw?.model === "stub-verbose")
+      ) {
+        return true;
+      }
+      // Anything that doesn't match a registry entry is treated as
+      // "no real configuration"; without a known window we can't make
+      // a smaller-window-conservative judgment anyway.
+      const cfgProf = pickModelContextProfile(configured.modelId);
+      return cfgProf === DEFAULT_CONTEXT_PROFILE;
+    })();
+
+    let budgetModel: CurrentModelResolution["budgetModel"] = null;
+    if (
+      lastObserved
+      && configured
+      && !configuredIsPlaceholder
+      && lastObserved.modelId !== configured.modelId
+    ) {
+      const obsProf = pickModelContextProfile(lastObserved.modelId);
+      const cfgProf = pickModelContextProfile(configured.modelId);
+      if (cfgProf.modelMaxTokens > 0 && cfgProf.modelMaxTokens < obsProf.modelMaxTokens) {
+        budgetModel = { ...configured, source: "conservative" };
+      } else {
+        budgetModel = { ...lastObserved, source: "observed" };
+      }
+    } else if (lastObserved) {
+      budgetModel = { ...lastObserved, source: "observed" };
+    } else if (configured && !configuredIsPlaceholder) {
+      budgetModel = { ...configured, source: "configured" };
+    } else if (configured) {
+      // Placeholder-only fallback: still surface the configured id so
+      // inspect/debug can see it, but mark `source: "fallback"` so UI
+      // can render the "no real model selected yet" affordance.
+      budgetModel = { ...configured, source: "fallback" };
+    } else {
+      budgetModel = null;
+    }
+
+    // awarenessModel — observed (most recent reality) over configured.
+    let awarenessModel: CurrentModelResolution["awarenessModel"] = null;
+    if (lastObserved) {
+      awarenessModel = { ...lastObserved, source: "observed" };
+    } else if (configured) {
+      awarenessModel = { ...configured, source: "configured" };
+    } else {
+      awarenessModel = null;
+    }
+
+    return { configured, lastObserved, effective, budgetModel, awarenessModel };
+  }
+
+  // ──context budget estimation ───────────────────────
   // Returns numbers only; never the SOUL text, system prompt body, or
   // tool schema definitions. Estimate uses `chars / 4` (no tokenizer
   // dep). `modelMaxTokens` falls back to `null` for unmapped models —
   // UI must render `source:"unavailable"` honestly.
   //
-  // When provider/runtime token usage isn't available (DO cold start
-  // or post-deploy isolate reset wiped `_sessionTok` / `_taskTok` but
-  // persisted dialog messages still exist), accept a bounded
-  // `dialogTokenFallback` estimate from message text so the UI never
-  // shows the dialog as "unavailable" when there's actually dialog
-  // history to draw from.
+  // §A — when provider/runtime token usage isn't available
+  // (DO cold start or post-deploy isolate reset wiped `_sessionTok` /
+  // `_taskTok` but persisted dialog messages still exist), accept a
+  // bounded `dialogTokenFallback` estimate from message text so the UI
+  // never shows the dialog as "unavailable" when there's actually
+  // dialog history to draw from.
   private _computeContextBudget(
     taskTok: number | null,
     sessionTok: number | null,
     dialogTokenFallback: number | null,
   ): ContextInspectResult["contextBudget"] {
-    // Prefer the runtime-observed model id from the most recent
-    // inference step over the persisted `agentThursdayState.modelProfile`
-    // configuration. The persisted profile is only ever written by
-    // the default initial value and explicit `setModelProfile()` RPCs;
-    // in production the actual inference model is selected via the
-    // Workers AI binding (Kimi etc), which bypasses `setModelProfile`.
-    // Reading `_lastStepModel` first lets the registry hit the real
-    // model's window (e.g. Kimi 256K) instead of the DEFAULT 128K
-    // fallback. `setModelProfile` semantics are unchanged: we never
-    // write `_lastStepModel` back into state.
-    const modelId =
-      this._lastStepModel?.modelId
-      ?? this.agentThursdayState.modelProfile?.model
-      ?? "";
+    // model id flows through the resolver's `budgetModel`,
+    // which applies conservative fallback on configured/observed
+    // mismatch. 's runtime-observed-first behaviour is now
+    // a property of the resolver, not this site.
+    const resolution = this.resolveCurrentModelProfile();
+    const modelId = resolution.budgetModel?.modelId ?? "";
     // : registry profile is the source of truth for both
     // model max tokens AND threshold ratios. Unknown models fall to
     // the registry's DEFAULT (128K + 0.5/0.7/0.85), so the budget
@@ -2986,7 +3252,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     const soulTok = Math.ceil(SOUL.length / 4);
     // Tools schema overhead is hard to bound exactly without rebuilding
     // the registry; the v1 estimate is a fixed constant tuned to the
-    // current registry footprint (review/checkpoint/note/registry + tier
+    // current registry footprint (review/checkpoint/note/kanban + tier
     // 1-4 + memory + content_* + conversation_search ≈ 18 tools, each
     // averaging ~150-200 tokens of description+schema). Keeps the
     // number stable across hot paths and avoids serializing zod into
@@ -2999,10 +3265,10 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     const systemOverheadTokens = soulTok + toolsTok + otherTok;
     // Prefer task tokens (current task usage) over session for "visible
     // dialog" budgeting; fall back to session if no task is active.
-    // If both runtime token counters are null (DO cold start /
-    // post-deploy reset wiped them) but persisted dialog messages
-    // still exist, fall back to a bounded chars/4 estimate from
-    // message text. UI shows the dialog as estimated rather than
+    // §A: if both runtime token counters are null (DO cold
+    // start / post-deploy reset wiped them) but persisted dialog
+    // messages still exist, fall back to a bounded chars/4 estimate
+    // from message text. UI shows the dialog as estimated rather than
     // "unavailable".
     const runtimeDialogTokens = taskTok !== null ? taskTok : sessionTok;
     const visibleDialogTokens =
@@ -3056,7 +3322,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       : null;
     const beforeMessageCount = this.getMessages().length;
 
-    // archive-before-clear. Failure semantics: BLOCK
+    //archive-before-clear. Failure semantics: BLOCK
     // on archive failure (throw before clearMessages). Justification:
     // reset's whole point is safe rescue, and silently clearing
     // messages whose archive RPC just failed turns reset into
@@ -3159,9 +3425,9 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     };
   }
 
-  // ── v3  — Context history + multi-DO routing ──────
-  //  introduced `context_history` and an audit-only newContext.
-  //  promotes the contextId from metadata to a real DO routing
+  // ── Cards 148 / 149 — Context history + multi-DO routing ──────
+  // introduced `context_history` and an audit-only newContext.
+  // promotes the contextId from metadata to a real DO routing
   // key: subsequent /cli/* requests carry an `X-AgentThursday-Context-Id` header
   // so each context owns its own DO. The "active" pointer lives in the
   // `context_active` single-row table on the REGISTRY DO (DEMO_INSTANCE)
@@ -3296,7 +3562,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     const previous = this.ensureActiveContext();
     const timestamp = Date.now();
 
-    // pull-style archive RPC. BEFORE closing the
+    //pull-style archive RPC. BEFORE closing the
     // previous context's row, drain its full sanitized message log
     // and write chunks to the registry's `conversation_archive`
     // table. Failures are logged via `archive.flush.failed` but DO
@@ -3463,7 +3729,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     };
   }
 
-  // ── Conversation Archive ingestion ────────────────────
+  // ──Conversation Archive ingestion ────────────────────
   // Two callables:
   //   - `drainForArchive` runs on a per-context DO; returns its full
   //     sanitized message log (no `lastN` cap). Used by `newContext` on
@@ -3515,7 +3781,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     });
   }
 
-  // ── `conversation_search` local tool + audit ─────────
+  // ──`conversation_search` local tool + audit ─────────
   // Searches the registry's `conversation_archive` (canonical source).
   // Default behavior: cross-context (no `contextId` filter) — this is
   // the central product proof of : from context B, the agent can
@@ -3528,8 +3794,8 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   // by ). Snippets come from `text` (audit-quality original)
   // when index_text matches but `text` is more readable. Ranking is
   // deterministic: most recent archivedAt first, ties broken by
-  // chunk_id.  will aggregate the retrieval log to score
-  // memory candidates;  may swap LIKE for AI Search.
+  // chunk_id. will aggregate the retrieval log to score
+  // memory candidates; may swap LIKE for AI Search.
 
   @callable()
   conversationSearch(input: ConversationSearchInput): ConversationSearchResult {
@@ -3681,7 +3947,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     };
   }
 
-  // ── archive / retrieval Inspect surface ──────────────
+  // ──archive / retrieval Inspect surface ──────────────
   // Read-only summary the operator inspects to see what the archive
   // pipeline is doing. Hard payload caps so the default response never
   // includes full archive text — Inspect deep-reads (read-by-ref) live
@@ -3809,10 +4075,10 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     };
   }
 
-  // ── Continuous Context Hygiene loop v1 ───────────────
-  // Manual-trigger hygiene check that bridges  archive +
-  //  plan/apply with explicit risk gates. Auto-apply MUST go
-  // through `applyCompactPlan` so  hard-anchor + synthetic +
+  // ──Continuous Context Hygiene loop v1 ───────────────
+  // Manual-trigger hygiene check that bridges archive +
+  // plan/apply with explicit risk gates. Auto-apply MUST go
+  // through `applyCompactPlan` so hard-anchor + synthetic +
   // overlap pre-flight is automatic. Risk gates that fire produce a
   // proposal-only outcome; the operator sees the would-be plan in
   // the audit but no compaction happens.
@@ -3828,7 +4094,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     if (trigger !== "manual-check") {
       throw new Error(
         `runContextHygiene v1: only trigger="manual-check" is allowed; received "${trigger}". ` +
-        `Scheduled triggers require explicit the operator config (out of scope for  v1).`,
+        `Scheduled triggers require explicit operator config (out of scope for v1).`,
       );
     }
     const pressureThreshold = Math.max(1, Math.min(500, Math.floor(input?.pressureThreshold ?? 50)));
@@ -3848,7 +4114,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     if (!autoApply) {
       riskConditions.push("auto_apply_disabled");
     }
-    // Pending tool approval: -shaped state surfaced via
+    // Pending tool approval: shaped state surfaced via
     // getPendingToolApproval. Defensive read — if the helper is
     // missing or throws, treat as "no pending approval" rather than
     // false-positive blocking hygiene.
@@ -3885,7 +4151,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       decision = "skipped";
       reason = `pressure (${pressureMessageCount}) < threshold (${pressureThreshold})`;
     } else {
-      // Build a  plan to see what compact would propose.
+      // Build a plan to see what compact would propose.
       // Plan-time validation already enforces hard anchors / synthetic
       // / overlap / minRangeMessages — we just need to decide whether
       // to apply or stop at "proposed".
@@ -3914,8 +4180,8 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
         decision = "proposed";
         reason = `risk gates fired: ${riskConditions.join(", ")}`;
       } else {
-        //  archive-before-compact precondition: drain current
-        // messages and push to registry archive before letting 
+        // archive-before-compact precondition: drain current
+        // messages and push to registry archive before letting
         // applyCompactPlan touch them. Self-RPC handling mirrors
         // resetContext: when we ARE the registry (DEMO_INSTANCE), write
         // locally; otherwise RPC.
@@ -4125,7 +4391,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     };
   }
 
-  // ── Auditable compact MVP ────────────────────────────
+  // ──Auditable compact MVP ────────────────────────────
   // Replaces a contiguous slice of transient messages with a deterministic
   // (no-LLM) summary overlay via `Session.addCompaction`. The SDK keeps
   // the underlying message tree intact; `getHistory()` substitutes the
@@ -4257,12 +4523,12 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return { compactions: stored.map(storedCompactionView) };
   }
 
-  // ──  v2 Context snapshot for anchor-aware planning ────
+  // ── v2 Context snapshot for anchor-aware planning ────
   // Read-only sanitized projection of `getMessages()` + `getCompactions()`
   // intended as a stable substrate for 's anchor classifier and
   // 's compact planner. No audit row (cheap polling). Synthetic
   // compaction nodes are flagged so callers can refuse to plan a range
-  // that starts on or contains one ( spike found the SDK silently
+  // that starts on or contains one (spike found the SDK silently
   // stores dead records when this guard is missing).
 
   @callable()
@@ -4278,10 +4544,10 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return buildContextSnapshot(messages, stored, lastN);
   }
 
-  // ──  v2 Context anchor classifier ─────────────────────
+  // ── v2 Context anchor classifier ─────────────────────
   // Deterministic per-message anchor labels (no LLM, no audit row). Reuses
-  // the  snapshot as input substrate so SOUL/system/tool payloads
-  // stay sanitized.  will read this to refuse compact ranges that
+  // the snapshot as input substrate so SOUL/system/tool payloads
+  // stay sanitized. will read this to refuse compact ranges that
   // contain anchors.
 
   @callable()
@@ -4303,13 +4569,13 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     };
   }
 
-  // ──  v2 Compact plan / apply split ────────────────────
+  // ── v2 Compact plan / apply split ────────────────────
   // `compactPlan` produces a read-only ID-based dry-run proposal built from
-  // a fresh  snapshot +  anchors. `applyCompactPlan` takes
+  // a fresh snapshot + anchors. `applyCompactPlan` takes
   // a plan back and re-runs all pre-flight checks against a fresh snapshot
   // before each `addCompaction` call. No LLM summaries, no auto-compaction,
   // no durable mutation. Existing `compactContext(lastN)` remains the
-  // backward-compatible primitive path for  callers.
+  // backward-compatible primitive path for callers.
 
   @callable()
   compactPlan(input?: CompactPlanInput): CompactPlanResult {
@@ -4366,7 +4632,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       }
       seenInPlan.add(range.rangeId);
 
-      // Fresh pre-flight on every step —  spike showed prior
+      // Fresh pre-flight on every step — spike showed prior
       // compactions can swallow message IDs. We use the same lastN
       // strategy the plan was built with so the validation window
       // matches the planner's view.
@@ -4384,7 +4650,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
         continue;
       }
 
-      // Build deterministic -style summary using the underlying
+      // Build deterministic style summary using the underlying
       // raw `getMessages()` (sanitization is applied inside
       // buildCompactSummary). The summary text never includes tool
       // payloads or reasoning.
@@ -4656,7 +4922,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   }
 
   // sanitized source slice handed to the advisor. Reuses the
-  //  snapshot which already strips system/SOUL/reasoning/tool
+  // snapshot which already strips system/SOUL/reasoning/tool
   // payloads down to text + tool *names*. The advisor sees the same
   // surface a human reading the inspect tab would see — never raw
   // payloads. System and synthetic-compaction messages are skipped.
@@ -4695,7 +4961,31 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
 
   @callable()
   getProfileAwareness() {
-    return getProfileAwareness(this.agentThursdayState.modelProfile);
+    // derive awareness from the resolver's `awarenessModel`,
+    // which prefers the most recently observed inference model over
+    // the persisted-but-stale `modelProfile`. Fallback to the configured
+    // profile when no observation exists yet (cold isolate, fresh DO).
+    const resolution = this.resolveCurrentModelProfile();
+    const aw = resolution.awarenessModel;
+    const mp: ModelProfile = aw && aw.modelId
+      ? { provider: aw.provider ?? this.agentthursdayState.modelProfile.provider, model: aw.modelId }
+      : this.agentthursdayState.modelProfile;
+    return getProfileAwareness(mp);
+  }
+
+  @callable()
+  getEffectiveIntelligenceSignal() {
+    // same selection policy as `getProfileAwareness()`:
+    // route through the resolver so `intelligence.signal` reflects the
+    // model the agent is actually talking to right now, not the stale
+    // configured placeholder. Replaces the old `/demo/status` site
+    // that computed signal from `status.modelProfile` directly.
+    const resolution = this.resolveCurrentModelProfile();
+    const aw = resolution.awarenessModel;
+    const mp: ModelProfile = aw && aw.modelId
+      ? { provider: aw.provider ?? this.agentthursdayState.modelProfile.provider, model: aw.modelId }
+      : this.agentthursdayState.modelProfile;
+    return getIntelligenceSignal(mp);
   }
 
   @callable()
@@ -4838,7 +5128,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     } else if (s.currentObstacle?.blocked) {
       reason = `阻塞未解除: ${s.currentObstacle.reason}`;
     } else if (!hasArtifact) {
-      reason = "尚无真实 artifact（checkpoint / review note / applied workflow mutation），gate 关闭。";
+      reason = "尚无真实 artifact（checkpoint / review note / applied kanban mutation），gate 关闭。";
     } else if (lar.outcome !== "success") {
       reason = `最近 action 未成功（${lar.outcome}），gate 关闭。`;
     } else {
@@ -4896,7 +5186,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       {
         kind: "mutation-confirm-required",
         active: pendingMut > 0,
-        reason: pendingMut > 0 ? `${pendingMut} 条 workflow mutation 待 local executor confirm` : "无待确认 mutation",
+        reason: pendingMut > 0 ? `${pendingMut} 条 kanban mutation 待 local executor confirm` : "无待确认 mutation",
       },
       {
         kind: "review-gate-blocked",
@@ -4971,7 +5261,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return this.workspace.getWorkspaceInfo();
   }
 
-  // read-only workspace file API. Bound here because the
+  //read-only workspace file API. Bound here because the
   // SDK lives on the DO; src/workspaceFiles.ts holds path safety + filtering.
   @callable()
   async listWorkspaceFiles(rawPath: string | null | undefined): Promise<WorkspaceFileList> {
@@ -4983,7 +5273,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return readWorkspaceFile(this.workspace, rawPath);
   }
 
-  // ── Agent Memory v1 ──────────────────────────────────────
+  // ──Agent Memory v1 ──────────────────────────────────────
   // See docs/design/agent-memory-v1.md. Profile boundary = this DO.
 
   @callable()
@@ -5139,7 +5429,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   }
 
   /**
-   * read-only memory candidate inspect.
+   *read-only memory candidate inspect.
    *
    * Walks `conversation_archive` (SELECT only) + recent message log
    * + active `agent_memories` (read-only for dedupe hints) and surfaces
@@ -5161,7 +5451,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
    * Idle chatter (no signal phrase, single occurrence) is dropped.
    * Tool / system / SOUL content never reaches this surface — input
    * comes from `conversation_archive.text` and `message log` text
-   * parts, both already sanitized by  / 142.
+   * parts, both already sanitized by / 142.
    */
   @callable()
   listMemoryCandidates(input?: { limit?: number }): MemoryCandidatesResult {
@@ -5288,14 +5578,22 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       if (/\b(?:runtime\s+smoke|test\s+harness|case[- ]driven)\b/i.test(t)) return true;
       if (/\bStory\s+[A-Z]\b/.test(t)) return true;
       if (/\bCard\s+\d/.test(t)) return true;
-      // the operator / the bot / the bot / the bot 测试侧的判定词
+      // the operator / verifier / reviewer / the agent 测试侧的判定词
       if (/(?:验收|关键判据|后端证据|用例|跑测|测试用例|测试套件)/.test(t)) return true;
       if (/\b(?:PASS|FAIL|N-A|N\/A)\b/.test(t)) return true;
       // 系统/路由/调度专用词典（dialog-noise typical of small-c orchestration）
       if (/(?:summaryStream|recentOutbox|routeSummary|debugTrace|recentToolEvents|lastAssistantSummary|conversation_archive|context_active|Story\s)/i.test(t)) return true;
-      // mention to operators (the bot / the operator / channel admins) — mass-distributed ops messages, not user memory intent.
-      // Deployment-specific Discord user IDs intentionally not committed here; wire via env in a future iteration if this heuristic needs to fire.
-      if (/<@!?(?:0)>/.test(t)) return true;
+      // mention to known operators (DISCORD_ALLOWED_USERS) — mass-distributed
+      // ops messages, not user memory intent. Built from env so no specific
+      // user ids leak into source.
+      const allowedUsers = String((this.env as { DISCORD_ALLOWED_USERS?: string }).DISCORD_ALLOWED_USERS ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => /^\d+$/.test(s));
+      if (allowedUsers.length > 0) {
+        const opMentionRe = new RegExp(`<@!?(?:${allowedUsers.join("|")})>`);
+        if (opMentionRe.test(t)) return true;
+      }
       // Code fences / jq / curl / shell heredoc — debug protocol, not memory
       if (/```[\s\S]{4,}```|`(?:curl|jq|grep|wrangler|npm)\b/i.test(t)) return true;
       if (/\bcurl\s+-[sS]?\b|\bjq\s+['"]/.test(t)) return true;
@@ -5313,17 +5611,22 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       const t = text.trim();
       if (t.length < 6 || t.length > 800) return null;
 
-      // try explicit-remember extraction FIRST. The
-      // archived `text` for a real Discord user prompt usually starts
-      // with `<@the bot_id>` (the bot mention). 154a1 demanded `[\n.!?]`
-      // immediately before `帮我记` AND ran `isCandidateNoise(t)` over
-      // the whole row first, so any verifier-flavored neighbor token
-      // in the same archived chunk killed the legit slot. Now: allow
-      // an optional bot mention prefix (`<@BOT_ID>` or its `<@!…>`
-      // form) before the imperative, extract the slot, and only
-      // filter the slot itself. Bot id is deployment-specific; wire
-      // via env if this heuristic needs to detect self-mention prefixes.
-      const explicit = /(?:^|[\n。！？\.!\?]\s*)(?:<@!?\d+>\s*)?(?:帮我记一?下|请记一?下|麻烦记一?下|remember\s+(?:that|this|the\s+following)|please\s+remember)\s*[:：]\s*(.{6,400})/iu.exec(t);
+      // Try explicit-remember extraction FIRST. The archived `text` for
+      // a real Discord user prompt usually starts with `<@bot_id>` (the
+      // bot mention). The earlier guard demanded `[\n.!?]` immediately
+      // before `帮我记` AND ran `isCandidateNoise(t)` over the whole row
+      // first, so any verifier-flavored neighbor token in the same
+      // archived chunk killed the legit slot. Now: allow an optional
+      // bot mention prefix (built from `AGENT_THURSDAY_DISCORD_BOT_ID`
+      // if set; falls back to any numeric snowflake otherwise) before
+      // the imperative, extract the slot, and only filter the slot.
+      const botId = (this.env as { AGENT_THURSDAY_DISCORD_BOT_ID?: string }).AGENT_THURSDAY_DISCORD_BOT_ID;
+      const botMentionAlt = botId && /^\d+$/.test(botId) ? botId : "\\d+";
+      const explicitRe = new RegExp(
+        `(?:^|[\\n。！？\\.!\\?]\\s*)(?:<@!?${botMentionAlt}>\\s*)?(?:帮我记一?下|请记一?下|麻烦记一?下|remember\\s+(?:that|this|the\\s+following)|please\\s+remember)\\s*[:：]\\s*(.{6,400})`,
+        "iu",
+      );
+      const explicit = explicitRe.exec(t);
       if (explicit) {
         const slot = explicit[1].trim();
         if (isCandidateNoise(slot)) return null;
@@ -5479,11 +5782,11 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   clearStaleBlockingState(): { ok: boolean; cleared: string[] } {
     const cleared: string[] = [];
     const patch: Partial<AgentThursdayState> = {};
-    if (this.agentThursdayState.waitingForHuman) { patch.waitingForHuman = false; cleared.push("waitingForHuman"); }
-    if (this.agentThursdayState.pendingHelpRequest !== null) { patch.pendingHelpRequest = null; cleared.push("pendingHelpRequest"); }
-    if (this.agentThursdayState.currentObstacle !== null) { patch.currentObstacle = null; cleared.push("currentObstacle"); }
+    if (this.agentthursdayState.waitingForHuman) { patch.waitingForHuman = false; cleared.push("waitingForHuman"); }
+    if (this.agentthursdayState.pendingHelpRequest !== null) { patch.pendingHelpRequest = null; cleared.push("pendingHelpRequest"); }
+    if (this.agentthursdayState.currentObstacle !== null) { patch.currentObstacle = null; cleared.push("currentObstacle"); }
     if (cleared.length > 0) {
-      this.setAgentThursdayState({ ...this.agentThursdayState, ...patch, updatedAt: Date.now() });
+      this.setAgentthursdayState({ ...this.agentthursdayState, ...patch, updatedAt: Date.now() });
       this.logEvent("state.stale_cleared", { cleared });
     }
     return { ok: true, cleared };
@@ -5497,11 +5800,11 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   }
 
   /**
-   * explicit channel-ingress readiness predicate.
+   *explicit channel-ingress readiness predicate.
    *
    * Replaces ChannelHub's previous heuristic `currentTask !== null` (which
    * misfired when `currentTask` was a stale string but the actual loop was
-   * idle — the operator hit this in dogfood: the bot showed busy forever).
+   * idle — the operator hit this in dogfood: the agent showed busy forever).
    *
    * `canAccept` is the authority on whether ChannelHub may submit a new
    * channel-driven task on top of current state. The reason string is
@@ -5572,7 +5875,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
 
   @callable()
   getOutcomeVerification(): OutcomeVerification {
-    const lar = this.agentThursdayState.lastActionResult;
+    const lar = this.agentthursdayState.lastActionResult;
     const ckptRows = this.sql<{ n: number | bigint }>`SELECT COUNT(*) as n FROM checkpoints`;
     const noteRows = this.sql<{ n: number | bigint }>`SELECT COUNT(*) as n FROM review_notes`;
     const mutRows = this.sql<{ n: number | bigint }>`SELECT COUNT(*) as n FROM kanban_mutations`;
@@ -5594,7 +5897,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       {
         actionType: "advance-kanban-card",
         verified: mutCount > 0,
-        evidence: mutCount > 0 ? `${mutCount} workflow mutation(s) in DB` : "kanban_mutations 表为空",
+        evidence: mutCount > 0 ? `${mutCount} kanban mutation(s) in DB` : "kanban_mutations 表为空",
       },
       {
         actionType: "last-action",
@@ -5653,7 +5956,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     let summary: string;
     if (totalRows === 0) {
       stage = "no-mutation";
-      summary = "尚未产生任何 workflow mutation。先运行 doWork（stub-verbose）再执行 advance-kanban-card。";
+      summary = "尚未产生任何 kanban mutation。先运行 doWork（stub-verbose）再执行 advance-kanban-card。";
     } else if (appliedCount === 0) {
       stage = "pending-only";
       summary = `${pendingCount} 条 pending mutation，尚未 apply。local executor 尚未确认任何修改。`;
@@ -5734,23 +6037,23 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
 
   @callable()
   setModelProfile(provider: string, model: string): void {
-    const prevSignal = getIntelligenceSignal(this.agentThursdayState.modelProfile);
+    const prevSignal = getIntelligenceSignal(this.agentthursdayState.modelProfile);
     const newProfile = { provider, model };
     const newSignal = getIntelligenceSignal(newProfile);
     const awareness = getProfileAwareness(newProfile);
-    this.logEvent("model.changed", { from: this.agentThursdayState.modelProfile, to: newProfile, awareness });
+    this.logEvent("model.changed", { from: this.agentthursdayState.modelProfile, to: newProfile, awareness });
     if (prevSignal.tier !== newSignal.tier || prevSignal.mode !== newSignal.mode) {
       this.logEvent("intelligence.changed", { from: prevSignal, to: newSignal });
     }
     // Human responded to escalation by switching model → enter recovered mode
-    const prevMode = this.agentThursdayState.runtimeMode;
+    const prevMode = this.agentthursdayState.runtimeMode;
     const runtimeMode: RuntimeMode = prevMode.mode === "assisted"
       ? { mode: "recovered", reason: `model switched to ${provider}/${model} after escalation` }
       : prevMode;
     if (runtimeMode.mode !== prevMode.mode) {
       this.logEvent("mode.changed", { from: prevMode.mode, to: runtimeMode.mode, reason: runtimeMode.reason });
     }
-    this.setAgentThursdayState({ ...this.agentThursdayState, modelProfile: newProfile, runtimeMode, updatedAt: Date.now() });
+    this.setAgentthursdayState({ ...this.agentthursdayState, modelProfile: newProfile, runtimeMode, updatedAt: Date.now() });
   }
 
   @callable()
@@ -5759,7 +6062,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     const humanResponse: HumanResponse = { fromHuman, content, acknowledged: true, usedInResume: false };
     this.logEvent("response.received", { fromHuman, contentSnippet: content.slice(0, 100) }, traceId);
     // Human acknowledged → if in assisted mode, enter recovered
-    const prevMode = this.agentThursdayState.runtimeMode;
+    const prevMode = this.agentthursdayState.runtimeMode;
     const runtimeMode: RuntimeMode = prevMode.mode === "assisted"
       ? { mode: "recovered", reason: `human response received from ${fromHuman}` }
       : prevMode;
@@ -5769,15 +6072,15 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     this.logEvent("response.acknowledged", { fromHuman, acknowledged: true }, traceId);
     const resumeTrigger = `human-response:${fromHuman}`;
     this.logEvent("resume.triggered", { trigger: resumeTrigger, fromHuman }, traceId);
-    const prevPolicy = this.agentThursdayState.recoveryPolicy;
+    const prevPolicy = this.agentthursdayState.recoveryPolicy;
     const recoveryPolicy: RecoveryPolicy = { policyMode: "safe-resume", reason: `human response received — entering safe-resume before full recovery` };
     if (recoveryPolicy.policyMode !== prevPolicy.policyMode) {
       this.logEvent("recovery.policy.changed", { from: prevPolicy.policyMode, to: recoveryPolicy.policyMode, reason: recoveryPolicy.reason }, traceId);
     }
-    const resumedTaskObject = this.agentThursdayState.currentTaskObject?.status === "waiting"
-      ? { ...this.agentThursdayState.currentTaskObject, status: "active" as const, updatedAt: Date.now() }
-      : this.agentThursdayState.currentTaskObject;
-    this.setAgentThursdayState({ ...this.agentThursdayState, lastHumanResponse: humanResponse, currentTaskObject: resumedTaskObject, waitingForHuman: false, resumeTrigger, recoveryPolicy, runtimeMode, updatedAt: Date.now() });
+    const resumedTaskObject = this.agentthursdayState.currentTaskObject?.status === "waiting"
+      ? { ...this.agentthursdayState.currentTaskObject, status: "active" as const, updatedAt: Date.now() }
+      : this.agentthursdayState.currentTaskObject;
+    this.setAgentthursdayState({ ...this.agentthursdayState, lastHumanResponse: humanResponse, currentTaskObject: resumedTaskObject, waitingForHuman: false, resumeTrigger, recoveryPolicy, runtimeMode, updatedAt: Date.now() });
   }
 }
 
@@ -5788,7 +6091,7 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-//  A.2 — diagnostic endpoint helpers. Lets reviewers capture the
+// A.2 — diagnostic endpoint helpers. Lets reviewers capture the
 // raw `env.AI.run()` output for the four models in the dispatch saga, so we
 // can tell whether tool_calls land where workers-ai-provider expects them.
 const DIAG_MODEL_ALLOWLIST = [
@@ -5801,7 +6104,7 @@ const DIAG_MODEL_ALLOWLIST = [
 const DiagDispatchRequestSchema = z.object({
   model: z.enum(DIAG_MODEL_ALLOWLIST),
   prompt: z.string().min(1).max(2000),
-  //  A.2-stream — opt into streaming mode. When set, the endpoint
+  // A.2-stream — opt into streaming mode. When set, the endpoint
   // calls env.AI.run(..., {stream: true}) and returns an SSE-chunk summary.
   stream: z.boolean().optional(),
 });
@@ -5868,7 +6171,7 @@ function summarizeDiagOutput(output: unknown): {
   };
 }
 
-//  A.2-stream — read SSE chunks from a Workers AI streaming response,
+// A.2-stream — read SSE chunks from a Workers AI streaming response,
 // parse line-buffered `data: {...}` events, and return a summary of where
 // tool_calls (and content) appear across chunks. Bypasses workers-ai-provider's
 // own parser so we can tell whether tool_calls are dropped at the network
@@ -6008,13 +6311,13 @@ function summarizeDiagStreamChunks(chunks: unknown[]): {
   };
 }
 
-// auto-route helper. After a successful inbound INSERT, the
+//auto-route helper. After a successful inbound INSERT, the
 // ingest endpoint calls this so addressed/trusted messages flow into the
 // AgentThursdayAgent loop without requiring a manual /api/channel/route-pending POST.
 // - bounded limit (5) keeps latency tight
 // - duplicate ingest skips this entirely (caller passes inserted=false)
 // - errors are swallowed; the ingest response still succeeds
-// - busy-skipped rows stay `received` ( invariant: do not consume the
+// - busy-skipped rows stay `received` (invariant: do not consume the
 //   user's message just because the agent is busy)
 type AutoRouteSummary = {
   scanned: number;
@@ -6056,7 +6359,7 @@ async function autoRouteAfterIngest(
   }
 }
 
-// map BrowserError to stable HTTP shapes; same message-prefix
+//map BrowserError to stable HTTP shapes; same message-prefix
 // reasoning as workspaceFileError (DO RPC erases JS class identity).
 function browserError(e: unknown): Response {
   const msg = String(e instanceof Error ? e.message : e);
@@ -6072,7 +6375,7 @@ function browserError(e: unknown): Response {
   return json({ code: "internal", message: msg }, 500);
 }
 
-// map workspace file errors to HTTP shapes the web client knows.
+//map workspace file errors to HTTP shapes the web client knows.
 // Pattern-match by message because errors thrown inside @callable() DO methods
 // lose their JS class identity when serialized across the RPC boundary; the
 // stable contract is the `path:*` / `file:*` message prefixes set in
@@ -6263,8 +6566,8 @@ function homePage(): Response {
 <h2>RECENT CHECKPOINTS (real write)</h2>
 <pre id="recent-checkpoints">(no checkpoints written yet)</pre>
 
-<h2>RECENT WORKFLOW MUTATIONS (real bounded)</h2>
-<pre id="recent-kanban-mutations">(no workflow mutations recorded yet)</pre>
+<h2>RECENT KANBAN MUTATIONS ( real bounded)</h2>
+<pre id="recent-kanban-mutations">(no kanban mutations recorded yet)</pre>
 
 <h2>ACTION RESULT</h2>
 <pre id="action-result">(no action executed yet)</pre>
@@ -6412,7 +6715,7 @@ async function load() {
       box.className = 'review-box mut-' + mr.stage;
       document.getElementById('mut-review-stage').textContent = 'STAGE: ' + mr.stage.toUpperCase().replace(/-/g, ' ');
       const readyEl = document.getElementById('mut-review-ready');
-      readyEl.textContent = mr.readyForNextMilestone ? '✓ ready to advance' : '✗ not ready to advance';
+      readyEl.textContent = mr.readyForNextMilestone ? '✓ ready for next milestone' : '✗ not ready for next milestone';
       readyEl.className = mr.readyForNextMilestone ? 'ready-yes' : 'ready-no';
       document.getElementById('mut-review-detail').textContent =
         \`pending: \${mr.pendingCount}  |  applied: \${mr.appliedCount}  |  failed: \${mr.failedCount}  |  rejected: \${mr.rejectedCount}  |  hasEvidence: \${mr.hasEvidence}  |  effectiveProgress: \${mr.effectiveProgress}\`;
@@ -6424,7 +6727,7 @@ async function load() {
       box.className = 'review-box real-' + rar.stage;
       document.getElementById('real-review-stage').textContent = 'STAGE: ' + rar.stage.toUpperCase().replace(/-/g, ' ');
       const readyEl = document.getElementById('real-review-ready');
-      readyEl.textContent = rar.readyForNextMilestone ? '✓ ready to advance' : '✗ not ready to advance';
+      readyEl.textContent = rar.readyForNextMilestone ? '✓ ready for next milestone' : '✗ not ready for next milestone';
       readyEl.className = rar.readyForNextMilestone ? 'ready-yes' : 'ready-no';
       document.getElementById('real-review-detail').textContent =
         \`real actions: \${rar.realActionCount}  |  artifacts: \${rar.artifactCount}  |  effectiveProgress: \${rar.effectiveProgress}  |  recoveryReady: \${rar.recoveryReady}\`;
@@ -6504,7 +6807,7 @@ async function load() {
             \`\\n  \${m.description}\\n  hint: \${m.diff_hint}\` +
             (m.evidence ? \`\\n  evidence: \${m.evidence}\` : '')
           ).join('\\n─────────────────────────────────────────────\\n')
-        : '(no workflow mutations recorded yet)';
+        : '(no kanban mutations recorded yet)';
     }
     const lar = d.status.lastActionResult;
     document.getElementById('action-result').textContent = lar
@@ -6640,10 +6943,10 @@ export default {
     // /health is intentionally exempt so Cloudflare health probes and uptime
     // monitors can keep working without the secret. Keep its response shape minimal.
     if (url.pathname === "/health") {
-      return json({ ok: true, service: "agent-thursday-agent", version: "0.1.0", agent: "AgentThursdayAgent", instance: DEMO_INSTANCE, timestamp: Date.now() });
+      return json({ ok: true, service: "agent-thursday", version: "0.1.0", agent: "AgentThursdayAgent", instance: DEMO_INSTANCE, timestamp: Date.now() });
     }
 
-    //  + 78: auth only gates the data surface. The SPA shell
+    // + 78: auth only gates the data surface. The SPA shell
     // (HTML/JS/CSS bundle served by ASSETS) must load without a secret so
     // SecretGate can prompt the user. SecretGate then probes /api/workspace
     // — a 401 means "wrong secret", a 503 means "worker misconfigured".
@@ -6658,10 +6961,9 @@ export default {
 
     if (url.pathname === "/demo/status" && request.method === "GET") {
       const stub = await getAgentByName<Env, AgentThursdayAgent>(env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>, DEMO_INSTANCE);
-      const [status, recentEvents, memoryLayers, lastTrace, profileAwareness, recoveryTimeline, recoveryReview, recentCheckpoints, recentReviewNotes, outcomeVerification, recentKanbanMutations, mutationReview, currentTaskObject, loopContract, deliverableGate, approvalPolicy, developerLoopReview, cliSession, workspaceInfo] = await Promise.all([
-        stub.getStatus(), stub.getEventLog(), stub.getMemoryLayers(), stub.getLastTrace(), stub.getProfileAwareness(), stub.getRecoveryTimeline(), stub.getRecoveryReview(), stub.getRecentCheckpoints(), stub.getRecentReviewNotes(), stub.getOutcomeVerification(), stub.getRecentKanbanMutations(), stub.getMutationReview(), stub.getCurrentTaskObject(), stub.getLoopContract(), stub.getDeliverableGate(), stub.getApprovalPolicy(), stub.getDeveloperLoopReview(), stub.getCliSession(), stub.getWorkspaceInfo(),
+      const [status, recentEvents, memoryLayers, lastTrace, profileAwareness, intelligenceSignal, recoveryTimeline, recoveryReview, recentCheckpoints, recentReviewNotes, outcomeVerification, recentKanbanMutations, mutationReview, currentTaskObject, loopContract, deliverableGate, approvalPolicy, developerLoopReview, cliSession, workspaceInfo] = await Promise.all([
+        stub.getStatus(), stub.getEventLog(), stub.getMemoryLayers(), stub.getLastTrace(), stub.getProfileAwareness(), stub.getEffectiveIntelligenceSignal(), stub.getRecoveryTimeline(), stub.getRecoveryReview(), stub.getRecentCheckpoints(), stub.getRecentReviewNotes(), stub.getOutcomeVerification(), stub.getRecentKanbanMutations(), stub.getMutationReview(), stub.getCurrentTaskObject(), stub.getLoopContract(), stub.getDeliverableGate(), stub.getApprovalPolicy(), stub.getDeveloperLoopReview(), stub.getCliSession(), stub.getWorkspaceInfo(),
       ]);
-      const intelligenceSignal = getIntelligenceSignal(status.modelProfile);
       const cliResultView = buildCliResultView(cliSession, developerLoopReview, approvalPolicy, deliverableGate);
       const m3CliLoopDemo = buildM3CliLoopDemo(cliSession, developerLoopReview, approvalPolicy, deliverableGate);
       const m4TuiWorkflowDemo = buildM4TuiWorkflowDemo(cliSession, developerLoopReview, approvalPolicy, deliverableGate);
@@ -6722,10 +7024,10 @@ export default {
       // and switch surfaces if the canonical pointer has moved.
       //
       // Per-context: cliSession, debugTrace, eventLog (drives
-      // summaryStream), agentThursdayState (waitingForHuman / pendingHelpRequest
+      // summaryStream), agentthursdayState (waitingForHuman / pendingHelpRequest
       // → replyNeed), loopReview.summary, approvalPolicy.interventions,
       // pendingToolApproval, deliverableGate, pendingMutations
-      // (workflow mutations are recorded on the DO that produced them).
+      // (kanban mutations are recorded on the DO that produced them).
       // Registry/global concerns (model profile gateway, intelligence
       // signal cache) live elsewhere and are not part of this snapshot.
       const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
@@ -6737,7 +7039,7 @@ export default {
         env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>,
         DEMO_INSTANCE,
       );
-      const [agentThursdayState, cliSession, loopReview, approvalPolicy, pendingToolApproval, debugTrace, deliverableGate, pendingMutations, eventLog, lastResetAt, canonicalActive, dialogTurns, taskSubmittedEvents] = await Promise.all([
+      const [agentthursdayState, cliSession, loopReview, approvalPolicy, pendingToolApproval, debugTrace, deliverableGate, pendingMutations, eventLog, lastResetAt, canonicalActive, dialogTurns, taskSubmittedEvents, taskReplyFinalizedEvents] = await Promise.all([
         stub.getStatus(),
         stub.getCliSession(),
         stub.getDeveloperLoopReview(),
@@ -6766,9 +7068,13 @@ export default {
         // event_log is dominated by agent.woken / tool.* / channel
         // ack noise. Mobile collapses client-side regardless of length.
         stub.getRecentTaskSubmittedEvents(60),
+        // independent `task.reply.finalized` window (60
+        // newest) so `summaryStream` can prefer the warning-bearing
+        // user-visible reply over the SDK message log's raw text.
+        stub.getRecentFinalizedReplyEvents(60),
       ]);
       const snapshot = buildWorkspaceSnapshot({
-        agentThursdayState,
+        agentthursdayState,
         cliSession,
         loopReview,
         approvalPolicy,
@@ -6781,12 +7087,13 @@ export default {
         activeContextId: canonicalActive.contextId,
         dialogTurns,
         taskSubmittedEvents,
+        taskReplyFinalizedEvents,
       });
       // Validate at the boundary so legacy field drift is caught early.
       return json(WorkspaceSnapshotSchema.parse(snapshot));
     }
 
-    // Discord Gateway DO control surface. Auth-gated by
+    //Discord Gateway DO control surface. Auth-gated by
     // the global `requireSecret` check above. POST /start and /stop are
     // idempotent; GET /status is safe to poll. Status fields never include
     // tokens / shared secret / raw gateway frames.
@@ -6820,6 +7127,87 @@ export default {
       return json(status);
     }
 
+    if (url.pathname === "/api/config" && request.method === "GET") {
+      // small public-config endpoint so the SPA can read
+      // the debug surface mode at runtime. Auth-gated like every
+      // other /api/* route; flipping `AGENT_THURSDAY_DEBUG_SURFACE_MODE` in
+      // wrangler.toml is a `wrangler deploy` away with no web
+      // rebuild. The shape stays narrow (no env / no secrets) so
+      // callers can't probe it for anything else.
+      const rawMode = String(env.AGENT_THURSDAY_DEBUG_SURFACE_MODE ?? "").toLowerCase().trim();
+      const debugSurfaceMode: "enable" | "readonly" | "disable" =
+        rawMode === "readonly" ? "readonly"
+          : rawMode === "disable" ? "disable"
+          : "enable";
+      return json({ debugSurfaceMode });
+    }
+
+    if (url.pathname === "/api/sandbox/exec" && request.method === "POST") {
+      // admin smoke endpoint so verifier / operators can
+      // call `getSandbox().exec()` directly without going through the
+      // model loop, the agent's tool-routing, or the AgentThursdayAgent DO.
+      // Mirrors the `sandbox_exec` tool's timeout contract so a
+      // smoke result is shape-compatible with the model-side return.
+      // Auth gated by the umbrella `requireSecret(...)` block above;
+      // do NOT echo command bytes into worker logs (Tier 4 contract
+      // already specifies command_preview only).
+      let body: { command?: unknown; sandbox_id?: unknown; timeout_seconds?: unknown };
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: "invalid JSON body" }, 400);
+      }
+      const command = typeof body.command === "string" ? body.command : "";
+      if (command.length === 0) return json({ error: "command (string) required" }, 400);
+      const sandboxId = typeof body.sandbox_id === "string" && body.sandbox_id.length > 0
+        ? body.sandbox_id
+        : "agentthursday";
+      const requested = typeof body.timeout_seconds === "number"
+        ? body.timeout_seconds
+        : 120;
+      const timeoutSeconds = Math.min(300, Math.max(5, Math.floor(requested)));
+      const sandbox = getSandbox(env.Sandbox, sandboxId);
+      const TIMEOUT_SENTINEL = Symbol.for("sandbox_exec_timeout");
+      const timeoutPromise = new Promise<typeof TIMEOUT_SENTINEL>((resolve) => {
+        setTimeout(() => resolve(TIMEOUT_SENTINEL), timeoutSeconds * 1000);
+      });
+      let raced: unknown;
+      try {
+        raced = await Promise.race([sandbox.exec(command), timeoutPromise]);
+      } catch (e) {
+        return json({
+          stdout: "",
+          stderr: `sandbox_exec error: ${e instanceof Error ? e.message.slice(0, 200) : String(e).slice(0, 200)}`,
+          exit_code: 1,
+          success: false,
+          timed_out: false,
+          sandbox_id: sandboxId,
+          timeout_seconds: timeoutSeconds,
+        });
+      }
+      if (raced === TIMEOUT_SENTINEL) {
+        return json({
+          stdout: "",
+          stderr: `sandbox_exec timed out after ${timeoutSeconds}s`,
+          exit_code: 124,
+          success: false,
+          timed_out: true,
+          sandbox_id: sandboxId,
+          timeout_seconds: timeoutSeconds,
+        });
+      }
+      const r = raced as { stdout: string; stderr: string; exitCode: number; success: boolean };
+      return json({
+        stdout: r.stdout,
+        stderr: r.stderr,
+        exit_code: r.exitCode,
+        success: r.success,
+        timed_out: false,
+        sandbox_id: sandboxId,
+        timeout_seconds: timeoutSeconds,
+      });
+    }
+
     if (url.pathname === "/api/inspect" && request.method === "GET") {
       // route the AgentThursdayAgent stub through the canonical
       // active context so trace / toolEvents / ladder / memory tabs
@@ -6831,7 +7219,7 @@ export default {
       // observability layer with its own audit log.
       const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
       const snapshot: InspectSnapshot = await stub.getInspectSnapshot();
-      //  / 114 — best-effort cross-DO fetches against ContentHubAgent.
+      // / 114 — best-effort cross-DO fetches against ContentHubAgent.
       // Both `contentAudit` (raw rows) and `contentEvidence` (
       // aggregated summary) are observability layers; failure must not
       // break the AgentThursdayAgent snapshot or each other.
@@ -6851,7 +7239,7 @@ export default {
       return json(InspectSnapshotSchema.parse(merged));
     }
 
-    // codemode self-probe. Bypasses the model loop; calls
+    //codemode self-probe. Bypasses the model loop; calls
     // executor.execute("return 1+1", []) directly so reviewers get ground
     // truth about whether `execute` is registered + functional. Auth-gated
     // (already covered by the global secret check above).
@@ -6861,7 +7249,7 @@ export default {
       return json(probe);
     }
 
-    //  A.2 — diagnostic endpoint for direct env.AI.run() capture.
+    // A.2 — diagnostic endpoint for direct env.AI.run() capture.
     // Bypasses the workers-ai-provider adapter so we can see the raw shape
     // Workers AI returns for an allowlisted model + minimal tool schema.
     // Used to determine whether tool_calls land in the structural fields
@@ -6913,7 +7301,7 @@ export default {
       return json({ mode: "non-stream", ...summarizeDiagOutput(output) });
     }
 
-    // workspace file manager (read-only).
+    //workspace file manager (read-only).
     if (url.pathname === "/api/workspace/files" && request.method === "GET") {
       // route through canonical active context so the
       // workspace file listing reflects the same DO that the agent's
@@ -6921,7 +7309,7 @@ export default {
       // DEMO_INSTANCE: the agent wrote files into its active context
       // DO while operators inspecting via this endpoint listed an
       // unrelated registry/bootstrap DO and saw zero files
-      // (the 156l miss that surfaced when the operator & the bot couldn't find
+      // (the 156l miss that surfaced when the operator and verifier couldn't find
       // hermes-vs-agentthursday-comparison.md).
       const stub = await getCanonicalActiveAgentThursdayAgentStub(env, request);
       try {
@@ -6945,7 +7333,7 @@ export default {
       }
     }
 
-    // ChannelHub auth-gated stub endpoints.
+    //ChannelHub auth-gated stub endpoints.
     if (url.pathname === "/api/channel/inbound" && request.method === "POST") {
       let body: unknown;
       try {
@@ -6975,7 +7363,7 @@ export default {
       return json(ChannelSnapshotSchema.parse(snapshot));
     }
 
-    // compact channel summary for default user-layer panel.
+    //compact channel summary for default user-layer panel.
     if (url.pathname === "/api/channel/summary" && request.method === "GET") {
       const stub = await getAgentByName<Env, ChannelHubAgent>(
         env.ChannelHubAgent as unknown as AgentNamespace<ChannelHubAgent>,
@@ -6985,7 +7373,7 @@ export default {
       return json(ChannelCompactSummarySchema.parse(summary));
     }
 
-    // outbound text enqueue.
+    //outbound text enqueue.
     if (url.pathname === "/api/channel/outbound/text" && request.method === "POST") {
       let body: unknown;
       try { body = await request.json(); } catch { return json({ code: "request.invalid-json" }, 400); }
@@ -7007,7 +7395,7 @@ export default {
       }
     }
 
-    // approval card enqueue.
+    //approval card enqueue.
     if (url.pathname === "/api/channel/outbound/approval" && request.method === "POST") {
       let body: unknown;
       try { body = await request.json(); } catch { return json({ code: "request.invalid-json" }, 400); }
@@ -7021,7 +7409,7 @@ export default {
       return json(EnqueueOutboundResultSchema.parse(result));
     }
 
-    // deliver pending outbound (bridge or dry-run).
+    //deliver pending outbound (bridge or dry-run).
     if (url.pathname === "/api/channel/outbound/deliver-pending" && request.method === "POST") {
       let body: unknown = {};
       try { body = await request.json(); } catch { body = {}; }
@@ -7034,7 +7422,7 @@ export default {
       return json(DeliverPendingResultSchema.parse(result));
     }
 
-    // approval resolve callback (bridge → AgentThursday button click).
+    //approval resolve callback (bridge → AgentThursday button click).
     if (url.pathname === "/api/channel/approval/resolve" && request.method === "POST") {
       let body: unknown;
       try { body = await request.json(); } catch { return json({ code: "request.invalid-json" }, 400); }
@@ -7048,12 +7436,12 @@ export default {
       return json(ApprovalResolveResultSchema.parse(result));
     }
 
-    // direct Discord adapter: HTTP Interactions endpoint.
+    //direct Discord adapter: HTTP Interactions endpoint.
     // PUBLIC (no X-AgentThursday-Secret); authenticity comes from Discord's Ed25519
     // signature. CF Worker can't run the Gateway WebSocket, so normal
     // MESSAGE_CREATE arrives via the auth-gated /api/channel/discord/direct
     // path (below) — typically populated by a sidecar gateway runner OR by
-    // smoke tests using the  OpenClaw payload shape.
+    // smoke tests using the OpenClaw payload shape.
     if (url.pathname === "/discord/interactions" && request.method === "POST") {
       const sig = request.headers.get("X-Signature-Ed25519");
       const ts = request.headers.get("X-Signature-Timestamp");
@@ -7178,7 +7566,7 @@ export default {
       return json({ type: 4, data: { content: "interaction type not supported", flags: 64 } });
     }
 
-    // auth-gated direct ingest path. Same OpenClaw payload shape
+    //auth-gated direct ingest path. Same OpenClaw payload shape
     // () so a sidecar gateway runner can post message-create-shaped events
     // here without renaming the contract. Bridge endpoint /api/channel/discord/openclaw
     // is preserved as a compatibility alias.
@@ -7187,11 +7575,17 @@ export default {
       try { body = await request.json(); } catch { return json({ code: "request.invalid-json" }, 400); }
       const parsed = OpenClawDiscordInboundSchema.safeParse(body);
       if (!parsed.success) return json({ code: "request.invalid-shape", issues: parsed.error.issues }, 400);
-      // Apply  Hermes-inspired filters BEFORE normalization so we don't
+      // Apply Hermes-inspired filters BEFORE normalization so we don't
       // persist messages we'd just ignore. Bridge path (openclaw) keeps the
       // old behavior — operators can ingest unfiltered there.
       const cfg = loadDirectDiscordConfig(env);
-      const isDm = parsed.data.isDm === true || parsed.data.guildId == null;
+      // honour explicit non-DM classification before
+      // falling back to the `guildId == null` heuristic. Polling REST
+      // payloads carry `isDm: false` + `chatType: "channel"` even
+      // though `guildId` is null (REST omits it). Without this
+      // precedence the filter would still treat polling channel
+      // traffic as DM and bypass `DISCORD_IGNORE_NO_MENTION`.
+      const isDm = deriveDirectFilterIsDm(parsed.data);
       const filterRes = applyDirectFilters({
         authorId: parsed.data.authorId,
         authorIsBot: parsed.data.authorIsBot ?? false,
@@ -7222,7 +7616,7 @@ export default {
       });
     }
 
-    // Discord REST mock for smoke testing. When operators
+    //Discord REST mock for smoke testing. When operators
     // point DISCORD_API_BASE_URL at this prefix, sendDiscordMessage hits this
     // endpoint instead of discord.com. Returns a Discord-shaped {id} so the
     // sender can record providerMessageId. NOT auth-gated (the worker's own
@@ -7236,7 +7630,7 @@ export default {
       });
     }
 
-    //  helper — set channel identity role (trusted/unknown).
+    // helper — set channel identity role (trusted/unknown).
     if (url.pathname === "/api/channel/identity/role" && request.method === "POST") {
       let body: unknown;
       try { body = await request.json(); } catch { return json({ code: "request.invalid-json" }, 400); }
@@ -7260,7 +7654,7 @@ export default {
       return json(result);
     }
 
-    // route pending inbox rows. Idempotent: only `received`
+    //route pending inbox rows. Idempotent: only `received`
     // status rows are picked up, others are skipped.
     if (url.pathname === "/api/channel/route-pending" && request.method === "POST") {
       let body: unknown = {};
@@ -7280,8 +7674,8 @@ export default {
       return json(ChannelRoutePendingResultSchema.parse(result));
     }
 
-    // OpenClaw Discord bridge inbound. Translates the narrow
-    // OpenClaw payload into ChannelMessageEnvelope and persists via 
+    //OpenClaw Discord bridge inbound. Translates the narrow
+    // OpenClaw payload into ChannelMessageEnvelope and persists via
     // ingestInbound. Same /api/* auth gate; raw Discord JSON is NOT accepted.
     if (url.pathname === "/api/channel/discord/openclaw" && request.method === "POST") {
       let body: unknown;
@@ -7315,7 +7709,7 @@ export default {
       });
     }
 
-    // Agent Memory v1 read-only snapshot.
+    //Agent Memory v1 read-only snapshot.
     if (url.pathname === "/api/memory" && request.method === "GET") {
       // route through canonical active context so Memory
       // tab reflects the active session's `agent_memories` /
@@ -7326,9 +7720,9 @@ export default {
       return json(MemorySnapshotSchema.parse(snapshot));
     }
 
-    // ContentHub registry listing.  returns the
+    //ContentHub registry listing. returns the
     // hardcoded `agentthursday-github` source with static `registry-only` health.
-    //  swaps the health probe for a real GitHub fetch and 
+    // swaps the health probe for a real GitHub fetch and
     // adds inspect-layer events. Query params:
     //   ?includeHealth=false  → cheap listing without health field
     //   ?sourceId=<id>        → filter to a single source (404-shaped: empty array)
@@ -7346,7 +7740,7 @@ export default {
       return json(ContentSourcesResponseSchema.parse(result));
     }
 
-    // ContentHub list endpoint. Body shape:
+    //ContentHub list endpoint. Body shape:
     //   { sourceId, path, ref? } → ContentListResponse (`{ ok, result|error }`)
     if (url.pathname === "/api/content/list" && request.method === "POST") {
       let body: unknown;
@@ -7361,7 +7755,7 @@ export default {
       return json(ContentListResponseSchema.parse(result));
     }
 
-    // ContentHub read endpoint. Body shape:
+    //ContentHub read endpoint. Body shape:
     //   { sourceId, path, ref?, maxBytes? } → ContentReadResponse
     if (url.pathname === "/api/content/read" && request.method === "POST") {
       let body: unknown;
@@ -7376,7 +7770,7 @@ export default {
       return json(ContentReadResponseSchema.parse(result));
     }
 
-    // ContentHub literal-search endpoint. Body shape:
+    //ContentHub literal-search endpoint. Body shape:
     //   { sourceId, query, path?, ref?, strategy?, maxResults? } → ContentSearchResponse
     // `strategy:"api-search"` (default) is fail-loud on quota; explicit
     // `strategy:"bounded-local"` returns degraded grep with searchedPaths +
@@ -7394,7 +7788,7 @@ export default {
       return json(ContentSearchResponseSchema.parse(result));
     }
 
-    // Tier 3 headless browser smoke endpoint. Same auth/CORS
+    //Tier 3 headless browser smoke endpoint. Same auth/CORS
     // posture as the rest of /api/*. SSRF guard runs inside runBrowser.
     if (url.pathname === "/api/browser/run" && request.method === "POST") {
       let body: unknown;
@@ -7497,7 +7891,8 @@ export default {
       return json(result);
     }
 
-    // Context lifecycle (inspect + reset). `context.new`
+    //Context lifecycle (inspect + reset). See
+    // docs/milestones/context-lifecycle-management.md. `context.new`
     // is deferred until Think SDK exposes traceable multi-thread sessions.
     if (url.pathname === "/cli/context/inspect" && request.method === "GET") {
       const lastNRaw = url.searchParams.get("lastN");
@@ -7537,7 +7932,7 @@ export default {
       }
     }
 
-    // v3 new-context (v1 reset-style fallback). Closes
+    //new-context (v1 reset-style fallback). Closes
     // the active context_history row, opens a new one, clears messages.
     // Auth-gated via the global /cli/* requireSecret check above.
     if (url.pathname === "/cli/context/new" && request.method === "POST") {
@@ -7565,13 +7960,13 @@ export default {
       return json(result);
     }
 
-    // `conversation_search` over the registry's
+    //`conversation_search` over the registry's
     // canonical archive. Registry-only routing (always DEMO_INSTANCE)
     // because per-context DOs don't hold the archive table. Inputs
     // come via query params for GET ergonomics; POST body would also
     // work but GET is friendlier for the agent's tool surface and for
     // dogfood curl.
-    // context hygiene loop. Manual-trigger only in v1
+    //context hygiene loop. Manual-trigger only in v1
     // (the callable rejects other triggers). Routes through the
     // canonical active context () so hygiene runs ON the
     // DO whose messages it would compact.
@@ -7607,7 +8002,7 @@ export default {
       return json(result);
     }
 
-    // read-only memory candidate inspect.
+    //read-only memory candidate inspect.
     // Registry-only routing because conversation_archive and the
     // dedupe-side `agent_memories` view both live on the registry
     // DO; the candidate generator pulls from those tables only and
@@ -7671,7 +8066,7 @@ export default {
       }
     }
 
-    // v3 switch the active context to an existing
+    //switch the active context to an existing
     // context_history row. Registry-only (always DEMO_INSTANCE) so the
     // active pointer stays the single source of truth across requests.
     if (url.pathname === "/cli/context/switch" && request.method === "POST") {
@@ -7738,7 +8133,7 @@ export default {
       return json(result);
     }
 
-    //  v2 Read-only context snapshot for anchor planning.
+    // v2 Read-only context snapshot for anchor planning.
     // Auth-gated by the global /cli/* requireSecret check above. No audit
     // row server-side; matches /cli/context/inspect's polling contract.
     if (url.pathname === "/cli/context/snapshot" && request.method === "GET") {
@@ -7749,7 +8144,7 @@ export default {
       return json(result);
     }
 
-    //  v2 Read-only deterministic anchor classifier.
+    // v2 Read-only deterministic anchor classifier.
     // Same auth contract as /cli/context/snapshot.
     if (url.pathname === "/cli/context/anchors" && request.method === "GET") {
       const lastNRaw = url.searchParams.get("lastN");
@@ -7763,7 +8158,7 @@ export default {
       return json(result);
     }
 
-    //  v2 Read-only compact-plan dry-run.
+    // v2 Read-only compact-plan dry-run.
     if (url.pathname === "/cli/context/compact-plan" && request.method === "POST") {
       let body: CompactPlanInput = {};
       try {
@@ -7777,7 +8172,7 @@ export default {
       return json(result);
     }
 
-    //  v2 Explicit apply of a previously proposed plan.
+    // v2 Explicit apply of a previously proposed plan.
     // Pre-flight runs against a fresh snapshot per range.
     if (url.pathname === "/cli/context/apply-compact-plan" && request.method === "POST") {
       type ApplyBody = {

@@ -1,9 +1,9 @@
 /**
- * `ChannelHubAgent` Durable Object.
+ *`ChannelHubAgent` Durable Object.
  *
  * Owns inbox / outbox / identity / conversation tables. Provider-agnostic.
  * No Discord/email adapter wiring in this card — only schema, storage, and
- * idempotent ingestion. + wire actual transports.
+ * idempotent ingestion. Cards 86+ wire actual transports.
  *
  * Boundary rationale ( review notes §1): kept as its own DO from day 1
  * so AgentThursdayAgent's event_log isn't shared with channel events, and webhook
@@ -71,7 +71,7 @@ type AgentThursdayAgentRPC = {
     opts?: { displayText?: string },
   ): Promise<{ ok: boolean; taskId: string; loopTriggered: boolean; replyText: string }>;
   approvePendingTool(toolCallId: string, approved: boolean): Promise<{ ok: boolean }>;
-  // explicit channel-ingress readiness predicate.
+  //explicit channel-ingress readiness predicate.
   getChannelIngressReadiness(): Promise<{
     canAccept: boolean;
     reason: string;
@@ -95,7 +95,12 @@ type AgentThursdayAgentRPC = {
 // when the active pointer is empty or RPC fails.
 const AGENT_THURSDAY_REGISTRY_INSTANCE_NAME = "agent-thursday-dev-fresh-108a-1";
 
-// — recognise DO isolate memory-pressure errors so
+// DiscordGatewayAgent DO instance name. Match the literal
+// in `discordGatewayAgent.ts` (`DISCORD_GATEWAY_INSTANCE`); we don't
+// import it here to avoid pulling the full Discord types into ChannelHub.
+const GATEWAY_INSTANCE_FOR_POLL = "agent-thursday-dev";
+
+// /156q1 — recognise DO isolate memory-pressure errors so
 // `routePending` can leave the inbox row retryable (`received`) instead
 // of permanently consuming it as `failed`. The CF runtime surfaces these
 // resets in a few different shapes depending on which RPC layer caught
@@ -294,10 +299,25 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       )
     `;
     this.sql`CREATE INDEX IF NOT EXISTS idx_channel_approvals_status_at ON channel_approvals(status, created_at)`;
+
+    // one-time Discord identity self repair. Older builds set
+    // `is_self=1` for any `authorIsBot=true`, so verifier/helper (Discord bots that
+    // talk to the agent but are NOT the agent) ended up flagged as self and got
+    // `loopback from self` ignores at the router. Reconcile against
+    // AGENT_THURSDAY_DISCORD_BOT_ID, which is the only true "self" for Discord.
+    // No-op when AGENT_THURSDAY_DISCORD_BOT_ID is unset (avoid clearing all selfs).
+    const agentthursdayDiscordBotId = (this.env as { AGENT_THURSDAY_DISCORD_BOT_ID?: string }).AGENT_THURSDAY_DISCORD_BOT_ID;
+    if (agentthursdayDiscordBotId) {
+      this.sql`
+        UPDATE channel_identities
+        SET is_self = CASE WHEN provider_user_id = ${agentthursdayDiscordBotId} THEN 1 ELSE 0 END
+        WHERE provider = 'discord'
+      `;
+    }
   }
 
   /**
-   * Idempotent inbound persist.  §E-15:
+   * Idempotent inbound persist. §E-15:
    *  - first insert → `{ inserted: true, id }`
    *  - duplicate `(provider, provider_message_id)` → `{ inserted: false, id }`
    *  - per-conversation pending cap exceeded → status `deferred`
@@ -385,21 +405,38 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       WHERE conversation_id = ${parsed.conversationId}
     `;
 
+    // `is_self=1` only for AgentThursday bot itself (small d / AGENT_THURSDAY_DISCORD_BOT_ID),
+    // not for any author with `isBot=true`. Other bots (verifier verifier, helper helper, future
+    // bots) are gated by direct filter (DISCORD_ALLOWED_USERS) + DISCORD_ALLOW_BOTS,
+    // not by self-loopback.
+    const selfProviderUserId = parsed.provider === "discord"
+      ? (this.env as { AGENT_THURSDAY_DISCORD_BOT_ID?: string }).AGENT_THURSDAY_DISCORD_BOT_ID ?? null
+      : null;
+    const isSelfSender = selfProviderUserId != null && senderUid === selfProviderUserId;
+
     // Touch identity row so we know who has talked to us.
     this.sql`
       INSERT OR IGNORE INTO channel_identities (
         provider, provider_user_id, display_name, role, is_self, created_at
       ) VALUES (
         ${parsed.provider}, ${senderUid}, ${parsed.sender.displayName ?? null},
-        'unknown', ${parsed.sender.isBot ? 1 : 0}, ${now}
+        'unknown', ${isSelfSender ? 1 : 0}, ${now}
       )
+    `;
+    // repair already-existing rows that may have been mis-marked
+    // by the previous `parsed.sender.isBot` heuristic. Bounded to the current
+    // sender; the broader Discord-wide repair runs once in onStart below.
+    this.sql`
+      UPDATE channel_identities
+      SET is_self = ${isSelfSender ? 1 : 0}
+      WHERE provider = ${parsed.provider} AND provider_user_id = ${senderUid}
     `;
 
     return { ok: true, inserted, id: row[0].id, status: row[0].status as ChannelInboxStatus };
   }
 
   /**
-   * Route up to `limit` pending `received` inbox rows.  §B +  §B.
+   * Route up to `limit` pending `received` inbox rows. §B + §B.
    * For `process` action, RPCs AgentThursdayAgent.submitTask. Active-task guard runs
    * via `AgentThursdayAgent.getStatus()` before any submit so we never overwrite work.
    * : when the guard fires on an addressed/trusted row, the decision
@@ -444,9 +481,9 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     // signals can never disagree mid-loop. Without this, a `switchContext`
     // landing between readiness and submit could send the message to a
     // different DO than the one whose readiness we trusted.
-    const route = await this.getAgentThursdayRoute();
-    const readiness = await this.fetchAgentThursdayReadinessVia(route.stub);
-    const agentThursdayBusy = !readiness.canAccept;
+    const route = await this.getAgentthursdayRoute();
+    const readiness = await this.fetchAgentthursdayReadinessVia(route.stub);
+    const agentthursdayBusy = !readiness.canAccept;
     const decisions: Array<{
       inboxId: string;
       providerMessageId: string;
@@ -462,7 +499,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       // still "unknown" until a future card explicitly trusts. The router
       // converts unknown + addressed → wait, which is the safe default.
       const role = await this.lookupSenderRole(item.provider, item.senderProviderUserId);
-      const decision = decideRoute(item, { activeTaskBusy: agentThursdayBusy, senderRole: role });
+      const decision = decideRoute(item, { activeTaskBusy: agentthursdayBusy, senderRole: role });
       // when the policy fired busy-skip, append the concrete
       // readiness reason so operators can see WHICH busy condition won
       // (waitingForHuman / blocked / active task lifecycle / RPC failure).
@@ -475,7 +512,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       let handoffTaskId: string | null = null;
 
       if (decision.action === "busy-skip") {
-        //  invariant: the row is NOT consumed. status stays 'received',
+        // invariant: the row is NOT consumed. status stays 'received',
         // route_action / route_reason are NOT written (so it doesn't look
         // routed in inspect). Aggregate-level `busySkipped` counter signals
         // to the caller that this batch had busy-skipped rows.
@@ -514,7 +551,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
         } catch (e) {
           const errMsg = String(e instanceof Error ? e.message : e);
           // fail-soft on DO isolate memory resets, with
-          // _real_ retry semantics. (parked rows as `deferred`
+          // _real_ retry semantics. (156q parked rows as `deferred`
           // but `routePending` only scans `received`, so the row was
           // effectively orphaned — same outcome the user reported.)
           //
@@ -562,30 +599,38 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
         if (finalStatus === "handled") {
           const trimmed = replyText.trim();
           if (trimmed.length === 0) {
-            console.log(`[agent-thursday-channel] channel.reply.skipped-empty inboxId=${item.id} taskId=${handoffTaskId ?? "null"}`);
+            console.log(`[agentthursday-channel] channel.reply.skipped-empty inboxId=${item.id} taskId=${handoffTaskId ?? "null"}`);
           } else {
             const capped = trimmed.length > 4000 ? trimmed.slice(0, 4000) : trimmed;
+            // DM channels reject `message_reference.message_id`
+            // pointing at the inbound DM (`MESSAGE_REFERENCE_UNKNOWN_MESSAGE`
+            // 50035). Don't carry a reply_to into the outbox row at all
+            // for DMs — guild channels keep the existing reply behaviour.
+            // Defensive guard in `deliverPendingOutbound` re-checks
+            // `chat_type` so even an old / proactive row that still has
+            // `reply_to_provider_message_id` set can't slip through.
+            const replyToForOutbox = item.chatType === "dm" ? null : item.providerMessageId;
             try {
               const enq = await this.enqueueOutboundText({
                 provider: item.provider,
                 conversationId: item.conversationId,
-                replyToProviderMessageId: item.providerMessageId,
+                replyToProviderMessageId: replyToForOutbox,
                 text: capped,
               });
               if (enq.ok) {
-                console.log(`[agent-thursday-channel] channel.reply.enqueued inboxId=${item.id} outboxId=${enq.outboxId} conversationId=${item.conversationId} replyTextLen=${capped.length}`);
+                console.log(`[agentthursday-channel] channel.reply.enqueued inboxId=${item.id} outboxId=${enq.outboxId} conversationId=${item.conversationId} replyTextLen=${capped.length}`);
                 const dr = await this.deliverPendingOutbound(5);
                 const failures = dr.deliveries.filter(d => d.finalStatus === "failed");
                 if (failures.length > 0) {
                   const errPreview = (failures[0].error ?? "").slice(0, 200);
-                  console.log(`[agent-thursday-channel] channel.reply.deliver-failed inboxId=${item.id} outboxId=${enq.outboxId} err=${errPreview}`);
+                  console.log(`[agentthursday-channel] channel.reply.deliver-failed inboxId=${item.id} outboxId=${enq.outboxId} err=${errPreview}`);
                 }
               } else {
-                console.log(`[agent-thursday-channel] channel.reply.enqueue-rejected inboxId=${item.id} conversationId=${item.conversationId}`);
+                console.log(`[agentthursday-channel] channel.reply.enqueue-rejected inboxId=${item.id} conversationId=${item.conversationId}`);
               }
             } catch (e) {
               const msg = String(e instanceof Error ? e.message : e).slice(0, 200);
-              console.log(`[agent-thursday-channel] channel.reply.deliver-failed inboxId=${item.id} err=${msg}`);
+              console.log(`[agentthursday-channel] channel.reply.deliver-failed inboxId=${item.id} err=${msg}`);
             }
           }
         }
@@ -622,7 +667,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * replaces the old `isAgentThursdayBusy()` which incorrectly treated any
+   * replaces the old `isAgentthursdayBusy()` which incorrectly treated any
    * non-null `currentTask` STRING as busy. Returns the AgentThursdayAgent's explicit
    * `canAccept` verdict + the concrete predicate `reason` so a busy-skip
    * decision can name WHICH busy condition fired.
@@ -630,10 +675,10 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
    * Fail-closed: if the cross-DO RPC throws (Card §A-5), we report
    * `canAccept:false` so a broken AgentThursdayAgent doesn't get spammed with submits.
    */
-  private async fetchAgentThursdayReadiness(): Promise<{ canAccept: boolean; reason: string }> {
+  private async fetchAgentthursdayReadiness(): Promise<{ canAccept: boolean; reason: string }> {
     try {
-      const stub = await this.getAgentThursdayStub();
-      return await this.fetchAgentThursdayReadinessVia(stub);
+      const stub = await this.getAgentthursdayStub();
+      return await this.fetchAgentthursdayReadinessVia(stub);
     } catch (e) {
       const msg = String(e instanceof Error ? e.message : e).slice(0, 120);
       return { canAccept: false, reason: `readiness RPC failed: ${msg}` };
@@ -646,7 +691,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
    * share a single resolved route (no double active-pointer lookup,
    * no race window).
    */
-  private async fetchAgentThursdayReadinessVia(stub: AgentThursdayAgentRPC): Promise<{ canAccept: boolean; reason: string }> {
+  private async fetchAgentthursdayReadinessVia(stub: AgentThursdayAgentRPC): Promise<{ canAccept: boolean; reason: string }> {
     try {
       const r = await stub.getChannelIngressReadiness();
       return { canAccept: r.canAccept, reason: r.reason };
@@ -675,7 +720,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
    * Recursion-safe: the registry lookup uses the registry instance
    * name directly; it never reads from itself via the active pointer.
    */
-  private async getAgentThursdayRoute(): Promise<{ name: string; stub: AgentThursdayAgentRPC }> {
+  private async getAgentthursdayRoute(): Promise<{ name: string; stub: AgentThursdayAgentRPC }> {
     // Cross-DO RPC: getAgentByName's generic constraint expects an `Agent`
     // subclass. We don't import AgentThursdayAgent here (would create a server.ts ⇄
     // channelHub.ts cycle), so we satisfy the constraint with the base
@@ -703,13 +748,39 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
 
   /**
    * single-stub convenience for callers that don't need
-   * to know the resolved name. Routes via `getAgentThursdayRoute()` so it
+   * to know the resolved name. Routes via `getAgentthursdayRoute()` so it
    * always follows the canonical active context. Replaces the
    * previous hardcoded-DEMO_INSTANCE behavior.
    */
-  private async getAgentThursdayStub(): Promise<AgentThursdayAgentRPC> {
-    const { stub } = await this.getAgentThursdayRoute();
+  private async getAgentthursdayStub(): Promise<AgentThursdayAgentRPC> {
+    const { stub } = await this.getAgentthursdayRoute();
     return stub;
+  }
+
+  /**
+   * fire-and-forget post-reply nudge to the gateway DO so
+   * polling-mode ingress runs an immediate sweep on the channel we
+   * just replied into. The gateway DO's `pollChannelOnce` is a no-op
+   * when ingress mode != polling, so this is safe to call without
+   * checking mode at the call site (we don't want every send path
+   * to re-derive mode).
+   *
+   * Cross-DO RPC failure must NOT unwind outbox lifecycle — the
+   * caller already wrote `status='sent'`. Errors are swallowed; the
+   * regular polling tick still catches up at the next cadence.
+   */
+  private maybePostReplyPoll(channelId: string): void {
+    const ns = this.env.DiscordGatewayAgent as unknown as AgentNamespace<Agent<Env>>;
+    if (!ns) return;
+    void (async () => {
+      try {
+        const stub = await getAgentByName<Env, Agent<Env>>(ns, GATEWAY_INSTANCE_FOR_POLL);
+        const rpc = stub as unknown as { pollChannelOnce(id: string): Promise<unknown> };
+        await rpc.pollChannelOnce(channelId);
+      } catch {
+        // No-op — the next scheduled tick will sweep this channel.
+      }
+    })();
   }
 
   private async lookupSenderRole(
@@ -735,7 +806,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     const now = Date.now();
     const allowProactive = input.allowProactive === true;
 
-    //  §D-21: proactive outbound (no reply target) is gated. Without
+    // §D-21: proactive outbound (no reply target) is gated. Without
     // an existing conversation OR replyToProviderMessageId we treat this as
     // proactive and refuse unless caller explicitly opted in.
     if (input.replyToProviderMessageId == null && !allowProactive) {
@@ -854,10 +925,17 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
 
     for (const row of rows) {
       const now = Date.now();
-      const conv = this.sql<{ provider_channel_id: string | null; provider_thread_id: string | null }>`
-        SELECT provider_channel_id, provider_thread_id FROM channel_conversations
+      // also pull `chat_type` so the sender-side defensive
+      // guard can drop `message_reference` for DM rows even if the
+      // outbox row still carries `reply_to_provider_message_id` (old
+      // row from before the routePending fix, or a proactive
+      // `enqueueOutboundText` caller that didn't know to clear it).
+      const conv = this.sql<{ chat_type: string | null; provider_channel_id: string | null; provider_thread_id: string | null }>`
+        SELECT chat_type, provider_channel_id, provider_thread_id FROM channel_conversations
         WHERE conversation_id = ${row.conversation_id} LIMIT 1
-      `[0] ?? { provider_channel_id: null, provider_thread_id: null };
+      `[0] ?? { chat_type: null, provider_channel_id: null, provider_thread_id: null };
+      const isDmConversation = conv.chat_type === "dm";
+      const replyRefForDiscord = isDmConversation ? null : row.reply_to_provider_message_id;
 
       let payload: OutboundChannelMessage;
       try {
@@ -892,13 +970,15 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
           errorOut = "discord:no-target-channel-on-conversation";
         } else if (payload.kind === "text") {
           // Card §C-4: split for 2000-char limit, code-fence safe.
+          // : only the first chunk uses the reply reference,
+          // and `replyRefForDiscord` is null for DMs so Discord
+          // doesn't 400 on `MESSAGE_REFERENCE_UNKNOWN_MESSAGE`.
           const chunks = splitForDiscord2000(payload.text);
           let chunkErr: string | null = null;
           for (let i = 0; i < chunks.length; i++) {
             const body = buildDiscordTextSendBody({
               text: chunks[i],
-              // Only the first chunk uses the reply reference.
-              replyToProviderMessageId: i === 0 ? row.reply_to_provider_message_id : null,
+              replyToProviderMessageId: i === 0 ? replyRefForDiscord : null,
             });
             const r = await sendDiscordMessage(this.env, { channelId: targetChannelId, body });
             if (!r.ok) { chunkErr = r.error; break; }
@@ -908,12 +988,14 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
             errorOut = chunkErr;
           }
         } else {
-          // approval kind: render text fallback + native button row
+          // approval kind: render text fallback + native button row.
+          // : same DM guard as text path — DMs go without a
+          // reference, channels keep the existing reply behaviour.
           const text = renderApprovalText(payload.approval);
           const body = buildDiscordApprovalSendBody({
             text,
             card: payload.approval,
-            replyToProviderMessageId: row.reply_to_provider_message_id,
+            replyToProviderMessageId: replyRefForDiscord,
           });
           const r = await sendDiscordMessage(this.env, { channelId: targetChannelId, body });
           if (!r.ok) {
@@ -940,7 +1022,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
         }
       } else {
         // Dry-run: log to event-style channel via console.warn; no network call
-        console.log(`[agent-thursday-outbound] dry-run delivery id=${row.id} kind=${row.kind ?? "text"} payload=${JSON.stringify(bridgePayload).slice(0, 500)}`);
+        console.log(`[agentthursday-outbound] dry-run delivery id=${row.id} kind=${row.kind ?? "text"} payload=${JSON.stringify(bridgePayload).slice(0, 500)}`);
       }
 
       if (finalStatus === "sent") {
@@ -949,6 +1031,14 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
             attempt_count = attempt_count + 1, sent_at = ${now}
           WHERE id = ${row.id}
         `;
+        // in polling ingress mode, kick a one-shot poll on
+        // the same Discord channel so a user's follow-up message is
+        // ingested faster than the next scheduled tick. Fire-and-forget;
+        // the gateway DO checks ingress mode itself and turns this into
+        // a cheap no-op when mode != polling.
+        if (useDirectDiscord && targetChannelId) {
+          this.maybePostReplyPoll(targetChannelId);
+        }
       } else {
         this.sql`
           UPDATE channel_outbox SET status = 'failed', error = ${errorOut},
@@ -974,7 +1064,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
    * return the prior resolution; payload-hash mismatch invalidates;
    * expiration auto-denies. For `kind=tool` resolutions, calls the existing
    * `AgentThursdayAgent.approvePendingTool` so we do not create a parallel approval
-   * authority ( §C-20).
+   * authority (§C-20).
    */
   @callable()
   async resolveApproval(input: ApprovalResolveRequest): Promise<ApprovalResolveResult> {
@@ -1074,12 +1164,12 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       WHERE id = ${row.id}
     `;
 
-    // Downstream side-effect —  §C-20: route tool-kind approvals
+    // Downstream side-effect — §C-20: route tool-kind approvals
     // through the existing AgentThursdayAgent surface, do not create a parallel path.
     let downstream: ApprovalResolveResult["downstream"] = null;
     if (row.kind === "tool" && row.target_tool_call_id) {
       try {
-        const stub = await this.getAgentThursdayStub();
+        const stub = await this.getAgentthursdayStub();
         const r = await stub.approvePendingTool(row.target_tool_call_id, approved);
         downstream = { kind: "tool-approval", toolCallId: row.target_tool_call_id, approved, ok: r.ok };
       } catch (e) {
@@ -1124,9 +1214,9 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  helper — set identity role so the router can promote a sender
+   * helper — set identity role so the router can promote a sender
    * from `unknown` to `trusted` (or back). Minimal seam needed to actually
-   * exercise the `process` path;  will surface this in the UI.
+   * exercise the `process` path; will surface this in the UI.
    */
   @callable()
   async setIdentityRole(input: {

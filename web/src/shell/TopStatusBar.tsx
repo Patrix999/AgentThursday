@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import type { WorkspaceSnapshot } from "../../shared/schema";
 import { useInspect } from "../hooks/useInspect";
-import { contextChipLabel } from "../components/contextChip";
 import { GithubLink } from "../components/GithubLink";
+import { ContextIndicatorChip } from "../context/ContextIndicatorDialog";
+import { useDebugSurfaceMode } from "../hooks/useDebugSurfaceMode";
+import { isDebugSurfaceVisible } from "../debugSurfaceMode";
 
 type Props = {
   snapshot: WorkspaceSnapshot | null;
@@ -15,10 +16,10 @@ type Props = {
 const STALE_AFTER_MS = 10_000;
 
 /**
- * Top status bar. v2.5 ( v2.5) — relocated the task badges
+ * Top status bar. v2.5 (v2.5) — relocated the task badges
  * (lifecycle / loopStage / ladderTier / readyForNextRound) here and
  * pulled in agent identity (instance name) + model (provider/model id)
- * + the  degradation summary state, so the bar is the single
+ * + the degradation summary state, so the bar is the single
  * place to check "what's running, on what model, in what state". The
  * task title itself is no longer rendered here — it's surfaced in the
  * main dialog (`SummaryStream`) as a user message instead.
@@ -28,6 +29,12 @@ export function TopStatusBar({ snapshot, lastRefreshedAt, onToggleInspect, inspe
   const task = snapshot?.currentTask;
   const stateLabel = session?.agentState ?? "loading";
   const stale = useStale(lastRefreshedAt);
+  // gate the Inspect toggle button. / 173 keep the
+  // context chip always visible (it opens the read-only
+  // ContextIndicatorDialog instead of /inspect#context).
+  // Treat null (mode still resolving) as "not visible yet" for Inspect only.
+  const debugMode = useDebugSurfaceMode();
+  const showDebugSurface = debugMode !== null && isDebugSurfaceVisible(debugMode);
 
   // Pull model + degradation state from the inspect snapshot. We
   // already poll inspect from `ActivityFeed`; doing it here is a
@@ -47,26 +54,29 @@ export function TopStatusBar({ snapshot, lastRefreshedAt, onToggleInspect, inspe
           <Pill label="agent" value={session.instanceName} />
         )}
         {/* desktop active context chip. Same semantic
-            entry point as `MobileStatusRow`: shows the active context
-            id (preferring
-            `getActiveContextId()` localStorage), links one-tap to
-            `/inspect#context`. Without this, mobile would have a
-            user-visible identity / discoverability surface that
-            desktop lacks — the operator's "mobile ⊆ desktop" violation. The
-            shared `contextChipLabel` helper enforces matching label
-            rules between the two surfaces; desktop opts into a
-            slightly longer 16-char budget given the wider header. */}
-        <Link
-          to="/inspect#context"
-          data-testid="desktop-context-chip"
+            entry point as `MobileStatusRow` (Cards 156b/156b1/156b2):
+            shows the active context id (preferring
+            `getActiveContextId()` localStorage). Without this, mobile
+            would have a user-visible identity / discoverability
+            surface that desktop lacks — the operator's "mobile ⊆ desktop"
+            violation. The shared `contextChipLabel` helper enforces
+            matching label rules between the two surfaces; desktop
+            opts into a slightly longer 16-char budget given the
+            wider header.
+            / 173 — chip is a first-class indicator, NOT
+            part of the debug surface: it stays visible at all three
+            `AGENT_THURSDAY_DEBUG_SURFACE_MODE` modes (enable / readonly /
+            disable). Click opens the read-only
+            `ContextIndicatorDialog` (which mirrors the desktop
+            ContextRail's information density); it does NOT
+            navigate to `/inspect#context` and does NOT open the
+            Inspect drawer. */}
+        <ContextIndicatorChip
+          instanceName={session?.instanceName}
+          maxLen={16}
+          testId="desktop-context-chip"
           className="text-xs inline-flex items-baseline gap-1 rounded border border-cyan-700/60 bg-cyan-950/60 px-2 py-1 text-cyan-200 hover:bg-cyan-900/60 active:bg-cyan-900/80"
-          aria-label="Open context details"
-        >
-          <span className="text-[10px] uppercase tracking-wide text-cyan-500">ctx</span>
-          <span className="font-mono truncate max-w-[14rem]">
-            {contextChipLabel(session?.instanceName, { maxLen: 16 })}
-          </span>
-        </Link>
+        />
         {modelId && (
           <Pill
             label="model"
@@ -89,7 +99,7 @@ export function TopStatusBar({ snapshot, lastRefreshedAt, onToggleInspect, inspe
         )}
         <div className="flex-1" />
         <GithubLink />
-        {onToggleInspect && (
+        {showDebugSurface && onToggleInspect && (
           <button
             onClick={onToggleInspect}
             className="hidden lg:inline-block text-xs px-3 py-1 rounded border border-slate-700 hover:bg-slate-800"
@@ -153,7 +163,7 @@ function DegradationBadge({ state }: { state: string | null }) {
   return (
     <span
       className={`text-xs px-2 py-0.5 rounded font-mono ${cls}`}
-      title={`Runtime degradation state: ${label} ()`}
+      title={`Runtime degradation state: ${label} ( )`}
     >
       deg: {label}
     </span>

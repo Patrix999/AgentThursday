@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import type { WorkspaceSnapshot } from "../../shared/schema";
 import { useInspect } from "../hooks/useInspect";
-import { contextChipLabel } from "../components/contextChip";
 import { GithubLink } from "../components/GithubLink";
+import { ContextIndicatorChip } from "../context/ContextIndicatorDialog";
 
 type Props = {
   snapshot: WorkspaceSnapshot | null;
@@ -13,22 +12,23 @@ type Props = {
 const STALE_AFTER_MS = 10_000;
 
 /**
- * mobile-only compact status row.
+ *mobile-only compact status row.
  *
  * Replaces the desktop `TopStatusBar` on the mobile branch of
  * `Workspace.tsx`. Single row, target ≤ 56px height, four signals
  * plus a context indicator chip. the operator's non-negotiable for 156b:
  * mobile home must show a context indicator and it must be
- * tap-accessible (not hover-driven). The chip links to
- * `/inspect#context` so InspectContent opens directly on the Context
- * tab — no new context-detail surface in 156b (that's 156c).
+ * tap-accessible (not hover-driven). / 173 — the chip
+ * opens the read-only `ContextIndicatorDialog` (which mirrors the
+ * desktop ContextRail's information density); it does NOT navigate
+ * to `/inspect#context` and is unaffected by `AGENT_THURSDAY_DEBUG_SURFACE_MODE`.
  *
  * Data sources match the desktop `TopStatusBar`:
  *   - `WorkspaceSnapshot.session.{instanceName, agentState}` and `currentTask`
  *   - `useInspect(true).data.degradationDiagnostics.latestSummary` for
  *     model + degradation state (existing dual-poll preserved; the
  *     extra inspect poll is tracked as a follow-up but is not part of
- *     this scope).
+ *     156b scope).
  *
  * Privacy: reads only metadata (instance name, model id, degradation
  * label, lifecycle, agent state). No prompt / SOUL / tool payload.
@@ -38,7 +38,6 @@ export function MobileStatusRow({ snapshot, lastRefreshedAt }: Props) {
   const task = snapshot?.currentTask;
   const stateLabel = session?.agentState ?? "loading";
   const stale = useStale(lastRefreshedAt);
-
   const inspect = useInspect(true);
   const summary = inspect.data?.degradationDiagnostics?.latestSummary ?? null;
   const modelId = summary?.modelProfile?.modelId ?? null;
@@ -57,17 +56,12 @@ export function MobileStatusRow({ snapshot, lastRefreshedAt }: Props) {
           moves. the operator reviewed 156b1 and said "没有看到 context indicator";
           this restructure fixes the discoverability gap. */}
       <div className="flex items-center gap-2 text-xs">
-        <Link
-          to="/inspect#context"
-          data-testid="mobile-context-chip"
+        {/* context chip is an always-visible indicator, not debug surface. */}
+        <ContextIndicatorChip
+          instanceName={session?.instanceName}
+          testId="mobile-context-chip"
           className="shrink-0 inline-flex items-center gap-1 rounded border border-cyan-700/60 bg-cyan-950/60 px-2 py-1 text-cyan-200 hover:bg-cyan-900/60 active:bg-cyan-900/80"
-          aria-label="Open context details"
-        >
-          <span className="text-[10px] uppercase tracking-wide text-cyan-500">ctx</span>
-          <span className="font-mono truncate max-w-[10rem]">
-            {contextChipLabel(session?.instanceName)}
-          </span>
-        </Link>
+        />
         <div className="min-w-0 flex-1 flex items-center gap-2 overflow-x-auto no-scrollbar">
           <AgentStateDot state={stateLabel} />
           <DegradationPill state={degradationState} />
@@ -84,9 +78,9 @@ export function MobileStatusRow({ snapshot, lastRefreshedAt }: Props) {
             </span>
           )}
         </div>
-        {/* Keep the GitHub link in a non-scrolling trailing slot so
-            it's always tappable on 360px without being pushed out by
-            overflowing pills. */}
+        {/* §D — keep the GitHub link in a non-scrolling
+            trailing slot so it's always tappable on 360px without
+            being pushed out by overflowing pills. */}
         <GithubLink className="shrink-0 inline-flex items-center justify-center text-slate-400 hover:text-slate-100 active:text-slate-100 px-1.5 py-1 rounded" />
       </div>
     </header>

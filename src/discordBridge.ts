@@ -1,13 +1,13 @@
 /**
- * Discord/OpenClaw bridge inbound adapter.
+ *Discord/OpenClaw bridge inbound adapter.
  *
  * Accepts a narrow, OpenClaw-friendly Discord payload (NOT raw Discord JSON
  * as our canonical schema), normalizes it into `ChannelMessageEnvelope`, and
- * computes addressed signals before persistence. Per  §A-3, raw
+ * computes addressed signals before persistence. Per §A-3, raw
  * Discord JSON is not the contract — only this documented shape.
  *
  * What this file does NOT do:
- *  - direct Discord gateway / webhook signature verification ( §F)
+ *  - direct Discord gateway / webhook signature verification (§F)
  *  - routing to AgentThursdayAgent ()
  *  - outbound delivery ()
  */
@@ -73,7 +73,13 @@ function deriveChatType(input: OpenClawDiscordInbound): ChannelChatType {
   if (input.chatType === "group") return "group";
   if (input.chatType === "channel") return "channel";
   if (input.isDm === true) return "dm";
-  if (input.guildId == null) return "dm"; // no guild → must be DM
+  // honour explicit `isDm: false` BEFORE the
+  // `guildId == null` heuristic. Polling REST omits `guild_id`,
+  // so the heuristic alone would mis-tag polling-sourced guild
+  // messages as DM, which then leaks `signals: ["dm"]` into the
+  // ChannelHub envelope and bypasses mention filtering.
+  if (input.isDm === false) return "channel";
+  if (input.guildId == null) return "dm"; // no guild + no explicit hint → DM
   return "channel";
 }
 
@@ -160,7 +166,7 @@ function classifyAttachmentKind(
 }
 
 /**
- * Normalize an OpenClaw Discord payload into the  envelope.
+ * Normalize an OpenClaw Discord payload into the envelope.
  * Bot id may be null (env unset); §D-19 guarantees graceful behavior.
  */
 export async function normalizeOpenClawPayload(
