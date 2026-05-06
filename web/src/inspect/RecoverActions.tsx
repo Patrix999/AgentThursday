@@ -43,7 +43,7 @@ export function RecoverActions() {
       <div className="text-slate-500 uppercase tracking-wide">Recovery</div>
       <div className="flex flex-wrap gap-2">
         <button
-          disabled={busy !== null}
+          disabled={busy !== null || !actionsEnabled}
           onClick={() => void run("clear")}
           aria-disabled={!actionsEnabled || undefined}
           title={!actionsEnabled && debugMode !== null ? getDebugReadonlyNotice() : undefined}
@@ -53,7 +53,7 @@ export function RecoverActions() {
           {busy === "clear" ? "…" : "Clear stale state"}
         </button>
         <button
-          disabled={busy !== null}
+          disabled={busy !== null || !actionsEnabled}
           onClick={() => void run("continue")}
           aria-disabled={!actionsEnabled || undefined}
           title={!actionsEnabled && debugMode !== null ? getDebugReadonlyNotice() : undefined}
