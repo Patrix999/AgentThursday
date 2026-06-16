@@ -88,14 +88,14 @@ new_sqlite_classes = ["DiscordGatewayAgent"]
 # via `env.AGENT_RUN_WORKFLOW.create(...)` to drive a multi-step agent
 # run as a durable Cloudflare Workflow.
 [[workflows]]
-name = "agent-run"
+name = "agent-thursday-agent-run"
 binding = "AGENT_RUN_WORKFLOW"
 class_name = "AgentRunWorkflow"
 
 # orchestration-as-code executor (descriptor-driven). Runs a validated
 # phase/agent descriptor as a durable Cloudflare Workflow.
 [[workflows]]
-name = "workflow-executor"
+name = "agent-thursday-workflow-executor"
 binding = "WORKFLOW_EXECUTOR"
 class_name = "WorkflowExecutor"
 
