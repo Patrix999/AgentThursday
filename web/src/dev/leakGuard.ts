@@ -1,5 +1,5 @@
 /**
- *  §E-15 — dev-time DOM leak scanner.
+ *   §E-15 — dev-time DOM leak scanner.
  *
  * Scans `document.body.innerText` on the user-layer routes (`/`) for inspect
  * blacklist strings. If any match, console.warn with the offending substring
@@ -44,7 +44,7 @@ export function startLeakGuard(): void {
     const hits = BLACKLIST.filter((needle) => text.includes(needle));
     if (hits.length > 0) {
       console.warn(
-        "[agent-thursday-leak-guard] inspect-layer fields leaked into default user-layer DOM:",
+        "[agentthursday-leak-guard] inspect-layer fields leaked into default user-layer DOM:",
         hits,
         "at",
         location.href,

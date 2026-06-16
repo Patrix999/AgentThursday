@@ -6,7 +6,7 @@
  * and future  (`recommendedAction` derivation) read these profiles
  * to interpret runtime signals against an explicit baseline.
  *
- * v1 invariants (per spec red lines):
+ * v1 invariants (per kanban +  milestone red lines):
  *   - This module does NOT route, retry, switch, pause, or score models.
  *   - Profiles are engineering facts and observed risks, not global
  *     intelligence rankings.
@@ -17,7 +17,7 @@
  *   - `getModel()` in `src/server.ts` continues to hardcode Kimi; Manager
  *     prompts MAY read these profiles but v1 dispatch is unchanged.
  *
- * Out of scope (per spec):
+ * Out of scope (per kanban):
  *   - dynamic profile updates from canary data (deferred to +)
  *   - per-task 4-state degradation summary ()
  *   - any change to `supplier.signal.summary` event shape
@@ -105,6 +105,92 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
     ],
     recommendedUse: [
       "Treat capability as unknown until evidence collected.",
+    ],
+  },
+  //  — Anthropic Claude, dispatched via @ai-sdk/anthropic.
+  // Runnable only when ANTHROPIC_API_KEY is configured.
+  {
+    modelId: "claude-opus-4-8",
+    provider: "anthropic",
+    adapter: "@ai-sdk/anthropic",
+    capabilities: {
+      toolCalls: "reliable",
+      streamingToolCalls: "reliable",
+    },
+    knownRisks: [
+      "Requires ANTHROPIC_API_KEY (wrangler secret) — falls back to the workers-ai default when unconfigured.",
+      "External API: usage is billed per Anthropic pricing; subject to Anthropic rate limits.",
+    ],
+    recommendedUse: [
+      "Highest-capability option for hard reasoning / long-horizon agentic work.",
+    ],
+    notes: "Adaptive thinking only (no temperature/budget_tokens); the agentthursday loop passes neither, so the constraint is satisfied automatically.",
+  },
+  {
+    modelId: "claude-sonnet-4-6",
+    provider: "anthropic",
+    adapter: "@ai-sdk/anthropic",
+    capabilities: {
+      toolCalls: "reliable",
+      streamingToolCalls: "reliable",
+    },
+    knownRisks: [
+      "Requires ANTHROPIC_API_KEY (wrangler secret).",
+      "External API billing + rate limits.",
+    ],
+    recommendedUse: [
+      "Balanced speed/intelligence Anthropic option.",
+    ],
+  },
+  {
+    modelId: "claude-haiku-4-5",
+    provider: "anthropic",
+    adapter: "@ai-sdk/anthropic",
+    capabilities: {
+      toolCalls: "reliable",
+      streamingToolCalls: "reliable",
+    },
+    knownRisks: [
+      "Requires an Anthropic credential (Models page → Add provider key).",
+      "External API billing + rate limits.",
+    ],
+    recommendedUse: [
+      "Fast, cost-effective Anthropic option for simpler tasks.",
+    ],
+  },
+  //  — DeepSeek, dispatched via @ai-sdk/deepseek. Runnable when
+  // a deepseek credential is stored (Models page → Add provider key).
+  {
+    modelId: "deepseek-chat",
+    provider: "deepseek",
+    adapter: "@ai-sdk/deepseek",
+    capabilities: {
+      toolCalls: "reliable",
+      streamingToolCalls: "unknown",
+    },
+    knownRisks: [
+      "Requires a DeepSeek credential (Models page → Add provider key).",
+      "Streaming tool-call reliability not yet validated against the  supplier-signal baseline.",
+    ],
+    recommendedUse: [
+      "Wallet-friendly external option for general tool-dispatch tasks.",
+    ],
+    notes: "DeepSeek V3 via OpenAI-compatible API (api.deepseek.com).",
+  },
+  {
+    modelId: "deepseek-reasoner",
+    provider: "deepseek",
+    adapter: "@ai-sdk/deepseek",
+    capabilities: {
+      toolCalls: "unknown",
+      streamingToolCalls: "unknown",
+    },
+    knownRisks: [
+      "Requires a DeepSeek credential.",
+      "Reasoning model — may not emit structured tool calls the same way; validate before tool-heavy use.",
+    ],
+    recommendedUse: [
+      "Reasoning-heavy tasks where chain-of-thought matters more than tool dispatch.",
     ],
   },
 ];

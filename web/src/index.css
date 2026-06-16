@@ -16,7 +16,7 @@ html, body, #root {
   --keyboard-inset: 0px;
 }
 
-/* scoped scrollbar hide. Used only by the Inspect tab strip
+/*  — scoped scrollbar hide. Used only by the Inspect tab strip
    ('s overflow-x-auto wrapper). Keeps the tab row horizontally
    scrollable while suppressing the visible scrollbar line under it. Do
    NOT generalize to global selectors — this class must be applied

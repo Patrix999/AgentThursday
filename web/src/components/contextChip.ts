@@ -6,10 +6,10 @@
  * privacy footprint.
  *
  * Behavior:
- *   - prefer `getActiveContextId()` (the `agent-thursday.contextId` localStorage
+ *   - prefer `getActiveContextId()` (the `agentthursday.contextId` localStorage
  *     key that drives `X-AgentThursday-Context-Id` routing);
  *   - else fall back to `session.instanceName` (the DO instance name)
- *     with the common `agent-thursday-` prefix stripped;
+ *     with the common `agentthursday-` prefix stripped;
  *   - else "—".
  *
  * Both surfaces accept a `maxLen` for `ctx_<uuid>` ids — mobile keeps
@@ -57,9 +57,9 @@ export function shortContextId(id: string, opts: ContextChipOptions = {}): strin
 }
 
 export function shortInstanceName(instanceName: string): string {
-  // Drop the common `agent-thursday-` prefix to save header real estate; the
+  // Drop the common `agentthursday-` prefix to save header real estate; the
   // raw form leaks back if the prefix isn't present.
-  return instanceName.startsWith("agent-thursday-")
-    ? instanceName.slice("agent-thursday-".length)
+  return instanceName.startsWith("agentthursday-")
+    ? instanceName.slice("agentthursday-".length)
     : instanceName;
 }

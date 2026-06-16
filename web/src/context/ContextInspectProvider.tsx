@@ -5,8 +5,8 @@ type State = ReturnType<typeof useContextInspect>;
 
 const Ctx = createContext<State | null>(null);
 
-const COMPACTED_EVENT = "agent-thursday:context:compacted";
-const RESET_EVENT = "agent-thursday:context:reset";
+const COMPACTED_EVENT = "agentthursday:context:compacted";
+const RESET_EVENT = "agentthursday:context:reset";
 
 /**
  * single-source provider for `inspectContext` polling.
@@ -26,7 +26,7 @@ const RESET_EVENT = "agent-thursday:context:reset";
  */
 export function ContextInspectProvider({ children, enabled = true }: { children: ReactNode; enabled?: boolean }) {
   const state = useContextInspect(enabled);
-  // when a compact (or future reset-from-UI) lands, re-poll
+  //  — when a compact (or future reset-from-UI) lands, re-poll
   // immediately rather than waiting up to 12s for the interval. Both
   // events are user-triggered mutations, so a fresh fetch right after
   // is the lowest-cost way to keep the rail/panel visually consistent.

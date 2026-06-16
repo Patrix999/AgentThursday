@@ -1,6 +1,6 @@
 {
-  "name": "AgentThursday workspace",
-  "short_name": "AgentThursday",
+  "name": "agentthursday workspace",
+  "short_name": "agentthursday",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#020617",

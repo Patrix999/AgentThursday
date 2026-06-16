@@ -24,7 +24,7 @@ export function useChannelSummary(intervalMs = 10_000): State {
         const res = await fetch("/api/channel/summary", { headers: authHeaders() });
         if (res.status === 401) {
           clearSecret();
-          window.dispatchEvent(new Event("agent-thursday:unauthorized"));
+          window.dispatchEvent(new Event("agentthursday:unauthorized"));
           return;
         }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);

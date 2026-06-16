@@ -4,10 +4,11 @@ type Props = {
   preview?: string | null;
   reason?: string | null;
   sandboxId?: string | null;
+  autoDispatched?: boolean;
 };
 
 /**
- * Execution result panel. v1 surfaces what was run and at
+ *  — Execution result panel. v1 surfaces what was run and at
  * which tier, not stdout/stderr (results aren't persisted in
  * `event_log`; returned to agent directly). The preview is already
  * truncated at the call site (200 chars for `tool.execute`,
@@ -18,7 +19,7 @@ type Props = {
 export function ExecutionResultPanel(props: Props) {
   const tierLabel = props.tier !== null && props.tier !== undefined ? `Tier ${props.tier}` : null;
   return (
-    <div className="mt-2">
+    <div data-auto={props.autoDispatched ? "1" : undefined} className="mt-2">
       <Row label={props.variant === "sandbox" ? "command" : "code"}>
         {props.preview ? (
           <pre className="text-xs bg-slate-950/60 rounded p-2 text-slate-200 whitespace-pre-wrap break-words font-mono overflow-x-auto">

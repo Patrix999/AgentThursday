@@ -1,5 +1,5 @@
 /**
- *`ChannelHubAgent` Durable Object.
+ * `ChannelHubAgent` Durable Object.
  *
  * Owns inbox / outbox / identity / conversation tables. Provider-agnostic.
  * No Discord/email adapter wiring in this card — only schema, storage, and
@@ -12,22 +12,16 @@
 
 import { Agent, getAgentByName, unstable_callable as callable, type AgentNamespace } from "agents";
 import {
-  ChannelMessageEnvelopeSchema,
   type ChannelInboundResult,
   type ChannelInboxItem,
   type ChannelInboxStatus,
   type ChannelOutboxItem,
   type ChannelOutboxStatus,
   type ChannelSnapshot,
-  type ChannelAttachment,
-  type ChannelChatType,
   type ChannelProvider,
   type ChannelRouteDecision,
-  type ChannelApprovalCard,
   type ChannelApprovalStatus,
   type ApprovalScope,
-  type ApprovalKind,
-  type ApprovalWarning,
   type EnqueueOutboundTextRequest,
   type EnqueueOutboundApprovalRequest,
   type EnqueueOutboundResult,
@@ -38,25 +32,93 @@ import {
   type ChannelApprovalRow,
   type ChannelCompactSummary,
 } from "./schema";
-import {
-  PENDING_CAP_PER_CONVERSATION, PENDING_INBOX_STATUSES, clampRawRef,
-  INBOX_TEXT_MAX, INBOX_ATTACHMENTS_JSON_MAX,
-} from "./channel";
 import { decideRoute, buildTaskPromptFromInbox, buildDisplayTextFromInbox } from "./channelRouter";
 import {
-  hashApprovalPayload,
   buildBridgePayload,
   sanitizeOutboundError,
   rowKindToOutboundKind,
-  APPROVAL_DEFAULTS,
 } from "./channelOutbound";
 import {
   splitForDiscord2000,
   buildDiscordTextSendBody,
   buildDiscordApprovalSendBody,
+  stripDiscordVisibleInternalMarkers,
 } from "./discordDirect";
 import { sendDiscordMessage } from "./discordSender";
 import { renderApprovalText } from "./channelOutbound";
+import {
+  redactApprovalRow,
+  verifyApprovalToken,
+  type ApprovalInspectRow,
+  type ApprovalRecord,
+  type ApprovalStatus,
+} from "./skillset/approvalToken";
+import {
+  createApprovalRequestImpl,
+  decideApprovalImpl,
+  consumeApprovalTokenImpl,
+  lookupApprovalHashImpl,
+  type ApprovalHmacEnv,
+  type CreateApprovalRequestInput,
+  type CreateApprovalRequestResult,
+  type DecideApprovalInput,
+  type DecideApprovalResult,
+  type ConsumeApprovalTokenInput,
+  type ConsumeApprovalTokenResult,
+} from "./channelHub/approvalOps";
+import {
+  APPLY_TOOL_ID,
+  ARTIFACT_ID_RE,
+  computeApplyInputHash,
+  parseUnifiedDiffTargets,
+} from "./skillset/patchPolicy";
+import { getSandbox } from "@cloudflare/sandbox";
+import { ensureRepoCheckout, REPO_BASE_DIR } from "./skillset/repoMaterialization";
+import type { Tier } from "./skillset/types";
+import { renderReadIntentNoExecutionReply } from "./replyEmptyFallback";
+import { ensureChannelHubSchema } from "./channelHub/schema";
+import {
+  type InboxRow,
+  type PatchArtifactInspectRow,
+  type PatchApplyEventInspectRow,
+  type PatchApplyOutboxInspectRow,
+  rowToInboxItem,
+  safeParseArray,
+} from "./channelHub/mappers";
+import {
+  proposePatchArtifactImpl,
+  inspectPatchArtifactsImpl,
+} from "./channelHub/patchArtifacts";
+import {
+  inspectChannelInboxImpl,
+  type ChannelInboxInspectRow,
+  type InspectChannelInboxInput,
+} from "./channelHub/inboxInspect";
+import {
+  inspectConversationOwnershipImpl,
+  type InspectConversationOwnershipInput,
+  type InspectConversationOwnershipResult,
+} from "./channelHub/conversationOwnership";
+import {
+  inspectPatchApplyEventsImpl,
+  inspectPatchApplyOutboxImpl,
+  getLatestPatchApplyOutboxSummaryImpl,
+  type LatestPatchApplyOutboxSummary,
+} from "./channelHub/patchApply";
+import { ingestInboundImpl } from "./channelHub/inbound";
+import {
+  resolveChannelAgentRoute,
+  type ResolveChannelAgentRouteResult,
+} from "./channelHub/resolveChannelAgentRoute";
+import {
+  tryIngestContinuationImpl,
+  type TryIngestContinuationInput,
+  type TryIngestContinuationResult,
+} from "./channelHub/continuation";
+import {
+  enqueueOutboundApprovalImpl,
+  enqueueOutboundTextImpl,
+} from "./channelHub/outbound";
 
 // AgentThursdayAgent is RPC'd cross-DO. Use a structural type so the import doesn't
 // pull the full Think class graph into channelHub.ts.
@@ -71,34 +133,57 @@ type AgentThursdayAgentRPC = {
     opts?: { displayText?: string },
   ): Promise<{ ok: boolean; taskId: string; loopTriggered: boolean; replyText: string }>;
   approvePendingTool(toolCallId: string, approved: boolean): Promise<{ ok: boolean }>;
-  //explicit channel-ingress readiness predicate.
+  // explicit channel-ingress readiness predicate.
   getChannelIngressReadiness(): Promise<{
     canAccept: boolean;
     reason: string;
     currentTaskId: string | null;
     currentTaskLifecycle: string | null;
   }>;
-  // registry pointer accessor (only invoked on the
+  //  — registry pointer accessor (only invoked on the
   // registry DO; safe shape so the RPC compiles in this file).
   getActiveContextId(): Promise<{
     contextId: string;
     reason: string | null;
     createdAt: number;
   }>;
+  //  — registry-DO profile read so ChannelHub can validate a
+  // `channel_conversations.active_profile_id` at set-time and
+  // route-time. Shape mirrors `AgentProfile` (see `src/schema/agent.ts`)
+  // but is typed structurally so this file doesn't pull the full
+  // server.ts graph. Only invoked on the registry DO.
+  readAgentProfile(id: string): Promise<{
+    id: string;
+    name: string;
+    model: string;
+    channel: string;
+    skillset: string;
+    persona: string;
+    //  lifecycle v2 — persisted enum:
+    // `initialized` (active, may be paused via accepts_tasks=false),
+    // `archived` (reversible removal), `deleted_marker` (audit tombstone).
+    // See ``.
+    status: "initialized" | "archived" | "deleted_marker";
+    created_at: string;
+    updated_at: string;
+  } | null>;
 };
 
-// `AGENT_THURSDAY_REGISTRY_INSTANCE_NAME` (was `AGENT_THURSDAY_INSTANCE_NAME`)
+//  — `AGENT_THURSDAY_REGISTRY_INSTANCE_NAME` (was `AGENT_THURSDAY_INSTANCE_NAME`)
 // is the registry DO that owns `context_active`. It is **not** the
 // default chat target anymore; ChannelHub looks up the canonical
 // active context via `getActiveContextId()` on this registry and
 // routes inbound messages there. Falls back to the registry only
 // when the active pointer is empty or RPC fails.
-const AGENT_THURSDAY_REGISTRY_INSTANCE_NAME = "agent-thursday-dev-fresh-108a-1";
+//  — constant extracted to ./channelHub/registryName so the
+// Discord gateway DO can share it; re-exported import keeps all
+// existing references in this file working unchanged.
+import { AGENT_THURSDAY_REGISTRY_INSTANCE_NAME } from "./channelHub/registryName";
 
-// DiscordGatewayAgent DO instance name. Match the literal
+//  — DiscordGatewayAgent DO instance name. Match the literal
 // in `discordGatewayAgent.ts` (`DISCORD_GATEWAY_INSTANCE`); we don't
 // import it here to avoid pulling the full Discord types into ChannelHub.
-const GATEWAY_INSTANCE_FOR_POLL = "agent-thursday-dev";
+const GATEWAY_INSTANCE_FOR_POLL = "agentthursday-dev";
 
 // /156q1 — recognise DO isolate memory-pressure errors so
 // `routePending` can leave the inbox row retryable (`received`) instead
@@ -115,28 +200,6 @@ function isMemoryResetError(msg: string): boolean {
   );
 }
 
-type InboxRow = {
-  id: string;
-  provider: string;
-  conversation_id: string;
-  provider_message_id: string;
-  sender_provider_user_id: string;
-  chat_type: string;
-  addressed_to_agent: number;
-  addressed_signals_json: string;
-  text: string;
-  attachments_json: string;
-  raw_ref: string | null;
-  status: string;
-  created_at: number;
-  updated_at: number;
-  // additive route metadata; nullable on rows ingested before migration.
-  route_action: string | null;
-  route_reason: string | null;
-  routed_at: number | null;
-  handoff_task_id: string | null;
-};
-
 type OutboxRow = {
   id: string;
   provider: string;
@@ -151,6 +214,27 @@ type OutboxRow = {
   sent_at: number | null;
   kind: string | null;
   approval_id: string | null;
+};
+
+//  — read-only outbox inspect surface row shape.
+// Verifier-facing only; never includes provider tokens, raw payload JSON
+// (which can contain auth headers), or any secret material.
+export type ChannelOutboxInspectRow = {
+  outbox_id: string;
+  provider: string;
+  conversation_id: string;
+  reply_to_provider_message_id: string | null;
+  status: string;
+  kind: string | null;
+  approval_id: string | null;
+  attempt_count: number;
+  created_at: number;
+  sent_at: number | null;
+  body_length: number;
+  body_preview: string;
+  envelope_markers: string[];
+  has_error: boolean;
+  error_preview: string | null;
 };
 
 type ApprovalRow = {
@@ -178,265 +262,50 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   async onStart(props?: unknown): Promise<void> {
     await super.onStart(props as Record<string, unknown> | undefined);
 
-    // §D-11 — additive, idempotent. Each table individually IF NOT EXISTS.
-
-    this.sql`
-      CREATE TABLE IF NOT EXISTS channel_inbox (
-        id TEXT PRIMARY KEY,
-        provider TEXT NOT NULL,
-        conversation_id TEXT NOT NULL,
-        provider_message_id TEXT NOT NULL,
-        sender_provider_user_id TEXT NOT NULL,
-        chat_type TEXT NOT NULL,
-        addressed_to_agent INTEGER NOT NULL,
-        addressed_signals_json TEXT NOT NULL,
-        text TEXT NOT NULL,
-        attachments_json TEXT NOT NULL,
-        raw_ref TEXT,
-        status TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        UNIQUE (provider, provider_message_id)
-      )
-    `;
-    this.sql`CREATE INDEX IF NOT EXISTS idx_channel_inbox_conv_status_at ON channel_inbox(conversation_id, status, created_at)`;
-    this.sql`CREATE INDEX IF NOT EXISTS idx_channel_inbox_status_at ON channel_inbox(status, created_at)`;
-
-    this.sql`
-      CREATE TABLE IF NOT EXISTS channel_outbox (
-        id TEXT PRIMARY KEY,
-        provider TEXT NOT NULL,
-        conversation_id TEXT NOT NULL,
-        reply_to_provider_message_id TEXT,
-        text TEXT NOT NULL,
-        payload_json TEXT NOT NULL,
-        status TEXT NOT NULL,
-        error TEXT,
-        attempt_count INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL,
-        sent_at INTEGER
-      )
-    `;
-    this.sql`CREATE INDEX IF NOT EXISTS idx_channel_outbox_status_at ON channel_outbox(status, created_at)`;
-
-    this.sql`
-      CREATE TABLE IF NOT EXISTS channel_identities (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        provider TEXT NOT NULL,
-        provider_user_id TEXT NOT NULL,
-        display_name TEXT,
-        role TEXT NOT NULL DEFAULT 'unknown',
-        is_self INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL,
-        UNIQUE (provider, provider_user_id)
-      )
-    `;
-    this.sql`CREATE INDEX IF NOT EXISTS idx_channel_identities_provider_user ON channel_identities(provider, provider_user_id)`;
-
-    this.sql`
-      CREATE TABLE IF NOT EXISTS channel_conversations (
-        conversation_id TEXT PRIMARY KEY,
-        provider TEXT NOT NULL,
-        chat_type TEXT NOT NULL,
-        provider_channel_id TEXT,
-        provider_thread_id TEXT,
-        capability_json TEXT NOT NULL DEFAULT '{}',
-        policy_json TEXT NOT NULL DEFAULT '{}',
-        first_seen_at INTEGER NOT NULL,
-        last_seen_at INTEGER NOT NULL
-      )
-    `;
-
-    // additive route metadata on channel_inbox. Idempotent via
-    // PRAGMA table_info check (mirrors the kanban_mutations migration in
-    // AgentThursdayAgent.onStart). Existing rows get NULL until they're routed.
-    const inboxCols = this.sql<{ name: string }>`PRAGMA table_info(channel_inbox)`;
-    if (!inboxCols.some(c => c.name === "route_action")) {
-      this.sql`ALTER TABLE channel_inbox ADD COLUMN route_action TEXT`;
-    }
-    if (!inboxCols.some(c => c.name === "route_reason")) {
-      this.sql`ALTER TABLE channel_inbox ADD COLUMN route_reason TEXT`;
-    }
-    if (!inboxCols.some(c => c.name === "routed_at")) {
-      this.sql`ALTER TABLE channel_inbox ADD COLUMN routed_at INTEGER`;
-    }
-    if (!inboxCols.some(c => c.name === "handoff_task_id")) {
-      this.sql`ALTER TABLE channel_inbox ADD COLUMN handoff_task_id TEXT`;
-    }
-
-    // additive outbox kind + approval link.
-    const outboxCols = this.sql<{ name: string }>`PRAGMA table_info(channel_outbox)`;
-    if (!outboxCols.some(c => c.name === "kind")) {
-      this.sql`ALTER TABLE channel_outbox ADD COLUMN kind TEXT NOT NULL DEFAULT 'text'`;
-    }
-    if (!outboxCols.some(c => c.name === "approval_id")) {
-      this.sql`ALTER TABLE channel_outbox ADD COLUMN approval_id TEXT`;
-    }
-
-    // channel_approvals state machine. Single-resolution semantics
-    // enforced by the `status` field plus the resolve callable. Payload hash
-    // is stored so a payload mutation invalidates a pending approval.
-    this.sql`
-      CREATE TABLE IF NOT EXISTS channel_approvals (
-        id TEXT PRIMARY KEY,
-        kind TEXT NOT NULL,
-        title TEXT NOT NULL,
-        warning TEXT NOT NULL,
-        reason TEXT NOT NULL,
-        payload_json TEXT NOT NULL,
-        payload_hash TEXT NOT NULL,
-        target_tool_call_id TEXT,
-        provider TEXT NOT NULL,
-        conversation_id TEXT NOT NULL,
-        outbox_id TEXT,
-        status TEXT NOT NULL,
-        resolved_scope TEXT,
-        resolved_actor TEXT,
-        audit TEXT,
-        expires_at INTEGER NOT NULL,
-        created_at INTEGER NOT NULL,
-        resolved_at INTEGER
-      )
-    `;
-    this.sql`CREATE INDEX IF NOT EXISTS idx_channel_approvals_status_at ON channel_approvals(status, created_at)`;
-
-    // one-time Discord identity self repair. Older builds set
-    // `is_self=1` for any `authorIsBot=true`, so verifier/helper (Discord bots that
-    // talk to the agent but are NOT the agent) ended up flagged as self and got
-    // `loopback from self` ignores at the router. Reconcile against
-    // AGENT_THURSDAY_DISCORD_BOT_ID, which is the only true "self" for Discord.
-    // No-op when AGENT_THURSDAY_DISCORD_BOT_ID is unset (avoid clearing all selfs).
+    //  — schema/migration setup extracted to
+    // `./channelHub/schema.ts`. Behavior preserved verbatim (additive,
+    // idempotent DDL + column-migration block). The Discord bot id is
+    // read from env here and passed in because `env` is `protected` on
+    // the Agent base class.
     const agentthursdayDiscordBotId = (this.env as { AGENT_THURSDAY_DISCORD_BOT_ID?: string }).AGENT_THURSDAY_DISCORD_BOT_ID;
-    if (agentthursdayDiscordBotId) {
-      this.sql`
-        UPDATE channel_identities
-        SET is_self = CASE WHEN provider_user_id = ${agentthursdayDiscordBotId} THEN 1 ELSE 0 END
-        WHERE provider = 'discord'
-      `;
-    }
+    ensureChannelHubSchema(this, agentthursdayDiscordBotId);
   }
 
   /**
-   * Idempotent inbound persist. §E-15:
+   * Idempotent inbound persist.  §E-15:
    *  - first insert → `{ inserted: true, id }`
    *  - duplicate `(provider, provider_message_id)` → `{ inserted: false, id }`
    *  - per-conversation pending cap exceeded → status `deferred`
    */
   @callable()
   async ingestInbound(envelopeRaw: unknown): Promise<ChannelInboundResult> {
-    const parsed = ChannelMessageEnvelopeSchema.parse(envelopeRaw);
-    const now = Date.now();
-
-    // Pending cap check before insert. Avoid bloating the inbox if a single
-    // conversation goes wild. New rows over cap are stored as `deferred` —
-    // they are visible in the snapshot but are not "received" for routing.
-    const pending = Number(
-      (this.sql<{ n: number | bigint }>`
-        SELECT COUNT(*) as n FROM channel_inbox
-        WHERE conversation_id = ${parsed.conversationId}
-          AND status IN (${PENDING_INBOX_STATUSES[0]}, ${PENDING_INBOX_STATUSES[1]}, ${PENDING_INBOX_STATUSES[2]}, ${PENDING_INBOX_STATUSES[3]})
-      `)[0]?.n ?? 0,
-    );
-    const status: ChannelInboxStatus = pending >= PENDING_CAP_PER_CONVERSATION ? "deferred" : "received";
-
-    const candidateId = parsed.id ?? crypto.randomUUID();
-    const senderUid = parsed.sender.providerUserId;
-    const signalsJson = JSON.stringify(parsed.addressedSignals);
-    // cap inbound text and attachments JSON before persist.
-    // Prevents a pathological large payload from later memory-resetting
-    // any DO that reads the row (snapshot, route, dialog).
-    const text = parsed.text.length > INBOX_TEXT_MAX
-      ? `${parsed.text.slice(0, INBOX_TEXT_MAX)}…(+${parsed.text.length - INBOX_TEXT_MAX})`
-      : parsed.text;
-    const attachmentsRaw = JSON.stringify(parsed.attachments);
-    const attachmentsJson = attachmentsRaw.length > INBOX_ATTACHMENTS_JSON_MAX
-      ? `${attachmentsRaw.slice(0, INBOX_ATTACHMENTS_JSON_MAX)}…(+${attachmentsRaw.length - INBOX_ATTACHMENTS_JSON_MAX})`
-      : attachmentsRaw;
-    const rawRef = clampRawRef(parsed.rawRef ?? null);
-    const receivedAt = parsed.receivedAt ?? now;
-
-    // INSERT OR IGNORE so a concurrent duplicate webhook does not create a
-    // second row. The dedup key is the UNIQUE(provider, provider_message_id)
-    // constraint declared in onStart.
-    this.sql`
-      INSERT OR IGNORE INTO channel_inbox (
-        id, provider, conversation_id, provider_message_id,
-        sender_provider_user_id, chat_type,
-        addressed_to_agent, addressed_signals_json,
-        text, attachments_json, raw_ref, status,
-        created_at, updated_at
-      ) VALUES (
-        ${candidateId}, ${parsed.provider}, ${parsed.conversationId}, ${parsed.providerMessageId},
-        ${senderUid}, ${parsed.chatType},
-        ${parsed.addressedToAgent ? 1 : 0}, ${signalsJson},
-        ${text}, ${attachmentsJson}, ${rawRef}, ${status},
-        ${receivedAt}, ${now}
-      )
-    `;
-
-    // Read back the canonical row (either the one we just inserted, or the
-    // pre-existing duplicate). If the canonical id matches our candidate,
-    // we won the insert.
-    const row = this.sql<{ id: string; status: string }>`
-      SELECT id, status FROM channel_inbox
-      WHERE provider = ${parsed.provider} AND provider_message_id = ${parsed.providerMessageId}
-      LIMIT 1
-    `;
-    if (row.length === 0) {
-      // Should not happen — INSERT OR IGNORE either inserted or the row exists.
-      throw new Error("channel_inbox: ingest failed to materialize a row");
-    }
-    const inserted = row[0].id === candidateId;
-
-    // Touch the conversation row (UPSERT). Capability/policy left empty.
-    this.sql`
-      INSERT OR IGNORE INTO channel_conversations (
-        conversation_id, provider, chat_type,
-        provider_channel_id, provider_thread_id,
-        first_seen_at, last_seen_at
-      ) VALUES (
-        ${parsed.conversationId}, ${parsed.provider}, ${parsed.chatType},
-        ${parsed.providerChannelId ?? null}, ${parsed.providerThreadId ?? null},
-        ${now}, ${now}
-      )
-    `;
-    this.sql`
-      UPDATE channel_conversations SET last_seen_at = ${now}
-      WHERE conversation_id = ${parsed.conversationId}
-    `;
-
-    // `is_self=1` only for AgentThursday bot itself (small d / AGENT_THURSDAY_DISCORD_BOT_ID),
-    // not for any author with `isBot=true`. Other bots (verifier verifier, helper helper, future
-    // bots) are gated by direct filter (DISCORD_ALLOWED_USERS) + DISCORD_ALLOW_BOTS,
-    // not by self-loopback.
-    const selfProviderUserId = parsed.provider === "discord"
-      ? (this.env as { AGENT_THURSDAY_DISCORD_BOT_ID?: string }).AGENT_THURSDAY_DISCORD_BOT_ID ?? null
-      : null;
-    const isSelfSender = selfProviderUserId != null && senderUid === selfProviderUserId;
-
-    // Touch identity row so we know who has talked to us.
-    this.sql`
-      INSERT OR IGNORE INTO channel_identities (
-        provider, provider_user_id, display_name, role, is_self, created_at
-      ) VALUES (
-        ${parsed.provider}, ${senderUid}, ${parsed.sender.displayName ?? null},
-        'unknown', ${isSelfSender ? 1 : 0}, ${now}
-      )
-    `;
-    // repair already-existing rows that may have been mis-marked
-    // by the previous `parsed.sender.isBot` heuristic. Bounded to the current
-    // sender; the broader Discord-wide repair runs once in onStart below.
-    this.sql`
-      UPDATE channel_identities
-      SET is_self = ${isSelfSender ? 1 : 0}
-      WHERE provider = ${parsed.provider} AND provider_user_id = ${senderUid}
-    `;
-
-    return { ok: true, inserted, id: row[0].id, status: row[0].status as ChannelInboxStatus };
+    //  — body extracted to `./channelHub/inbound.ts`. `env` is
+    // `protected`, so the call site reads `AGENT_THURSDAY_DISCORD_BOT_ID` and
+    // passes it in. Behavior preserved verbatim.
+    const agentthursdayDiscordBotId = (this.env as { AGENT_THURSDAY_DISCORD_BOT_ID?: string }).AGENT_THURSDAY_DISCORD_BOT_ID;
+    return ingestInboundImpl(this, envelopeRaw, agentthursdayDiscordBotId);
   }
 
   /**
-   * Route up to `limit` pending `received` inbox rows. §B + §B.
+   *  — try to merge a non-addressed message into a recent
+   * addressed-to-agent anchor row from the same sender/conversation.
+   *
+   * Called by `/api/channel/discord/direct` when `applyDirectFilters`
+   * rejects with reason `"guild message without @mention"`. If a recent
+   * anchor is still `status='received'`, the continuation chunk's text
+   * is appended to the anchor (so `routePending` builds a single merged
+   * prompt for `submitTask`) and a marker inbox row is persisted with
+   * `status='ignored'` + `route_action='merged'` for audit + idempotency.
+   * If no anchor exists, this returns `merged:false` and the caller is
+   * expected to keep the original ignore behaviour (status quo).
+   */
+  @callable()
+  async tryIngestContinuation(input: TryIngestContinuationInput): Promise<TryIngestContinuationResult> {
+    return tryIngestContinuationImpl(this, input);
+  }
+
+  /**
+   * Route up to `limit` pending `received` inbox rows.  §B +  §B.
    * For `process` action, RPCs AgentThursdayAgent.submitTask. Active-task guard runs
    * via `AgentThursdayAgent.getStatus()` before any submit so we never overwrite work.
    * : when the guard fires on an addressed/trusted row, the decision
@@ -453,10 +322,12 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     decisions: Array<{
       inboxId: string;
       providerMessageId: string;
-      action: ChannelRouteDecision["action"];
+      action: ChannelRouteDecision["action"] | "invalid-binding";
       reason: string;
       finalStatus: ChannelInboxStatus;
       handoffTaskId: string | null;
+      targetKind: ResolveChannelAgentRouteResult["kind"];
+      targetName: string | null;
     }>;
   }> {
     const cap = Math.min(Math.max(1, Math.floor(limit)), 50);
@@ -473,24 +344,85 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       return { ok: true, scanned: 0, busySkipped: 0, decisions: [] };
     }
 
-    // Read AgentThursdayAgent state once per batch — cheap RPC and avoids racing
-    // with our own submits within this loop.
-    // explicit readiness instead of inferring from `currentTask` string.
-    // resolve canonical active context ONCE per batch and
-    // reuse the same route for both readiness and submit so the two
-    // signals can never disagree mid-loop. Without this, a `switchContext`
-    // landing between readiness and submit could send the message to a
-    // different DO than the one whose readiness we trusted.
-    const route = await this.getAgentthursdayRoute();
-    const readiness = await this.fetchAgentthursdayReadinessVia(route.stub);
-    const agentthursdayBusy = !readiness.canAccept;
+    //  — per-row routing. Behavior change from 's
+    // single batch-level route:
+    //
+    //  - Resolve canonical active context ONCE per batch (the unbound
+    //    fallback target).
+    //  - For each candidate, read `channel_conversations.active_profile_id`
+    //    and run `resolveChannelAgentRoute(...)` against a per-batch
+    //    profile validation cache (so the registry DO is RPC'd at most
+    //    once per distinct profile_id in the batch).
+    //  - Per-target cache `Map<resolvedDoName, {stub, readiness}>` so
+    //    's invariant — "readiness check and submit hit the
+    //    same DO" — is preserved per row instead of per batch. Two rows
+    //    bound to different profiles each get their own readiness.
+    //  - Rows with `invalid_binding` (missing / archived / RPC-failed
+    //    validation) MUST NOT fall back to active context — that would
+    //    silently route to the wrong agent and defeat the binding
+    //    contract. Park them as `deferred` with action `invalid-binding`
+    //    and a structured reason so operators can correct or clear.
+    const fallbackRoute = await this.getAgentThursdayRoute();
+
+    type TargetEntry = {
+      stub: AgentThursdayAgentRPC;
+      name: string;
+      readiness: { canAccept: boolean; reason: string };
+    };
+    const targetCache = new Map<string, TargetEntry>();
+    //  — `AgentValidation` is the corrected name (was
+    // `ProfileValidation`). Backing registry RPC is still
+    // `readAgentProfile` (legacy persistence callable; the row IS the
+    // agent record). See
+    //  — status enum widened; accept any valid DB value.
+    type AgentValidation = { exists: boolean; status: string | null } | null;
+    const agentCache = new Map<string, AgentValidation>();
+
+    const resolveTarget = async (resolvedName: string): Promise<TargetEntry> => {
+      const cached = targetCache.get(resolvedName);
+      if (cached) return cached;
+      let stub: AgentThursdayAgentRPC;
+      if (resolvedName === fallbackRoute.name) {
+        stub = fallbackRoute.stub;
+      } else {
+        const ns = this.env.AgentThursdayAgent as unknown as AgentNamespace<Agent<Env>>;
+        stub = (await getAgentByName<Env, Agent<Env>>(ns, resolvedName)) as unknown as AgentThursdayAgentRPC;
+      }
+      const readiness = await this.fetchAgentThursdayReadinessVia(stub);
+      const entry: TargetEntry = { stub, name: resolvedName, readiness };
+      targetCache.set(resolvedName, entry);
+      return entry;
+    };
+
+    const validateAgent = async (agentId: string): Promise<AgentValidation> => {
+      if (agentCache.has(agentId)) return agentCache.get(agentId) ?? null;
+      let validation: AgentValidation;
+      try {
+        const ns = this.env.AgentThursdayAgent as unknown as AgentNamespace<Agent<Env>>;
+        const registry = await getAgentByName<Env, Agent<Env>>(ns, AGENT_THURSDAY_REGISTRY_INSTANCE_NAME);
+        const agent = await (registry as unknown as AgentThursdayAgentRPC).readAgentProfile(agentId);
+        validation = agent === null
+          ? { exists: false, status: null }
+          : { exists: true, status: agent.status };
+      } catch {
+        // Validation unavailable — resolver will return `invalid_binding`
+        // with reason `invalid_binding:agent:<id>:validation_unavailable`,
+        // NOT silently fall back.
+        validation = null;
+      }
+      agentCache.set(agentId, validation);
+      return validation;
+    };
+
     const decisions: Array<{
       inboxId: string;
       providerMessageId: string;
-      action: ChannelRouteDecision["action"];
+      action: ChannelRouteDecision["action"] | "invalid-binding";
       reason: string;
       finalStatus: ChannelInboxStatus;
       handoffTaskId: string | null;
+      targetKind: ResolveChannelAgentRouteResult["kind"];
+      targetName: string | null;
     }> = [];
 
     for (const raw of candidates) {
@@ -499,12 +431,64 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       // still "unknown" until a future card explicitly trusts. The router
       // converts unknown + addressed → wait, which is the safe default.
       const role = await this.lookupSenderRole(item.provider, item.senderProviderUserId);
+
+      //  — per-row route resolution. Column name
+      // `active_profile_id` is legacy storage ( §compat); the
+      // value it holds IS the agent_id used as the DO routing key.
+      const bindingRow = this.sql<{ active_profile_id: string | null }>`
+        SELECT active_profile_id FROM channel_conversations
+        WHERE conversation_id = ${item.conversationId} LIMIT 1
+      `;
+      const activeAgentIdRaw = bindingRow[0]?.active_profile_id ?? null;
+      const agentValidation = activeAgentIdRaw !== null && activeAgentIdRaw.length > 0
+        ? await validateAgent(activeAgentIdRaw)
+        : null;
+      const resolved = resolveChannelAgentRoute({
+        conversationBinding: { activeAgentId: activeAgentIdRaw },
+        agentValidation,
+        activeContextId: fallbackRoute.name,
+      });
+
+      if (resolved.kind === "invalid_binding") {
+        const now = Date.now();
+        //  — resolver already produces a self-describing reason
+        // string `invalid_binding:agent:<agentId>:<cause>`; persist as-is.
+        const reason = resolved.reason;
+        this.sql`
+          UPDATE channel_inbox SET
+            status = 'deferred',
+            route_action = 'invalid-binding',
+            route_reason = ${reason},
+            routed_at = ${now},
+            handoff_task_id = NULL,
+            updated_at = ${now}
+          WHERE id = ${item.id}
+        `;
+        decisions.push({
+          inboxId: item.id,
+          providerMessageId: item.providerMessageId,
+          action: "invalid-binding",
+          reason,
+          finalStatus: "deferred",
+          handoffTaskId: null,
+          targetKind: resolved.kind,
+          targetName: null,
+        });
+        continue;
+      }
+
+      //  — `target.name` is the DO name we'll readiness-check AND
+      // submit against. For unbound rows that's the canonical active
+      // context (preserves  behavior). For bound rows it's
+      // the agent_id itself, matching `AgentRunWorkflow.step.do`.
+      const target = await resolveTarget(resolved.targetName);
+      const agentthursdayBusy = !target.readiness.canAccept;
       const decision = decideRoute(item, { activeTaskBusy: agentthursdayBusy, senderRole: role });
-      // when the policy fired busy-skip, append the concrete
+      //  — when the policy fired busy-skip, append the concrete
       // readiness reason so operators can see WHICH busy condition won
       // (waitingForHuman / blocked / active task lifecycle / RPC failure).
       if (decision.action === "busy-skip") {
-        decision.reason = `${decision.reason} [readiness: ${readiness.reason}]`;
+        decision.reason = `${decision.reason} [readiness: ${target.readiness.reason}]`;
       }
 
       const now = Date.now();
@@ -512,10 +496,12 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       let handoffTaskId: string | null = null;
 
       if (decision.action === "busy-skip") {
-        // invariant: the row is NOT consumed. status stays 'received',
+        //  invariant: the row is NOT consumed. status stays 'received',
         // route_action / route_reason are NOT written (so it doesn't look
         // routed in inspect). Aggregate-level `busySkipped` counter signals
         // to the caller that this batch had busy-skipped rows.
+        // note: busy-skip is per-TARGET — profile A busy must not block
+        // a row bound to profile B.
         decisions.push({
           inboxId: item.id,
           providerMessageId: item.providerMessageId,
@@ -523,6 +509,8 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
           reason: decision.reason,
           finalStatus: "received",
           handoffTaskId: null,
+          targetKind: resolved.kind,
+          targetName: target.name,
         });
         continue;
       }
@@ -533,24 +521,42 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
           UPDATE channel_inbox SET status = 'processing', updated_at = ${now}
           WHERE id = ${item.id}
         `;
+        //  — re-read text + addressed_signals_json from SQL
+        // immediately after the row is locked into `processing`. The
+        // `candidates` array was captured before the `await readiness`
+        // RPC yielded, so a continuation chunk that merged into this
+        // row's text *during* the yield would otherwise be missed when
+        // `buildTaskPromptFromInbox` runs on the stale snapshot.
+        const fresh = this.sql<{ text: string; addressed_signals_json: string }>`
+          SELECT text, addressed_signals_json FROM channel_inbox WHERE id = ${item.id} LIMIT 1
+        `;
+        if (fresh.length > 0) {
+          item.text = fresh[0].text ?? item.text;
+          try {
+            const reparsed = JSON.parse(fresh[0].addressed_signals_json ?? "[]");
+            if (Array.isArray(reparsed)) item.addressedSignals = reparsed.map(String);
+          } catch {
+            // keep the snapshot signals if the column is malformed
+          }
+        }
         let replyText = "";
         try {
           const prompt = buildTaskPromptFromInbox(item);
           const display = buildDisplayTextFromInbox(item);
-          // submit on the SAME route the readiness check
-          // ran against. `route` is resolved once per batch outside
-          // the per-item loop.
-          // pass `displayText` so the YOU line in the
+          //  — submit on the SAME route the readiness check
+          // ran against. : `target` is per-row resolved, so
+          // this invariant now applies per row, not per batch.
+          //  — pass `displayText` so the YOU line in the
           // Web/mobile dialog shows the user's raw text without
           // channel metadata or safety suffix; agent still gets the
           // full `prompt` for routing/safety context.
-          const result = await route.stub.submitTask(prompt, { displayText: display });
+          const result = await target.stub.submitTask(prompt, { displayText: display });
           handoffTaskId = result.taskId;
           replyText = result.replyText ?? "";
           finalStatus = "handled";
         } catch (e) {
           const errMsg = String(e instanceof Error ? e.message : e);
-          // fail-soft on DO isolate memory resets, with
+          //  — fail-soft on DO isolate memory resets, with
           // _real_ retry semantics. (156q parked rows as `deferred`
           // but `routePending` only scans `received`, so the row was
           // effectively orphaned — same outcome the user reported.)
@@ -582,6 +588,8 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
               reason: marker,
               finalStatus: "received",
               handoffTaskId: null,
+              targetKind: resolved.kind,
+              targetName: target.name,
             });
             continue;
           } else {
@@ -590,7 +598,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
           }
         }
 
-        // auto-reply: enqueue assistant text to outbox + deliver.
+        //  — auto-reply: enqueue assistant text to outbox + deliver.
         // Isolated try/catch so outbound failure does NOT unwind lifecycle;
         // inbox row stays `handled`, agent task stays `completed`. The
         // outbox row carries its own `failed` state for retry. Only attempts
@@ -602,7 +610,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
             console.log(`[agentthursday-channel] channel.reply.skipped-empty inboxId=${item.id} taskId=${handoffTaskId ?? "null"}`);
           } else {
             const capped = trimmed.length > 4000 ? trimmed.slice(0, 4000) : trimmed;
-            // DM channels reject `message_reference.message_id`
+            //  — DM channels reject `message_reference.message_id`
             // pointing at the inbound DM (`MESSAGE_REFERENCE_UNKNOWN_MESSAGE`
             // 50035). Don't carry a reply_to into the outbox row at all
             // for DMs — guild channels keep the existing reply behaviour.
@@ -659,6 +667,8 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
         reason: decision.reason,
         finalStatus,
         handoffTaskId,
+        targetKind: resolved.kind,
+        targetName: target.name,
       });
     }
 
@@ -667,31 +677,12 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * replaces the old `isAgentthursdayBusy()` which incorrectly treated any
-   * non-null `currentTask` STRING as busy. Returns the AgentThursdayAgent's explicit
-   * `canAccept` verdict + the concrete predicate `reason` so a busy-skip
-   * decision can name WHICH busy condition fired.
-   *
-   * Fail-closed: if the cross-DO RPC throws (Card §A-5), we report
-   * `canAccept:false` so a broken AgentThursdayAgent doesn't get spammed with submits.
-   */
-  private async fetchAgentthursdayReadiness(): Promise<{ canAccept: boolean; reason: string }> {
-    try {
-      const stub = await this.getAgentthursdayStub();
-      return await this.fetchAgentthursdayReadinessVia(stub);
-    } catch (e) {
-      const msg = String(e instanceof Error ? e.message : e).slice(0, 120);
-      return { canAccept: false, reason: `readiness RPC failed: ${msg}` };
-    }
-  }
-
-  /**
-   * readiness against an already-resolved stub. Used by
+   *  — readiness against an already-resolved stub. Used by
    * `routePending` so the readiness check and the per-item submit
    * share a single resolved route (no double active-pointer lookup,
    * no race window).
    */
-  private async fetchAgentthursdayReadinessVia(stub: AgentThursdayAgentRPC): Promise<{ canAccept: boolean; reason: string }> {
+  private async fetchAgentThursdayReadinessVia(stub: AgentThursdayAgentRPC): Promise<{ canAccept: boolean; reason: string }> {
     try {
       const r = await stub.getChannelIngressReadiness();
       return { canAccept: r.canAccept, reason: r.reason };
@@ -702,7 +693,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * paired `{ name, stub }` for whichever AgentThursdayAgent
+   *  — paired `{ name, stub }` for whichever AgentThursdayAgent
    * instance currently owns the canonical active context.
    *
    * Resolution order:
@@ -720,7 +711,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
    * Recursion-safe: the registry lookup uses the registry instance
    * name directly; it never reads from itself via the active pointer.
    */
-  private async getAgentthursdayRoute(): Promise<{ name: string; stub: AgentThursdayAgentRPC }> {
+  private async getAgentThursdayRoute(): Promise<{ name: string; stub: AgentThursdayAgentRPC }> {
     // Cross-DO RPC: getAgentByName's generic constraint expects an `Agent`
     // subclass. We don't import AgentThursdayAgent here (would create a server.ts ⇄
     // channelHub.ts cycle), so we satisfy the constraint with the base
@@ -747,18 +738,44 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * single-stub convenience for callers that don't need
-   * to know the resolved name. Routes via `getAgentthursdayRoute()` so it
+   *  — single-stub convenience for callers that don't need
+   * to know the resolved name. Routes via `getAgentThursdayRoute()` so it
    * always follows the canonical active context. Replaces the
    * previous hardcoded-DEMO_INSTANCE behavior.
    */
-  private async getAgentthursdayStub(): Promise<AgentThursdayAgentRPC> {
-    const { stub } = await this.getAgentthursdayRoute();
+  private async getAgentThursdayStub(): Promise<AgentThursdayAgentRPC> {
+    const { stub } = await this.getAgentThursdayRoute();
     return stub;
   }
 
   /**
-   * fire-and-forget post-reply nudge to the gateway DO so
+   *  — pick the send credentials for a Discord channel. When a
+   * runtime-configured bot (registry `discord_bot` table) owns the
+   * channel, its token is used; otherwise the env bot. Fail-soft: any
+   * registry error falls back to env so existing delivery never breaks.
+   */
+  private async _resolveDiscordSendEnv(
+    channelId: string,
+  ): Promise<{ DISCORD_BOT_TOKEN?: string; DISCORD_API_BASE_URL?: string }> {
+    try {
+      const ns = this.env.AgentThursdayAgent as unknown as AgentNamespace<Agent<Env>>;
+      const registry = await getAgentByName<Env, Agent<Env>>(ns, AGENT_THURSDAY_REGISTRY_INSTANCE_NAME);
+      const bots = await (registry as unknown as {
+        getDiscordBotsSecret(): Promise<Array<{ bot_id: string; token: string; allowed_channels: string[] }>>;
+      }).getDiscordBotsSecret();
+      const owner = bots.find((b) => b.allowed_channels.includes(channelId));
+      if (owner) {
+        return {
+          DISCORD_BOT_TOKEN: owner.token,
+          DISCORD_API_BASE_URL: (this.env as { DISCORD_API_BASE_URL?: string }).DISCORD_API_BASE_URL,
+        };
+      }
+    } catch { /* fall through to env */ }
+    return this.env as { DISCORD_BOT_TOKEN?: string; DISCORD_API_BASE_URL?: string };
+  }
+
+  /**
+   *  — fire-and-forget post-reply nudge to the gateway DO so
    * polling-mode ingress runs an immediate sweep on the channel we
    * just replied into. The gateway DO's `pollChannelOnce` is a no-op
    * when ingress mode != polling, so this is safe to call without
@@ -798,108 +815,137 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     return "unknown";
   }
 
-  // ── outbound + approval cards ───────────────────────────────
+  // ──  — outbound + approval cards ───────────────────────────────
 
   @callable()
   async enqueueOutboundText(input: EnqueueOutboundTextRequest): Promise<EnqueueOutboundResult> {
-    const id = crypto.randomUUID();
-    const now = Date.now();
-    const allowProactive = input.allowProactive === true;
-
-    // §D-21: proactive outbound (no reply target) is gated. Without
-    // an existing conversation OR replyToProviderMessageId we treat this as
-    // proactive and refuse unless caller explicitly opted in.
-    if (input.replyToProviderMessageId == null && !allowProactive) {
-      const known = this.sql<{ n: number }>`
-        SELECT COUNT(*) as n FROM channel_conversations
-        WHERE conversation_id = ${input.conversationId}
-      `[0]?.n ?? 0;
-      if (Number(known) === 0) {
-        throw new Error("outbound:proactive-not-allowed");
-      }
-    }
-
-    const payload: OutboundChannelMessage = {
-      id,
-      kind: "text",
-      conversationId: input.conversationId,
-      provider: input.provider,
-      text: input.text,
-      replyToProviderMessageId: input.replyToProviderMessageId ?? null,
-      deliveryPolicy: { allowProactive },
-    };
-    const payloadJson = JSON.stringify(payload);
-
-    this.sql`
-      INSERT INTO channel_outbox (
-        id, provider, conversation_id, reply_to_provider_message_id,
-        text, payload_json, status, attempt_count, created_at,
-        kind, approval_id
-      ) VALUES (
-        ${id}, ${input.provider}, ${input.conversationId}, ${input.replyToProviderMessageId ?? null},
-        ${input.text}, ${payloadJson}, 'pending', 0, ${now},
-        'text', NULL
-      )
-    `;
-    return { ok: true, outboxId: id, approvalId: null };
+    //  — body extracted to `./channelHub/outbound.ts`. Pure
+    // SQL + JSON; no env access. Behavior preserved verbatim.
+    return enqueueOutboundTextImpl(this, input);
   }
 
   @callable()
   async enqueueOutboundApproval(input: EnqueueOutboundApprovalRequest): Promise<EnqueueOutboundResult> {
-    const now = Date.now();
-    const approvalId = crypto.randomUUID();
-    const outboxId = crypto.randomUUID();
-    const expiresAt = now + (input.ttlMs ?? APPROVAL_DEFAULTS.ttlMs);
-    const payloadHash = await hashApprovalPayload(input.payload);
+    //  — body extracted to `./channelHub/outbound.ts`. `env`
+    // is `protected`, so the call site reads `AGENT_THURSDAY_APPROVAL_ALLOW_ALWAYS`
+    // and passes the resolved boolean in. Behavior preserved verbatim.
     const alwaysAllowEnabled = this.env.AGENT_THURSDAY_APPROVAL_ALLOW_ALWAYS === "true";
+    return enqueueOutboundApprovalImpl(this, input, alwaysAllowEnabled);
+  }
 
-    const card: ChannelApprovalCard = {
-      id: approvalId,
-      kind: input.approvalKind,
-      title: input.title,
-      warning: input.warning,
-      reason: input.reason,
-      payload: input.payload,
-      payloadHash,
-      targetToolCallId: input.targetToolCallId ?? null,
-      expiresAt,
-      alwaysAllowEnabled,
+  /**
+   *  — sweeper-issued fallback reply. When the agent-side
+   * envelope sweeper finalizes a draft because the original
+   * saveMessages never returned, the LLM's intended reply text was
+   * never generated, so the round would otherwise leave the
+   * conversation hanging without the `[envelope: env-...]` marker
+   * the  demo contract requires.
+   *
+   * This RPC enqueues a clearly-labeled fallback outbox row reusing
+   * the channel/message context of the original inbound message
+   * (looked up by `handoff_task_id`, with a bounded recency
+   * fallback when the inbox row never recorded the task id because
+   * submitTask hung before returning). Fail-soft + idempotent: a
+   * duplicate call for the same envelope detects the existing
+   * outbox row by marker text and skips re-enqueue.
+   *
+   * Wording is deliberately distinct from any LLM reply pattern so
+   * verifier and humans can tell at a glance this is a system-issued
+   * fallback, not a model output.
+   */
+  @callable()
+  async enqueueFallbackReplyForTask(input: {
+    taskId: string;
+    envelopeId: string;
+    /**
+     *  — when present, lets the fallback prefer a specific
+     * recovery message body instead of the generic "未正常完成" line.
+     * Currently switches text only when value is
+     * `"read_intent_no_execution"`; other reasons (or undefined) keep
+     * the original system-fallback wording.
+     */
+    verdictReason?: string;
+  }): Promise<{
+    ok: boolean;
+    outboxId?: string;
+    reason?: string;
+  }> {
+    if (!input?.taskId || !input?.envelopeId) {
+      return { ok: false, reason: "missing_input" };
+    }
+    type InboxLookup = {
+      id: string;
+      provider: string;
+      conversation_id: string;
+      provider_message_id: string;
+      created_at: number;
     };
-    const out: OutboundChannelMessage = {
-      id: outboxId,
-      kind: "approval",
-      conversationId: input.conversationId,
-      provider: input.provider,
-      approval: card,
-      replyToProviderMessageId: input.replyToProviderMessageId ?? null,
-      deliveryPolicy: { allowProactive: true, requireHumanApproval: true },
-    };
-    const payloadJson = JSON.stringify(out);
+    let row: InboxLookup | null = null;
+    try {
+      const direct = this.sql<InboxLookup>`
+        SELECT id, provider, conversation_id, provider_message_id, created_at
+          FROM channel_inbox
+         WHERE handoff_task_id = ${input.taskId}
+         ORDER BY created_at DESC LIMIT 1
+      `;
+      if (direct.length > 0) row = direct[0];
+    } catch { /* fail-soft */ }
+    if (!row) {
+      // submitTask may have hung BEFORE ChannelHub wrote handoff_task_id.
+      // Recover by picking the most recent inbox row whose status is
+      // consistent with "we tried to handle it but never finalized".
+      // 90-min window keeps this from grabbing unrelated old rows.
+      try {
+        const cutoff = Date.now() - 90 * 60 * 1000;
+        const recents = this.sql<InboxLookup & { status: string }>`
+          SELECT id, provider, conversation_id, provider_message_id, created_at, status
+            FROM channel_inbox
+           WHERE created_at > ${cutoff} AND status IN ('processing', 'handled', 'failed')
+           ORDER BY created_at DESC LIMIT 5
+        `;
+        if (recents.length > 0) row = recents[0];
+      } catch { /* fail-soft */ }
+    }
+    if (!row) return { ok: false, reason: "no_inbox_row_found" };
 
-    this.sql`
-      INSERT INTO channel_approvals (
-        id, kind, title, warning, reason, payload_json, payload_hash,
-        target_tool_call_id, provider, conversation_id, outbox_id,
-        status, expires_at, created_at
-      ) VALUES (
-        ${approvalId}, ${input.approvalKind}, ${input.title}, ${input.warning}, ${input.reason},
-        ${JSON.stringify(input.payload)}, ${payloadHash},
-        ${input.targetToolCallId ?? null}, ${input.provider}, ${input.conversationId}, ${outboxId},
-        'pending', ${expiresAt}, ${now}
-      )
-    `;
-    this.sql`
-      INSERT INTO channel_outbox (
-        id, provider, conversation_id, reply_to_provider_message_id,
-        text, payload_json, status, attempt_count, created_at,
-        kind, approval_id
-      ) VALUES (
-        ${outboxId}, ${input.provider}, ${input.conversationId}, ${input.replyToProviderMessageId ?? null},
-        ${`(approval card #${approvalId})`}, ${payloadJson}, 'pending', 0, ${now},
-        'approval', ${approvalId}
-      )
-    `;
-    return { ok: true, outboxId, approvalId };
+    const marker = `[envelope: ${input.envelopeId}]`;
+    try {
+      const existing = this.sql<{ n: number }>`
+        SELECT COUNT(*) as n FROM channel_outbox
+         WHERE conversation_id = ${row.conversation_id}
+           AND text LIKE ${"%" + marker + "%"}
+      `;
+      if ((existing[0]?.n ?? 0) > 0) {
+        return { ok: false, reason: "already_enqueued" };
+      }
+    } catch { /* fail-soft — fall through to enqueue attempt */ }
+
+    //  — when sweeper seal produced `read_intent_no_execution`,
+    // prefer the dedicated recovery render so the user gets the same
+    // honest "我说要读文件但没真正调用工具" explanation that the happy-
+    // path empty-fallback emits. The generic "未正常完成" line is
+    // accurate for other failure modes (e.g. plain orphan with no
+    // signal) but masks read-intent-specific recovery guidance.
+    const fallbackText = input.verdictReason === "read_intent_no_execution"
+      ? renderReadIntentNoExecutionReply({
+          envelopeId: input.envelopeId,
+          taskId: input.taskId,
+          partialText: "",
+        })
+      : `⚠️ 上一轮 LLM 输出未正常完成；系统已自动收口 evidence envelope：${marker}`;
+    try {
+      const result = await this.enqueueOutboundText({
+        provider: row.provider as ChannelProvider,
+        conversationId: row.conversation_id,
+        replyToProviderMessageId: row.provider_message_id,
+        text: fallbackText,
+        allowProactive: false,
+      });
+      return { ok: !!result?.ok, outboxId: result?.outboxId };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { ok: false, reason: msg.slice(0, 200) };
+    }
   }
 
   @callable()
@@ -915,9 +961,9 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     `;
     if (rows.length === 0) return { ok: true, scanned: 0, bridgeMode: this.bridgeMode(), deliveries: [] };
 
-    const bridgeUrl = this.env.AGENT_THURSDAY_OPENCLAW_BRIDGE_URL;
-    const bridgeSecret = this.env.AGENT_THURSDAY_OPENCLAW_BRIDGE_SECRET;
-    // bridge mode now also reflects direct Discord. Delegate to the
+    const bridgeUrl = this.env.AGENT_THURSDAY_BRIDGE_URL;
+    const bridgeSecret = this.env.AGENT_THURSDAY_BRIDGE_SECRET;
+    //  — bridge mode now also reflects direct Discord. Delegate to the
     // single-source-of-truth helper instead of hard-coding here.
     const bridgeMode = this.bridgeMode();
 
@@ -925,7 +971,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
 
     for (const row of rows) {
       const now = Date.now();
-      // also pull `chat_type` so the sender-side defensive
+      //  — also pull `chat_type` so the sender-side defensive
       // guard can drop `message_reference` for DM rows even if the
       // outbox row still carries `reply_to_provider_message_id` (old
       // row from before the routePending fix, or a proactive
@@ -958,11 +1004,17 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       let finalStatus: ChannelOutboxStatus = "sent";
       let errorOut: string | null = null;
 
-      // direct Discord delivery takes precedence over OpenClaw bridge
+      //  — direct Discord delivery takes precedence over Bridge bridge
       // when DISCORD_BOT_TOKEN is configured AND the row is for the discord
       // provider. Other providers (when they land) still go through bridge/dry-run.
       const useDirectDiscord = row.provider === "discord" && Boolean(this.env.DISCORD_BOT_TOKEN);
       const targetChannelId = conv.provider_thread_id || conv.provider_channel_id || null;
+      //  — replies into a stored bot's channel must go out with
+      // that bot's token. Resolved once per delivery; env token is the
+      // fall-through (and the only path when no stored bots exist).
+      const sendEnv = targetChannelId !== null
+        ? await this._resolveDiscordSendEnv(targetChannelId)
+        : this.env;
 
       if (useDirectDiscord) {
         if (!targetChannelId) {
@@ -973,14 +1025,15 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
           // : only the first chunk uses the reply reference,
           // and `replyRefForDiscord` is null for DMs so Discord
           // doesn't 400 on `MESSAGE_REFERENCE_UNKNOWN_MESSAGE`.
-          const chunks = splitForDiscord2000(payload.text);
+          const visibleText = stripDiscordVisibleInternalMarkers(payload.text);
+          const chunks = splitForDiscord2000(visibleText.length > 0 ? visibleText : "(empty)");
           let chunkErr: string | null = null;
           for (let i = 0; i < chunks.length; i++) {
             const body = buildDiscordTextSendBody({
               text: chunks[i],
               replyToProviderMessageId: i === 0 ? replyRefForDiscord : null,
             });
-            const r = await sendDiscordMessage(this.env, { channelId: targetChannelId, body });
+            const r = await sendDiscordMessage(sendEnv, { channelId: targetChannelId, body });
             if (!r.ok) { chunkErr = r.error; break; }
           }
           if (chunkErr !== null) {
@@ -997,7 +1050,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
             card: payload.approval,
             replyToProviderMessageId: replyRefForDiscord,
           });
-          const r = await sendDiscordMessage(this.env, { channelId: targetChannelId, body });
+          const r = await sendDiscordMessage(sendEnv, { channelId: targetChannelId, body });
           if (!r.ok) {
             finalStatus = "failed";
             errorOut = r.error;
@@ -1031,7 +1084,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
             attempt_count = attempt_count + 1, sent_at = ${now}
           WHERE id = ${row.id}
         `;
-        // in polling ingress mode, kick a one-shot poll on
+        //  — in polling ingress mode, kick a one-shot poll on
         // the same Discord channel so a user's follow-up message is
         // ingested faster than the next scheduled tick. Fire-and-forget;
         // the gateway DO checks ingress mode itself and turns this into
@@ -1064,7 +1117,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
    * return the prior resolution; payload-hash mismatch invalidates;
    * expiration auto-denies. For `kind=tool` resolutions, calls the existing
    * `AgentThursdayAgent.approvePendingTool` so we do not create a parallel approval
-   * authority (§C-20).
+   * authority ( §C-20).
    */
   @callable()
   async resolveApproval(input: ApprovalResolveRequest): Promise<ApprovalResolveResult> {
@@ -1164,12 +1217,12 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       WHERE id = ${row.id}
     `;
 
-    // Downstream side-effect — §C-20: route tool-kind approvals
+    // Downstream side-effect —  §C-20: route tool-kind approvals
     // through the existing AgentThursdayAgent surface, do not create a parallel path.
     let downstream: ApprovalResolveResult["downstream"] = null;
     if (row.kind === "tool" && row.target_tool_call_id) {
       try {
-        const stub = await this.getAgentthursdayStub();
+        const stub = await this.getAgentThursdayStub();
         const r = await stub.approvePendingTool(row.target_tool_call_id, approved);
         downstream = { kind: "tool-approval", toolCallId: row.target_tool_call_id, approved, ok: r.ok };
       } catch (e) {
@@ -1194,29 +1247,28 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * minimal lookup used by the /discord/interactions button
+   *  — minimal lookup used by the /discord/interactions button
    * handler to fetch the canonical payload hash for an approval, so the
    * resolve call can echo it back as `payloadHashEcho`. Returns null if the
    * approval row doesn't exist (e.g. expired and pruned in the future).
    */
   @callable()
   async lookupApprovalHash(approvalId: string): Promise<string | null> {
-    const row = this.sql<{ payload_hash: string }>`
-      SELECT payload_hash FROM channel_approvals WHERE id = ${approvalId} LIMIT 1
-    `[0];
-    return row?.payload_hash ?? null;
+    //  — body extracted to `./channelHub/approvalOps.ts`. Reads the
+    // legacy `channel_approvals` table (), not `agent_tool_approvals`.
+    return lookupApprovalHashImpl(this, approvalId);
   }
 
   private bridgeMode(): "http" | "dry-run" | "discord-direct" {
     if (this.env.DISCORD_BOT_TOKEN) return "discord-direct";
-    if (this.env.AGENT_THURSDAY_OPENCLAW_BRIDGE_URL) return "http";
+    if (this.env.AGENT_THURSDAY_BRIDGE_URL) return "http";
     return "dry-run";
   }
 
   /**
-   * helper — set identity role so the router can promote a sender
+   *  helper — set identity role so the router can promote a sender
    * from `unknown` to `trusted` (or back). Minimal seam needed to actually
-   * exercise the `process` path; will surface this in the UI.
+   * exercise the `process` path;  will surface this in the UI.
    */
   @callable()
   async setIdentityRole(input: {
@@ -1239,6 +1291,147 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       WHERE provider = ${input.provider} AND provider_user_id = ${input.providerUserId}
     `)[0]?.n ?? 0);
     return { ok: true, updated: n };
+  }
+
+  /**
+   *  — read a conversation's AgentProfile binding.
+   * Returns `{ activeProfileId: null }` for an unknown or unbound
+   * conversation; routePending treats both the same (active-context
+   * fallback). `null` row is intentionally not surfaced as 404 here so
+   * the UI can show "Unbound" without an extra error-state branch.
+   */
+  @callable()
+  async getConversationBinding(input: { conversationId: string }): Promise<{
+    conversationId: string;
+    activeAgentId: string | null;
+    //  — legacy alias retained for backward-compat with any
+    // unmigrated client. New clients read `activeAgentId`. Both fields
+    // always carry the same value; column name `active_profile_id` is
+    // legacy storage (see src/channelHub/schema.ts comment).
+    activeProfileId: string | null;
+  }> {
+    const id = (input?.conversationId ?? "").trim();
+    if (id.length === 0 || id.length > 200) {
+      return { conversationId: id, activeAgentId: null, activeProfileId: null };
+    }
+    const rows = this.sql<{ active_profile_id: string | null }>`
+      SELECT active_profile_id FROM channel_conversations
+      WHERE conversation_id = ${id} LIMIT 1
+    `;
+    if (rows.length === 0) {
+      return { conversationId: id, activeAgentId: null, activeProfileId: null };
+    }
+    const v = rows[0].active_profile_id;
+    const bound = typeof v === "string" && v.length > 0 ? v : null;
+    return {
+      conversationId: id,
+      activeAgentId: bound,
+      activeProfileId: bound,
+    };
+  }
+
+  /**
+   *  — set or clear a conversation's AgentProfile binding.
+   *
+   *  - `profileId: string`  → bind. Profile must exist on the registry DO
+   *                          and not be archived; validated by RPC here so
+   *                          a typoed id can't be persisted.
+   *  - `profileId: null`    → clear.
+   *
+   * The conversation row may not exist yet if no inbound has ever been
+   * ingested for it — UPSERT with minimal placeholders so the binding
+   * can be set ahead of time. Once a real inbound arrives,
+   * `ingestInbound` populates the rest of the columns; the
+   * `active_profile_id` is preserved (ingest UPDATEs `last_seen_at` etc
+   * but does not touch `active_profile_id`).
+   */
+  @callable()
+  async setConversationBinding(input: {
+    conversationId: string;
+    //  — accept either `agentId` (new) or `profileId` (legacy).
+    // Caller may pass one or the other; passing both with different
+    // values is rejected so we never silently pick one. Same column
+    // (`active_profile_id`) backs both.
+    agentId?: string | null;
+    profileId?: string | null;
+  }): Promise<
+    | { ok: true; conversationId: string; activeAgentId: string | null; activeProfileId: string | null }
+    | { ok: false; code: "invalid_conversation_id" | "invalid_agent_id" | "agent_missing" | "agent_archived" | "validation_failed"; message: string }
+  > {
+    const id = (input?.conversationId ?? "").trim();
+    if (id.length === 0 || id.length > 200) {
+      return { ok: false, code: "invalid_conversation_id", message: "conversation_id required (1..200 chars)" };
+    }
+    //  — alias resolution. Prefer `agentId`; fall back to
+    // `profileId` for legacy callers. If both present and differ, fail.
+    const agentRaw = input?.agentId;
+    const profileRaw = input?.profileId;
+    if (
+      agentRaw !== undefined && profileRaw !== undefined
+      && agentRaw !== profileRaw
+    ) {
+      return { ok: false, code: "invalid_agent_id", message: "agent_id and profile_id supplied with conflicting values" };
+    }
+    const incoming = agentRaw !== undefined ? agentRaw : profileRaw;
+    let agentId: string | null = null;
+    if (incoming !== null && incoming !== undefined) {
+      if (typeof incoming !== "string") {
+        return { ok: false, code: "invalid_agent_id", message: "agent_id must be string or null" };
+      }
+      const trimmed = incoming.trim();
+      if (trimmed.length === 0) {
+        // Treat empty string as clear; UI passes null but be liberal.
+        agentId = null;
+      } else if (trimmed.length > 200) {
+        return { ok: false, code: "invalid_agent_id", message: "agent_id too long (>200 chars)" };
+      } else {
+        agentId = trimmed;
+      }
+    }
+
+    if (agentId !== null) {
+      let agent: Awaited<ReturnType<AgentThursdayAgentRPC["readAgentProfile"]>>;
+      try {
+        const ns = this.env.AgentThursdayAgent as unknown as AgentNamespace<Agent<Env>>;
+        const registry = await getAgentByName<Env, Agent<Env>>(ns, AGENT_THURSDAY_REGISTRY_INSTANCE_NAME);
+        // Registry callable still named `readAgentProfile` (legacy
+        // persistence; see  design note compat table).
+        agent = await (registry as unknown as AgentThursdayAgentRPC).readAgentProfile(agentId);
+      } catch (e) {
+        const msg = String(e instanceof Error ? e.message : e).slice(0, 200);
+        return { ok: false, code: "validation_failed", message: `registry RPC failed: ${msg}` };
+      }
+      if (agent === null) {
+        return { ok: false, code: "agent_missing", message: `agent not found: ${agentId}` };
+      }
+      if (agent.status === "archived") {
+        return { ok: false, code: "agent_archived", message: `agent archived: ${agentId}` };
+      }
+    }
+
+    const now = Date.now();
+    // UPSERT — if the conversation row doesn't exist yet (binding set
+    // ahead of first inbound), seed minimal placeholders so the column
+    // can carry the binding. provider/chat_type get filled by the next
+    // ingestInbound which UPDATEs those columns and does not touch
+    // active_profile_id (legacy column name; see  design note).
+    const existing = this.sql<{ n: number }>`
+      SELECT COUNT(*) as n FROM channel_conversations WHERE conversation_id = ${id}
+    `;
+    if (Number(existing[0]?.n ?? 0) === 0) {
+      this.sql`
+        INSERT INTO channel_conversations
+          (conversation_id, provider, chat_type, capability_json, policy_json, first_seen_at, last_seen_at, active_profile_id)
+        VALUES (${id}, 'unknown', 'unknown', '{}', '{}', ${now}, ${now}, ${agentId})
+      `;
+    } else {
+      this.sql`
+        UPDATE channel_conversations
+        SET active_profile_id = ${agentId}, last_seen_at = ${now}
+        WHERE conversation_id = ${id}
+      `;
+    }
+    return { ok: true, conversationId: id, activeAgentId: agentId, activeProfileId: agentId };
   }
 
   @callable()
@@ -1270,7 +1463,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     } as Record<string, number>;
     for (const r of approvalCounts) if (r.status in approvals) approvals[r.status] = Number(r.n);
 
-    // SQL-side preview for big text/JSON columns.
+    //  — SQL-side preview for big text/JSON columns.
     // The snapshot is debug-only; the dialog/delivery surfaces query
     // separately via specific by-id reads. Capping `text`,
     // `attachments_json`, and `payload_json` to ~4000 chars keeps the
@@ -1313,7 +1506,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       approvalId: r.approval_id,
     }));
 
-    // preview large columns (`payload_json`, `audit`).
+    //  — preview large columns (`payload_json`, `audit`).
     const recentApprovalRows = this.sql<ApprovalRow>`
       SELECT id, kind, title, warning, reason,
              substr(payload_json, 1, 4000) AS payload_json,
@@ -1345,6 +1538,35 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       resolvedAt: r.resolved_at,
     }));
 
+    //  — top 10 recently-seen conversations + their binding
+    // for the inspect-surface binding UI. Bounded query so the snapshot
+    // size stays predictable as conversation count grows.
+    const recentConversationRows = this.sql<{
+      conversation_id: string;
+      provider: string;
+      chat_type: string;
+      active_profile_id: string | null;
+      last_seen_at: number;
+    }>`
+      SELECT conversation_id, provider, chat_type, active_profile_id, last_seen_at
+      FROM channel_conversations
+      ORDER BY last_seen_at DESC LIMIT 10
+    `;
+    const recentConversations = recentConversationRows.map(r => {
+      const bound = typeof r.active_profile_id === "string" && r.active_profile_id.length > 0
+        ? r.active_profile_id
+        : null;
+      return {
+        conversationId: r.conversation_id,
+        provider: r.provider,
+        chatType: r.chat_type,
+        //  — both fields populated from the legacy column.
+        activeAgentId: bound,
+        activeProfileId: bound,
+        lastSeenAt: Number(r.last_seen_at),
+      };
+    });
+
     return {
       counts: {
         inbox: inbox as ChannelSnapshot["counts"]["inbox"],
@@ -1356,11 +1578,1209 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       recentInbox,
       recentOutbox,
       recentApprovals,
+      recentConversations,
     };
   }
 
   /**
-   * compact, leak-safe counts for the default user-layer panel.
+   *  — read-only outbox inspect surface.
+   *
+   * Verifier-facing query of `channel_outbox` for marker / envelope_id /
+   * conversation_id / single outbox_id consistency checks. Returns
+   * redacted rows (no provider tokens, no raw `payload_json`, no auth
+   * material). Body is bounded preview-only and error is sanitized at
+   * write time. Caller (HTTP route) is expected to validate input shape;
+   * this callable additionally re-validates `envelope_id` to prevent
+   * LIKE-pattern wildcards from leaking past a broken caller.
+   */
+  @callable()
+  async inspectOutbox(input: {
+    marker?: string;
+    envelope_id?: string;
+    outbox_id?: string;
+    conversation_id?: string;
+    limit?: number;
+  }): Promise<{ rows: ChannelOutboxInspectRow[] }> {
+    const limitRaw = typeof input.limit === "number" && Number.isFinite(input.limit)
+      ? Math.floor(input.limit) : 20;
+    const limit = Math.max(1, Math.min(100, limitRaw));
+
+    const ENVELOPE_ID_RE = /^env-[a-z0-9]+-[a-z0-9]+$/i;
+    const SAFE_ID_RE = /^[a-zA-Z0-9_-]+$/;
+
+    type OutboxQRow = OutboxRow & { text_length: number };
+    let rows: OutboxQRow[] = [];
+    if (typeof input.outbox_id === "string" && input.outbox_id.length > 0) {
+      if (!SAFE_ID_RE.test(input.outbox_id)) return { rows: [] };
+      rows = this.sql<OutboxQRow>`
+        SELECT id, provider, conversation_id, reply_to_provider_message_id,
+               substr(text, 1, 1000) AS text,
+               '' AS payload_json,
+               status, error, attempt_count, created_at, sent_at,
+               kind, approval_id,
+               length(text) AS text_length
+        FROM channel_outbox
+        WHERE id = ${input.outbox_id}
+        LIMIT ${limit}
+      `;
+    } else {
+      let envelopeId: string | null = null;
+      if (typeof input.marker === "string" && input.marker.length > 0) {
+        const m = input.marker.match(/\[envelope:\s*(env-[a-z0-9]+-[a-z0-9]+)\s*\]/i);
+        if (m) envelopeId = m[1];
+        else return { rows: [] };
+      } else if (typeof input.envelope_id === "string" && input.envelope_id.length > 0) {
+        if (!ENVELOPE_ID_RE.test(input.envelope_id)) return { rows: [] };
+        envelopeId = input.envelope_id;
+      }
+
+      if (envelopeId) {
+        const pattern = `%[envelope: ${envelopeId}]%`;
+        rows = this.sql<OutboxQRow>`
+          SELECT id, provider, conversation_id, reply_to_provider_message_id,
+                 substr(text, 1, 1000) AS text,
+                 '' AS payload_json,
+                 status, error, attempt_count, created_at, sent_at,
+                 kind, approval_id,
+                 length(text) AS text_length
+          FROM channel_outbox
+          WHERE text LIKE ${pattern}
+          ORDER BY created_at DESC
+          LIMIT ${limit}
+        `;
+      } else if (typeof input.conversation_id === "string" && input.conversation_id.length > 0) {
+        if (!SAFE_ID_RE.test(input.conversation_id)) return { rows: [] };
+        rows = this.sql<OutboxQRow>`
+          SELECT id, provider, conversation_id, reply_to_provider_message_id,
+                 substr(text, 1, 1000) AS text,
+                 '' AS payload_json,
+                 status, error, attempt_count, created_at, sent_at,
+                 kind, approval_id,
+                 length(text) AS text_length
+          FROM channel_outbox
+          WHERE conversation_id = ${input.conversation_id}
+          ORDER BY created_at DESC
+          LIMIT ${limit}
+        `;
+      } else {
+        return { rows: [] };
+      }
+    }
+
+    const MARKER_RE = /\[envelope:\s*(env-[a-z0-9]+-[a-z0-9]+)\s*\]/gi;
+    const inspectRows: ChannelOutboxInspectRow[] = rows.map((r) => {
+      const preview = r.text;
+      const markers: string[] = [];
+      const seen = new Set<string>();
+      for (const m of preview.matchAll(MARKER_RE)) {
+        const id = m[1].toLowerCase();
+        if (!seen.has(id)) { seen.add(id); markers.push(id); }
+      }
+      const errorOut = typeof r.error === "string" && r.error.length > 0
+        ? (r.error.length > 200 ? `${r.error.slice(0, 200)}…` : r.error)
+        : null;
+      return {
+        outbox_id: r.id,
+        provider: r.provider,
+        conversation_id: r.conversation_id,
+        reply_to_provider_message_id: r.reply_to_provider_message_id,
+        status: r.status,
+        kind: r.kind,
+        approval_id: r.approval_id,
+        attempt_count: r.attempt_count,
+        created_at: r.created_at,
+        sent_at: r.sent_at,
+        body_length: r.text_length,
+        body_preview: preview,
+        envelope_markers: markers,
+        has_error: errorOut !== null,
+        error_preview: errorOut,
+      };
+    });
+    return { rows: inspectRows };
+  }
+
+  /**
+   *  — read-only  approval token inspect surface.
+   *
+   * Returns redacted approval rows from `agent_tool_approvals`. The
+   * persisted secret material (`token_hash`) is never SELECTed; row
+   * shape comes from `redactApprovalRow` in skillset/approvalToken.ts
+   * so a future column add doesn't accidentally widen what inspect
+   * exposes.
+   *
+   * No mutation. The route layer (server.ts) is auth-gated by the
+   * global `requireSecret` on `/api/*`; this callable additionally
+   * validates `token_id` shape so a broken caller can't smuggle wildcards.
+   */
+  @callable()
+  async inspectApprovals(input: {
+    status?: ApprovalStatus | "all";
+    token_id?: string;
+    limit?: number;
+  }): Promise<{ rows: ApprovalInspectRow[] }> {
+    const limitRaw = typeof input.limit === "number" && Number.isFinite(input.limit)
+      ? Math.floor(input.limit) : 20;
+    const limit = Math.max(1, Math.min(100, limitRaw));
+
+    const TOKEN_ID_RE = /^tok_[a-f0-9]{8,64}$/i;
+    const VALID_STATUSES = new Set<string>([
+      "pending", "granted", "denied", "expired", "consumed", "replay_rejected",
+    ]);
+
+    type ApprovalQRow = {
+      token_id: string;
+      agent_id: string;
+      tool_id: string;
+      input_hash: string;
+      tier: number;
+      status: string;
+      reviewer_id: string | null;
+      reviewer_signature_hash: string | null;
+      agent_reason: string | null;
+      summary: string | null;
+      expires_at: number;
+      created_at: number;
+      decided_at: number | null;
+      consumed_at: number | null;
+      key_id: string | null;
+    };
+
+    let rows: ApprovalQRow[] = [];
+    if (typeof input.token_id === "string" && input.token_id.length > 0) {
+      if (!TOKEN_ID_RE.test(input.token_id)) return { rows: [] };
+      rows = this.sql<ApprovalQRow>`
+        SELECT token_id, agent_id, tool_id, input_hash, tier, status,
+               reviewer_id, reviewer_signature_hash,
+               agent_reason, summary,
+               expires_at, created_at, decided_at, consumed_at,
+               key_id
+        FROM agent_tool_approvals
+        WHERE token_id = ${input.token_id}
+        LIMIT 1
+      `;
+    } else {
+      const status = input.status ?? "pending";
+      if (status === "all") {
+        rows = this.sql<ApprovalQRow>`
+          SELECT token_id, agent_id, tool_id, input_hash, tier, status,
+                 reviewer_id, reviewer_signature_hash,
+                 agent_reason, summary,
+                 expires_at, created_at, decided_at, consumed_at,
+                 key_id
+          FROM agent_tool_approvals
+          ORDER BY created_at DESC
+          LIMIT ${limit}
+        `;
+      } else {
+        if (!VALID_STATUSES.has(status)) return { rows: [] };
+        rows = this.sql<ApprovalQRow>`
+          SELECT token_id, agent_id, tool_id, input_hash, tier, status,
+                 reviewer_id, reviewer_signature_hash,
+                 agent_reason, summary,
+                 expires_at, created_at, decided_at, consumed_at,
+                 key_id
+          FROM agent_tool_approvals
+          WHERE status = ${status}
+          ORDER BY created_at DESC
+          LIMIT ${limit}
+        `;
+      }
+    }
+
+    const inspectRows: ApprovalInspectRow[] = rows.map((r) => {
+      const record: ApprovalRecord = {
+        token_id: r.token_id,
+        token_hash: "",
+        agent_id: r.agent_id,
+        tool_id: r.tool_id,
+        input_hash: r.input_hash,
+        tier: r.tier as Tier,
+        status: r.status as ApprovalStatus,
+        reviewer_id: r.reviewer_id,
+        reviewer_signature_hash: r.reviewer_signature_hash,
+        agent_reason: r.agent_reason,
+        summary: r.summary,
+        expires_at: r.expires_at,
+        created_at: r.created_at,
+        decided_at: r.decided_at,
+        consumed_at: r.consumed_at,
+        key_id: r.key_id,
+      };
+      return redactApprovalRow(record);
+    });
+    return { rows: inspectRows };
+  }
+
+  /**
+   *  — verifier-only minimum approval request creation.
+   *
+   * Persists a `pending` row to `agent_tool_approvals` and returns the raw
+   * token **once** in the creation response. The raw token never re-appears:
+   * inspect surfaces strip `token_hash`, and `redactApprovalRow` is the
+   * single egress point for any subsequent row exposure.
+   *
+   * Scope (per  §D non-goals): no dispatcher integration, no
+   * `/api/approve` grant/deny, no replay consumption, no real T4/T5 tool
+   * execution. This callable is for verifier smoke + future grant flows.
+   *
+   * Tier guard: only T4 / T5 are accepted (other tiers don't require
+   * approval tokens); ttl_seconds is hard-capped to 1800s (T4) / 900s
+   * (T5) per  ADR §OQ3 — manifests cannot widen the cap.
+   */
+  @callable()
+  async createApprovalRequest(
+    input: CreateApprovalRequestInput,
+  ): Promise<CreateApprovalRequestResult> {
+    //  — body extracted to `./channelHub/approvalOps.ts`. Persists
+    // a `pending` row to `agent_tool_approvals` and returns the raw token
+    // **once**; raw token never re-appears (inspect strips `token_hash`,
+    // `redactApprovalRow` is the single egress point). `env` is `protected`
+    // on the Agent base class, so the call site reads the HMAC-key env
+    // pair and passes it in.
+    const env = this.env as ApprovalHmacEnv;
+    return createApprovalRequestImpl(this, env, input);
+  }
+
+  /**
+   *  — reviewer grant/deny mutation.
+   *
+   * Drives the `pending → granted | denied` state machine. Persists
+   * `reviewer_id`, optional `reviewer_signature_hash` (SHA-256 of the
+   * raw signature; raw never stored), and `decided_at`. The raw
+   * signature is intentionally absent from the response — `redactApprovalRow`
+   * remains the single egress point.
+   *
+   * Pending guard: only rows whose current status is `pending` can be
+   * decided. `granted` / `denied` / `consumed` / `expired` /
+   * `replay_rejected` rows return 400 `approval_not_pending`. Unknown
+   * `token_id` returns 400 `approval_not_found` here; the route layer
+   * lifts that to 404.
+   *
+   * Skeleton scope ( §D non-goals): no dispatcher, no replay
+   * consumption, no real cryptographic signature verify — that lands in
+   * 212e alongside dispatcher integration. The hash recorded here is
+   * what 212e will prove against.
+   *
+   * Note on time-expired pending rows: a row whose `expires_at <= now`
+   * but whose `status` is still `pending` (no sweeper yet) IS decidable
+   * here. Even if granted, `verifyApprovalToken` will reject it as
+   * `expired` at replay time, so this is safe; an explicit expiry guard
+   * is deferred to the sweeper follow-up ( §follow-up).
+   */
+  @callable()
+  async decideApproval(
+    input: DecideApprovalInput,
+  ): Promise<DecideApprovalResult> {
+    //  — body extracted to `./channelHub/approvalOps.ts`. Drives
+    // the `pending → granted | denied` state machine. Raw signature is
+    // hashed (SHA-256) before persist; raw is never stored.
+    return decideApprovalImpl(this, input);
+  }
+
+  /**
+   *  — replay consumption skeleton.
+   *
+   * Verifier/admin path that exercises the final `granted → consumed`
+   * transition. Reuses `verifyApprovalToken` () to enforce all
+   * binding rules and constant-time HMAC compare. Resolves the HMAC key
+   * by `row.key_id` so v1 / legacy_shared rows verify against their
+   * issue-time secret ( §C).
+   *
+   * Success path: granted + unexpired + (agent_id, tool_id, input_hash)
+   * match + raw token HMAC matches stored `token_hash` → status flips
+   * to `consumed`, `consumed_at` set. The redacted row is returned.
+   *
+   * Failure paths: never mutate row state ( §B). Reasons
+   * propagate from `verifyApprovalToken`:
+   *   - agent_mismatch / tool_mismatch / input_hash_mismatch
+   *   - wrong_status   (covers pending / denied / consumed / expired
+   *                     / replay_rejected — all rejected; second replay
+   *                     of the same row falls here)
+   *   - expired         (granted but `expires_at <= now`)
+   *   - token_mismatch  (binding & status OK but raw token wrong)
+   *
+   * Skeleton scope ( §D): does NOT execute any T4/T5 tool, does
+   * NOT integrate the agent dispatcher, does NOT touch
+   * write/commit/push/deploy. The point of this card is to prove the
+   * state machine's last hop is mechanically verifiable end-to-end.
+   *
+   * Single-instance DO actor model serializes callables, so SELECT →
+   * verify → UPDATE within one call is naturally atomic. The UPDATE
+   * `WHERE … AND status='granted'` is defence-in-depth.
+   */
+  @callable()
+  async consumeApprovalToken(
+    input: ConsumeApprovalTokenInput,
+  ): Promise<ConsumeApprovalTokenResult> {
+    //  — body extracted to `./channelHub/approvalOps.ts`. Drives
+    // the final `granted → consumed` transition with HMAC binding verify;
+    // failure paths never mutate row state. Single-instance DO actor model
+    // serializes callables so SELECT → verify → UPDATE is atomic. `env`
+    // is `protected` on the Agent base class, so the call site reads the
+    // HMAC-key env pair and passes it in.
+    const env = this.env as ApprovalHmacEnv;
+    return consumeApprovalTokenImpl(this, env, input);
+  }
+
+  /**
+   *  — propose-patch artifact creation. Verifier-only path.
+   *
+   * Mechanizes  ADR §D4 + §D7. Validates the input, runs
+   * `evaluatePatchPolicy` (allowlist / denylist + redaction substring
+   * scan), and on PASS persists a `status='proposed'` row. On FAIL the
+   * call returns `{ ok: false, error: "policy_failed", detail }` and
+   * **no row is inserted** — fail-closed at creation so inspect can
+   * never leak a policy-failed artifact's body.
+   *
+   * Boundary ( §1):
+   *  - This is NOT the agent dispatcher path. The agent /  cannot
+   *    write the working tree, commit, push, or deploy. Apply via
+   *    approval replay belongs to +.
+   *  - The route layer gates this with `requireSecret`; this callable
+   *    enforces shape + policy, not auth.
+   *
+   * Status in v1: only `'proposed'` is ever written. The schema reserves
+   * `'rejected' | 'superseded'` for forward-compat, but rejection in v1
+   * is encoded as no-row-at-all (see fail-closed above).
+   */
+  @callable()
+  async proposePatchArtifact(input: {
+    tool_id?: unknown;
+    target_paths?: unknown;
+    patch_text?: unknown;
+    summary?: unknown;
+    agent_id?: unknown;
+    task_id?: unknown;
+    envelope_id?: unknown;
+    conversation_id?: unknown;
+    base_sha?: unknown;
+  }): Promise<
+    | {
+        ok: true;
+        artifact_id: string;
+        row: PatchArtifactInspectRow;
+      }
+    | {
+        ok: false;
+        error: string;
+        detail?: {
+          denied_paths?: { path: string; reason: string }[];
+          redaction_hits?: { category: string; count: number }[];
+          policy_version?: string;
+        };
+      }
+  > {
+    return proposePatchArtifactImpl(this, input);
+  }
+
+  /**
+   *  — propose-patch artifact inspect. List or single-row read.
+   *
+   * Mirrors `inspectApprovals` shape: optional `artifact_id` for single
+   * lookup, otherwise list with `status` filter ("proposed" | "all";
+   * default "proposed") and `limit` clamped to [1, 100].
+   *
+   * The inspect row strips `patch_text` (returns `patch_text_length`
+   * only) so a multi-KiB diff body never lands in inspect responses.
+   * Use a future apply-side surface (+) if patch body retrieval
+   * is needed; v1 verifier-only smoke compares input_hash + policy
+   * summary, not raw text.
+   */
+  @callable()
+  async inspectPatchArtifacts(input: {
+    artifact_id?: string;
+    status?: "proposed" | "all";
+    limit?: number;
+  }): Promise<{ rows: PatchArtifactInspectRow[] }> {
+    return inspectPatchArtifactsImpl(this, input);
+  }
+
+  /**
+   *  — read-only `channel_inbox` inspect surface.
+   *
+   * Verifier / operator query of the inbox table by
+   * `provider_message_id` (Discord snowflake or generic message id),
+   * `conversation_id` (ChannelHub conv id), or single `inbox_id`.
+   * Returns redacted rows: bounded `text_preview` + `text_length`,
+   * attachments collapsed to `attachment_count + attachment_kinds[]`,
+   * `raw_ref` bounded to 200 chars. Never returns raw payload JSON,
+   * provider tokens, or unbounded attachment bodies.
+   *
+   * Body lives in `channelHub/inboxInspect.ts` so the redaction shape
+   * can be unit-tested without the partyserver / cloudflare:workers
+   * import chain.
+   */
+  @callable()
+  async inspectChannelInbox(
+    input: InspectChannelInboxInput,
+  ): Promise<{ rows: ChannelInboxInspectRow[] }> {
+    return inspectChannelInboxImpl(this, input);
+  }
+
+  /**
+   *  — read-only `channel_conversations` ownership inspect.
+   *
+   * Answers 's 369a observability ask: surface "current workspace
+   * agent vs channel route owner mismatch / unbound" without touching
+   * the hot-polled `/api/workspace` payload. Two query forms:
+   *   - `conversation_id` → single conversation owner + recent inbox.
+   *   - `agent_id`        → conversations currently bound to that agent.
+   *
+   * Body lives in `channelHub/conversationOwnership.ts` so the shape
+   * can be unit-tested without the partyserver / cloudflare:workers
+   * import chain.
+   */
+  @callable()
+  async inspectConversationOwnership(
+    input: InspectConversationOwnershipInput,
+  ): Promise<InspectConversationOwnershipResult> {
+    return inspectConversationOwnershipImpl(this, input);
+  }
+
+  /**
+   *  — write one outbox/evidence row for an apply attempt that
+   * has already produced an event-log row. The outbox table is the
+   * redaction-safe view of apply evidence — same fields the inspect
+   * surface already exposes for the event log, plus a stable `outbox_id`
+   * and a `delivery_status` (v1 `'ready'`, no external delivery yet).
+   *
+   * Writes are guarded by UNIQUE(event_id) + INSERT OR IGNORE so a
+   * coding bug that called this twice for the same event would no-op
+   * the second insert rather than corrupt the table. Cloudflare DOs are
+   * single-threaded so a same-event retry within one apply call cannot
+   * occur, but the guard makes intent explicit.
+   *
+   * Egress contract (matches  inspect): no `patch_text`, no raw
+   * token, no raw signature, no auth header, no worker secret.
+   */
+  private writePatchApplyOutbox(args: {
+    event_id: string;
+    artifact_id: string;
+    token_id: string;
+    agent_id: string;
+    tool_id: string;
+    input_hash: string;
+    status: string;
+    error_code: string | null;
+    gate_required: 0 | 1;
+    dry_run_unavailable: 0 | 1;
+    dry_run_exit_code: number | null;
+    head_sha: string | null;
+    target_paths_json: string;
+    created_at: number;
+  }): string {
+    const outboxId = `out_patch_apply_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+    this.sql`
+      INSERT OR IGNORE INTO patch_apply_outbox (
+        outbox_id, event_id, artifact_id, token_id,
+        agent_id, tool_id, input_hash,
+        status, error_code, gate_required, dry_run_unavailable,
+        dry_run_exit_code, head_sha,
+        target_paths, delivery_status, created_at
+      ) VALUES (
+        ${outboxId}, ${args.event_id}, ${args.artifact_id}, ${args.token_id},
+        ${args.agent_id}, ${args.tool_id}, ${args.input_hash},
+        ${args.status}, ${args.error_code}, ${args.gate_required}, ${args.dry_run_unavailable},
+        ${args.dry_run_exit_code}, ${args.head_sha},
+        ${args.target_paths_json}, 'ready', ${args.created_at}
+      )
+    `;
+    return outboxId;
+  }
+
+  /**
+   *  — approval-replay-driven apply with real dry-run + consume
+   * ( follow-up to 's verify-only skeleton).
+   *
+   * Verifier-only callable. Drives the apply path with a real
+   * `git apply --check` against a sandbox-resident shallow checkout —
+   * no commit, push, deploy, or working-tree mutation. Approval state
+   * is **only** consumed when the real dry-run passes, so a granted
+   * approval mechanically binds to one specific patch artifact + one
+   * successful structural-and-real check.
+   *
+   * Order of operations (each step fails closed without consume):
+   *  1. Validate input shape; reject anything not matching expected ids.
+   *  2. Reject any `tool_id` other than `APPLY_TOOL_ID`.
+   *  3. Load the artifact row. `patch_text` is internal-only; it is
+   *     written into the sandbox `/tmp` and is **never** echoed in any
+   *     response, event row, log, or inspect surface.
+   *  4. Re-derive the canonical apply input_hash from
+   *     `(artifact_id, artifact_input_hash)` and require it to match
+   *     both the caller's claimed `input_hash` and the approval row's
+   *     stored value (§B binding).
+   *  5. Resolve the HMAC key by `row.key_id` (matches ) and
+   *     `verifyApprovalToken` (pure — no row mutation).
+   *  6. On verify-fail: write a `verify_failed` event row, return
+   *     `{ok:false, error: <verdict.reason>}`. Approval untouched.
+   *  7. On verify-ok: structurally parse the unified diff. Every
+   *     `+++ b/<path>` must already be in `artifact.target_paths`.
+   *     Mismatches fail closed (`verify_failed` /
+   *     `diff_path_outside_target`); approval untouched.
+   *  8. **Real dry-run**: get the `agentthursday-dev-shell` sandbox, ensure a
+   *     shallow checkout via `ensureRepoCheckout` (records `head_sha`
+   *     for provenance). On infra error: `dry_run_failed` /
+   *     `sandbox_setup_failed` with `dry_run_unavailable=1`.
+   *  9. `sandbox.writeFile('/tmp/<event>.diff', patch_text)` then
+   *     `sandbox.exec('cd <repo> && git apply --check /tmp/<event>.diff')`.
+   *     `exitCode === 0` → real dry-run pass.
+   * 10. **Consume**: atomic `UPDATE … SET status='consumed' WHERE
+   *     token_id=… AND status='granted'` — same pattern as
+   *     `consumeApprovalToken`. Then write the
+   *     `dry_run_passed_consumed` event with `head_sha` +
+   *     `dry_run_exit_code=0`, `dry_run_unavailable=0`.
+   * 11. On `git apply --check` non-zero exit: classify into a closed
+   *     error_code enum from bounded stderr substrings (no raw stderr
+   *     stored) and write `dry_run_failed` event with
+   *     `dry_run_unavailable=0`. Approval untouched.
+   *
+   * Egress contract (preserved from 218/219, hardened):
+   *  - Response, event row, inspect surface NEVER contain `patch_text`,
+   *    raw token, raw signature, auth header, or worker secret.
+   *  - Sandbox stderr is NOT stored; only a categorical `error_code`
+   *    plus a numeric `dry_run_exit_code` and the resolved `head_sha`.
+   *  - The `/tmp/<event>.diff` file is best-effort cleaned up; the
+   *    sandbox is non-persistent across container restarts anyway.
+   *
+   * Boundaries ( ADR +  §3):
+   *  - Caller is verifier-side via `requireSecret` on `/api/*`.
+   *  - No commit / push / deploy. The dispatch never invokes
+   *    `git apply` (write), only `git apply --check`.
+   *  - Agent /  cannot reach this callable.
+   */
+  @callable()
+  async applyPatchDryRun(input: {
+    artifact_id?: unknown;
+    token_id?: unknown;
+    token?: unknown;
+    agent_id?: unknown;
+    tool_id?: unknown;
+    input_hash?: unknown;
+  }): Promise<
+    | {
+        ok: true;
+        event_id: string;
+        outbox_id: string;
+        artifact_id: string;
+        token_id: string;
+        input_hash: string;
+        target_paths: string[];
+        declared_paths_in_diff: string[];
+        hunks_parsed: number;
+        status: "dry_run_passed_consumed";
+        gate_required: true;
+        dry_run_unavailable: false;
+        consumed: true;
+        head_sha: string | null;
+        dry_run_exit_code: 0;
+      }
+    | {
+        ok: false;
+        error: string;
+        detail?: string;
+        event_id?: string;
+        outbox_id?: string;
+        status?: "verify_failed" | "dry_run_failed";
+        dry_run_unavailable?: boolean;
+        head_sha?: string | null;
+        dry_run_exit_code?: number | null;
+      }
+  > {
+    const TOKEN_ID_RE = /^tok_[a-f0-9]{8,64}$/i;
+    const ID_RE = /^[A-Za-z0-9_.:\-\/]{1,256}$/;
+    const HASH_RE = /^[a-f0-9]{64}$/i;
+
+    const artifactId = typeof input.artifact_id === "string" ? input.artifact_id : "";
+    if (!ARTIFACT_ID_RE.test(artifactId)) {
+      return { ok: false, error: "artifact_id_invalid" };
+    }
+    const tokenId = typeof input.token_id === "string" ? input.token_id : "";
+    if (!TOKEN_ID_RE.test(tokenId)) {
+      return { ok: false, error: "token_id_invalid" };
+    }
+    const rawToken = typeof input.token === "string" ? input.token : "";
+    if (!/^[a-f0-9]{1,256}$/i.test(rawToken) || rawToken.length === 0) {
+      return { ok: false, error: "token_invalid" };
+    }
+    const agentId = typeof input.agent_id === "string" ? input.agent_id.trim() : "";
+    if (!ID_RE.test(agentId)) {
+      return { ok: false, error: "agent_id_invalid" };
+    }
+    const toolId = typeof input.tool_id === "string" ? input.tool_id.trim() : "";
+    if (!ID_RE.test(toolId)) {
+      return { ok: false, error: "tool_id_invalid" };
+    }
+    if (toolId !== APPLY_TOOL_ID) {
+      // Apply approvals must use the dedicated apply tool id; rejecting
+      // the artifact's tool_id here is what makes propose vs apply
+      // distinguishable at the approval layer.
+      return { ok: false, error: "tool_id_not_apply" };
+    }
+    const claimedInputHash =
+      typeof input.input_hash === "string" ? input.input_hash : "";
+    if (!HASH_RE.test(claimedInputHash)) {
+      return { ok: false, error: "input_hash_invalid" };
+    }
+    const inputHash = claimedInputHash.toLowerCase();
+
+    type ArtifactQRow = {
+      artifact_id: string;
+      status: string;
+      tool_id: string;
+      target_paths: string;
+      input_hash: string;
+      patch_text: string;
+      base_sha: string | null;
+    };
+    const artifactRows = this.sql<ArtifactQRow>`
+      SELECT artifact_id, status, tool_id, target_paths, input_hash, patch_text, base_sha
+      FROM propose_patch_artifacts
+      WHERE artifact_id = ${artifactId}
+      LIMIT 1
+    `;
+    if (artifactRows.length === 0) {
+      return { ok: false, error: "artifact_not_found" };
+    }
+    const artifact = artifactRows[0];
+    if (artifact.status !== "proposed") {
+      return { ok: false, error: "artifact_not_proposed", detail: artifact.status };
+    }
+
+    // Re-derive expected apply input_hash from artifact_id + artifact's
+    // own input_hash. If caller's claim disagrees, fail closed before
+    // we ever look at the approval row.
+    const expectedInputHash = await computeApplyInputHash({
+      artifact_id: artifact.artifact_id,
+      artifact_input_hash: artifact.input_hash,
+    });
+    if (expectedInputHash !== inputHash) {
+      return { ok: false, error: "input_hash_artifact_mismatch" };
+    }
+
+    type ApprovalQRowFull = {
+      token_id: string;
+      token_hash: string;
+      agent_id: string;
+      tool_id: string;
+      input_hash: string;
+      tier: number;
+      status: string;
+      reviewer_id: string | null;
+      reviewer_signature_hash: string | null;
+      agent_reason: string | null;
+      summary: string | null;
+      expires_at: number;
+      created_at: number;
+      decided_at: number | null;
+      consumed_at: number | null;
+      key_id: string | null;
+    };
+    const approvalRows = this.sql<ApprovalQRowFull>`
+      SELECT token_id, token_hash, agent_id, tool_id, input_hash, tier, status,
+             reviewer_id, reviewer_signature_hash,
+             agent_reason, summary,
+             expires_at, created_at, decided_at, consumed_at,
+             key_id
+      FROM agent_tool_approvals
+      WHERE token_id = ${tokenId}
+      LIMIT 1
+    `;
+    if (approvalRows.length === 0) {
+      return { ok: false, error: "approval_not_found" };
+    }
+    const approvalRow = approvalRows[0];
+
+    // Resolve HMAC key by row.key_id — same precedence as
+    // consumeApprovalToken so v1 / legacy_shared rows verify against
+    // their issue-time secret.
+    const env = this.env as {
+      AGENT_THURSDAY_APPROVAL_HMAC_KEY?: string;
+      AGENT_THURSDAY_SHARED_SECRET?: string;
+    };
+    let hmacKey: string;
+    if (approvalRow.key_id === "v1") {
+      if (
+        typeof env.AGENT_THURSDAY_APPROVAL_HMAC_KEY !== "string" ||
+        env.AGENT_THURSDAY_APPROVAL_HMAC_KEY.length === 0
+      ) {
+        return {
+          ok: false,
+          error: "hmac_key_unconfigured",
+          detail: "row.key_id=v1 but AGENT_THURSDAY_APPROVAL_HMAC_KEY not set",
+        };
+      }
+      hmacKey = env.AGENT_THURSDAY_APPROVAL_HMAC_KEY;
+    } else {
+      if (
+        typeof env.AGENT_THURSDAY_SHARED_SECRET !== "string" ||
+        env.AGENT_THURSDAY_SHARED_SECRET.length === 0
+      ) {
+        return {
+          ok: false,
+          error: "hmac_key_unconfigured",
+          detail: `row.key_id=${approvalRow.key_id ?? "null"} but AGENT_THURSDAY_SHARED_SECRET not set`,
+        };
+      }
+      hmacKey = env.AGENT_THURSDAY_SHARED_SECRET;
+    }
+
+    const now = Date.now();
+    const record: ApprovalRecord = {
+      token_id: approvalRow.token_id,
+      token_hash: approvalRow.token_hash,
+      agent_id: approvalRow.agent_id,
+      tool_id: approvalRow.tool_id,
+      input_hash: approvalRow.input_hash,
+      tier: approvalRow.tier as Tier,
+      status: approvalRow.status as ApprovalStatus,
+      reviewer_id: approvalRow.reviewer_id,
+      reviewer_signature_hash: approvalRow.reviewer_signature_hash,
+      agent_reason: approvalRow.agent_reason,
+      summary: approvalRow.summary,
+      expires_at: approvalRow.expires_at,
+      created_at: approvalRow.created_at,
+      decided_at: approvalRow.decided_at,
+      consumed_at: approvalRow.consumed_at,
+      key_id: approvalRow.key_id,
+    };
+
+    const targetPaths = safeParseArray<string>(artifact.target_paths);
+    const targetPathsJson = JSON.stringify(targetPaths);
+
+    const verdict = await verifyApprovalToken({
+      hmacKey,
+      presented_token: rawToken,
+      record,
+      agent_id: agentId,
+      tool_id: toolId,
+      input_hash: inputHash,
+      now_ms: now,
+    });
+
+    if (!verdict.ok) {
+      // Record verify-fail evidence; do NOT mutate approval state.
+      const eventId = `evt_apply_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+      this.sql`
+        INSERT INTO patch_apply_events (
+          event_id, event_type, artifact_id, token_id,
+          agent_id, tool_id, input_hash, target_paths,
+          declared_paths_in_diff, hunks_parsed,
+          status, error_code, gate_required, dry_run_unavailable,
+          created_at
+        ) VALUES (
+          ${eventId}, 'patch.apply_dry_run', ${artifactId}, ${tokenId},
+          ${agentId}, ${toolId}, ${inputHash}, ${targetPathsJson},
+          NULL, NULL,
+          'verify_failed', ${verdict.reason}, 1, 1,
+          ${now}
+        )
+      `;
+      const outboxId = this.writePatchApplyOutbox({
+        event_id: eventId, artifact_id: artifactId, token_id: tokenId,
+        agent_id: agentId, tool_id: toolId, input_hash: inputHash,
+        status: "verify_failed", error_code: verdict.reason,
+        gate_required: 1, dry_run_unavailable: 1,
+        dry_run_exit_code: null, head_sha: null,
+        target_paths_json: targetPathsJson, created_at: now,
+      });
+      return { ok: false, error: verdict.reason, event_id: eventId, outbox_id: outboxId };
+    }
+
+    // Verified. Now structural parse — each declared `+++ b/<path>` in
+    // the diff must be in the artifact's target_paths. The body never
+    // leaves this scope.
+    const parsed = parseUnifiedDiffTargets(artifact.patch_text);
+    if (!parsed.ok) {
+      const eventId = `evt_apply_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+      this.sql`
+        INSERT INTO patch_apply_events (
+          event_id, event_type, artifact_id, token_id,
+          agent_id, tool_id, input_hash, target_paths,
+          declared_paths_in_diff, hunks_parsed,
+          status, error_code, gate_required, dry_run_unavailable,
+          created_at
+        ) VALUES (
+          ${eventId}, 'patch.apply_dry_run', ${artifactId}, ${tokenId},
+          ${agentId}, ${toolId}, ${inputHash}, ${targetPathsJson},
+          ${JSON.stringify(parsed.paths)}, ${parsed.hunks},
+          'verify_failed', 'diff_structure_invalid', 1, 1,
+          ${now}
+        )
+      `;
+      const outboxId = this.writePatchApplyOutbox({
+        event_id: eventId, artifact_id: artifactId, token_id: tokenId,
+        agent_id: agentId, tool_id: toolId, input_hash: inputHash,
+        status: "verify_failed", error_code: "diff_structure_invalid",
+        gate_required: 1, dry_run_unavailable: 1,
+        dry_run_exit_code: null, head_sha: null,
+        target_paths_json: targetPathsJson, created_at: now,
+      });
+      return { ok: false, error: "diff_structure_invalid", event_id: eventId, outbox_id: outboxId };
+    }
+    const allowed = new Set(targetPaths);
+    const stray = parsed.paths.filter((p) => !allowed.has(p));
+    if (stray.length > 0) {
+      const eventId = `evt_apply_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+      this.sql`
+        INSERT INTO patch_apply_events (
+          event_id, event_type, artifact_id, token_id,
+          agent_id, tool_id, input_hash, target_paths,
+          declared_paths_in_diff, hunks_parsed,
+          status, error_code, gate_required, dry_run_unavailable,
+          created_at
+        ) VALUES (
+          ${eventId}, 'patch.apply_dry_run', ${artifactId}, ${tokenId},
+          ${agentId}, ${toolId}, ${inputHash}, ${targetPathsJson},
+          ${JSON.stringify(parsed.paths)}, ${parsed.hunks},
+          'verify_failed', 'diff_path_outside_target', 1, 1,
+          ${now}
+        )
+      `;
+      const outboxId = this.writePatchApplyOutbox({
+        event_id: eventId, artifact_id: artifactId, token_id: tokenId,
+        agent_id: agentId, tool_id: toolId, input_hash: inputHash,
+        status: "verify_failed", error_code: "diff_path_outside_target",
+        gate_required: 1, dry_run_unavailable: 1,
+        dry_run_exit_code: null, head_sha: null,
+        target_paths_json: targetPathsJson, created_at: now,
+      });
+      return { ok: false, error: "diff_path_outside_target", event_id: eventId, outbox_id: outboxId };
+    }
+
+    //  — real dry-run via the agentthursday-dev-shell sandbox.
+    //
+    // Base tree: `ensureRepoCheckout` () does an idempotent
+    // shallow clone (depth 50) of `${AGENT_THURSDAY_REPO_URL}` at REPO_BASE_DIR.
+    // The resolved `head_sha` is recorded as provenance on the event row
+    // and in the response so the verifier can reason about which tree
+    // the patch was checked against. Token (if any) is redacted by
+    // `ensureRepoCheckout` before any error string surfaces.
+    const eventId = `evt_apply_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+    const repoEnv = this.env as unknown as {
+      AGENT_THURSDAY_REPO_URL?: string;
+      AGENT_THURSDAY_GIT_TOKEN?: string;
+      GITHUB_TOKEN?: string;
+    };
+    let head_sha: string | null = null;
+    try {
+      const sb = getSandbox(this.env.Sandbox, "agentthursday-dev-shell");
+      const sandboxExec = async (command: string) => {
+        const r = await sb.exec(command);
+        return {
+          stdout: typeof r.stdout === "string" ? r.stdout : "",
+          stderr: typeof r.stderr === "string" ? r.stderr : "",
+          exit_code: typeof r.exitCode === "number" ? r.exitCode : 0,
+        };
+      };
+      const checkout = await ensureRepoCheckout(sandboxExec, {
+        AGENT_THURSDAY_REPO_URL: repoEnv.AGENT_THURSDAY_REPO_URL,
+        AGENT_THURSDAY_GIT_TOKEN: repoEnv.AGENT_THURSDAY_GIT_TOKEN,
+        GITHUB_TOKEN: repoEnv.GITHUB_TOKEN,
+      });
+      if (checkout.error) {
+        this.sql`
+          INSERT INTO patch_apply_events (
+            event_id, event_type, artifact_id, token_id,
+            agent_id, tool_id, input_hash, target_paths,
+            declared_paths_in_diff, hunks_parsed,
+            status, error_code, gate_required, dry_run_unavailable,
+            created_at, dry_run_exit_code, head_sha
+          ) VALUES (
+            ${eventId}, 'patch.apply_dry_run', ${artifactId}, ${tokenId},
+            ${agentId}, ${toolId}, ${inputHash}, ${targetPathsJson},
+            ${JSON.stringify(parsed.paths)}, ${parsed.hunks},
+            'dry_run_failed', 'sandbox_setup_failed', 1, 1,
+            ${now}, NULL, NULL
+          )
+        `;
+        const outboxId = this.writePatchApplyOutbox({
+          event_id: eventId, artifact_id: artifactId, token_id: tokenId,
+          agent_id: agentId, tool_id: toolId, input_hash: inputHash,
+          status: "dry_run_failed", error_code: "sandbox_setup_failed",
+          gate_required: 1, dry_run_unavailable: 1,
+          dry_run_exit_code: null, head_sha: null,
+          target_paths_json: targetPathsJson, created_at: now,
+        });
+        return {
+          ok: false,
+          error: "sandbox_setup_failed",
+          event_id: eventId,
+          outbox_id: outboxId,
+          status: "dry_run_failed",
+          dry_run_unavailable: true,
+          head_sha: null,
+          dry_run_exit_code: null,
+        };
+      }
+      head_sha = checkout.head_sha ?? null;
+
+      //  — pinned base SHA check. If the artifact was proposed
+      // with a non-null `base_sha`, the resolved sandbox `head_sha`
+      // must match (case-insensitive) before we run `git apply --check`
+      // — otherwise the dry-run is being evaluated on a different tree
+      // than the patch was authored against, and a happy-path consume
+      // would silently bind to a tree the proposer never saw. Null
+      // base on the artifact (legacy / pre-223 rows) skips this check
+      // and behaves as before. Failure path mirrors the other
+      // `dry_run_failed` branches: sandbox is up so
+      // `dry_run_unavailable=0`, `dry_run_exit_code=null` since
+      // `git apply --check` was never invoked, approval untouched.
+      if (
+        artifact.base_sha !== null &&
+        artifact.base_sha.toLowerCase() !== (head_sha ?? "").toLowerCase()
+      ) {
+        this.sql`
+          INSERT INTO patch_apply_events (
+            event_id, event_type, artifact_id, token_id,
+            agent_id, tool_id, input_hash, target_paths,
+            declared_paths_in_diff, hunks_parsed,
+            status, error_code, gate_required, dry_run_unavailable,
+            created_at, dry_run_exit_code, head_sha
+          ) VALUES (
+            ${eventId}, 'patch.apply_dry_run', ${artifactId}, ${tokenId},
+            ${agentId}, ${toolId}, ${inputHash}, ${targetPathsJson},
+            ${JSON.stringify(parsed.paths)}, ${parsed.hunks},
+            'dry_run_failed', 'base_sha_mismatch', 1, 0,
+            ${now}, NULL, ${head_sha}
+          )
+        `;
+        const outboxId = this.writePatchApplyOutbox({
+          event_id: eventId, artifact_id: artifactId, token_id: tokenId,
+          agent_id: agentId, tool_id: toolId, input_hash: inputHash,
+          status: "dry_run_failed", error_code: "base_sha_mismatch",
+          gate_required: 1, dry_run_unavailable: 0,
+          dry_run_exit_code: null, head_sha,
+          target_paths_json: targetPathsJson, created_at: now,
+        });
+        return {
+          ok: false,
+          error: "base_sha_mismatch",
+          event_id: eventId,
+          outbox_id: outboxId,
+          status: "dry_run_failed",
+          dry_run_unavailable: false,
+          head_sha,
+          dry_run_exit_code: null,
+        };
+      }
+
+      // Write patch into sandbox /tmp; the SDK's writeFile primitive
+      // avoids any base64+printf shell-escape gymnastics on patch_text.
+      const diffPath = `/tmp/${eventId}.diff`;
+      await sb.writeFile(diffPath, artifact.patch_text);
+
+      const checkRes = await sb.exec(
+        `cd ${REPO_BASE_DIR} && git apply --check ${diffPath}`,
+      );
+      const exitCode = typeof checkRes.exitCode === "number" ? checkRes.exitCode : 1;
+      const stderr = typeof checkRes.stderr === "string" ? checkRes.stderr : "";
+
+      // Best-effort cleanup; failure is non-fatal — sandbox is
+      // non-persistent and /tmp doesn't outlive the container restart.
+      try { await sb.exec(`rm -f ${diffPath}`); } catch { /* ignore */ }
+
+      if (exitCode === 0) {
+        // Real dry-run pass → atomic consume. Pattern matches
+        // `consumeApprovalToken`: UPDATE only when status='granted',
+        // so a concurrent retry cannot double-consume.
+        this.sql`
+          UPDATE agent_tool_approvals
+          SET status = 'consumed', consumed_at = ${now}
+          WHERE token_id = ${tokenId} AND status = 'granted'
+        `;
+        this.sql`
+          INSERT INTO patch_apply_events (
+            event_id, event_type, artifact_id, token_id,
+            agent_id, tool_id, input_hash, target_paths,
+            declared_paths_in_diff, hunks_parsed,
+            status, error_code, gate_required, dry_run_unavailable,
+            created_at, dry_run_exit_code, head_sha
+          ) VALUES (
+            ${eventId}, 'patch.apply_dry_run', ${artifactId}, ${tokenId},
+            ${agentId}, ${toolId}, ${inputHash}, ${targetPathsJson},
+            ${JSON.stringify(parsed.paths)}, ${parsed.hunks},
+            'dry_run_passed_consumed', NULL, 1, 0,
+            ${now}, 0, ${head_sha}
+          )
+        `;
+        const outboxId = this.writePatchApplyOutbox({
+          event_id: eventId, artifact_id: artifactId, token_id: tokenId,
+          agent_id: agentId, tool_id: toolId, input_hash: inputHash,
+          status: "dry_run_passed_consumed", error_code: null,
+          gate_required: 1, dry_run_unavailable: 0,
+          dry_run_exit_code: 0, head_sha,
+          target_paths_json: targetPathsJson, created_at: now,
+        });
+        return {
+          ok: true,
+          event_id: eventId,
+          outbox_id: outboxId,
+          artifact_id: artifactId,
+          token_id: tokenId,
+          input_hash: inputHash,
+          target_paths: targetPaths,
+          declared_paths_in_diff: parsed.paths,
+          hunks_parsed: parsed.hunks,
+          status: "dry_run_passed_consumed",
+          gate_required: true,
+          dry_run_unavailable: false,
+          consumed: true,
+          head_sha,
+          dry_run_exit_code: 0,
+        };
+      }
+
+      // Non-zero exit → derive a categorical error_code from bounded
+      // stderr substring matches. Raw stderr is NEVER stored or
+      // returned; only the closed enum value lands on the row.
+      const stderrLower = stderr.toLowerCase();
+      let errorCode = "git_apply_check_failed_unknown";
+      if (stderrLower.includes("does not exist in index")
+          || stderrLower.includes("no such file")) {
+        errorCode = "target_file_missing";
+      } else if (stderrLower.includes("does not apply")
+          || stderrLower.includes("patch failed")) {
+        errorCode = "patch_does_not_apply";
+      } else if (stderrLower.includes("corrupt patch")) {
+        errorCode = "corrupt_patch";
+      } else if (stderrLower.includes("unrecognized input")
+          || stderrLower.includes("not a git diff")) {
+        errorCode = "unrecognized_diff";
+      }
+
+      this.sql`
+        INSERT INTO patch_apply_events (
+          event_id, event_type, artifact_id, token_id,
+          agent_id, tool_id, input_hash, target_paths,
+          declared_paths_in_diff, hunks_parsed,
+          status, error_code, gate_required, dry_run_unavailable,
+          created_at, dry_run_exit_code, head_sha
+        ) VALUES (
+          ${eventId}, 'patch.apply_dry_run', ${artifactId}, ${tokenId},
+          ${agentId}, ${toolId}, ${inputHash}, ${targetPathsJson},
+          ${JSON.stringify(parsed.paths)}, ${parsed.hunks},
+          'dry_run_failed', ${errorCode}, 1, 0,
+          ${now}, ${exitCode}, ${head_sha}
+        )
+      `;
+      const outboxId = this.writePatchApplyOutbox({
+        event_id: eventId, artifact_id: artifactId, token_id: tokenId,
+        agent_id: agentId, tool_id: toolId, input_hash: inputHash,
+        status: "dry_run_failed", error_code: errorCode,
+        gate_required: 1, dry_run_unavailable: 0,
+        dry_run_exit_code: exitCode, head_sha,
+        target_paths_json: targetPathsJson, created_at: now,
+      });
+      return {
+        ok: false,
+        error: errorCode,
+        event_id: eventId,
+        outbox_id: outboxId,
+        status: "dry_run_failed",
+        dry_run_unavailable: false,
+        head_sha,
+        dry_run_exit_code: exitCode,
+      };
+    } catch (e) {
+      // Anything that escapes the dry-run scope (sandbox unreachable,
+      // RPC-level error, writeFile failure, exec throw) folds into
+      // `sandbox_setup_failed` with `dry_run_unavailable=1`. Approval
+      // state is untouched. Error message is intentionally NOT stored —
+      // we cannot guarantee it is redaction-safe under all SDK shapes.
+      this.sql`
+        INSERT INTO patch_apply_events (
+          event_id, event_type, artifact_id, token_id,
+          agent_id, tool_id, input_hash, target_paths,
+          declared_paths_in_diff, hunks_parsed,
+          status, error_code, gate_required, dry_run_unavailable,
+          created_at, dry_run_exit_code, head_sha
+        ) VALUES (
+          ${eventId}, 'patch.apply_dry_run', ${artifactId}, ${tokenId},
+          ${agentId}, ${toolId}, ${inputHash}, ${targetPathsJson},
+          ${JSON.stringify(parsed.paths)}, ${parsed.hunks},
+          'dry_run_failed', 'sandbox_setup_failed', 1, 1,
+          ${now}, NULL, ${head_sha}
+        )
+      `;
+      const outboxId = this.writePatchApplyOutbox({
+        event_id: eventId, artifact_id: artifactId, token_id: tokenId,
+        agent_id: agentId, tool_id: toolId, input_hash: inputHash,
+        status: "dry_run_failed", error_code: "sandbox_setup_failed",
+        gate_required: 1, dry_run_unavailable: 1,
+        dry_run_exit_code: null, head_sha,
+        target_paths_json: targetPathsJson, created_at: now,
+      });
+      return {
+        ok: false,
+        error: "sandbox_setup_failed",
+        event_id: eventId,
+        outbox_id: outboxId,
+        status: "dry_run_failed",
+        dry_run_unavailable: true,
+        head_sha,
+        dry_run_exit_code: null,
+      };
+    }
+  }
+
+  /**
+   *  — read-only inspect over `patch_apply_events`. Mirrors
+   * `inspectPatchArtifacts`: optional `event_id` for single lookup, else
+   * list with `limit` clamped to [1,100]. No raw token, no signature, no
+   * patch body — the table never stored those.
+   */
+  @callable()
+  async inspectPatchApplyEvents(input: {
+    event_id?: string;
+    artifact_id?: string;
+    limit?: number;
+  }): Promise<{ rows: PatchApplyEventInspectRow[] }> {
+    return inspectPatchApplyEventsImpl(this, input);
+  }
+
+  /**
+   *  — read-only inspect over `patch_apply_outbox`. Mirrors
+   * `inspectPatchApplyEvents` ergonomics: optional `outbox_id` for
+   * single-row lookup, optional `event_id` / `artifact_id` filters
+   * (mutually exclusive — first matched wins, in that order), else
+   * latest-first list with `limit` clamped to [1,100].
+   *
+   * Egress contract: identical to event-log inspect — no `patch_text`,
+   * no raw token, no raw signature, no auth header, no worker secret.
+   * The table itself never stored those.
+   */
+  @callable()
+  async inspectPatchApplyOutbox(input: {
+    outbox_id?: string;
+    event_id?: string;
+    artifact_id?: string;
+    limit?: number;
+  }): Promise<{ rows: PatchApplyOutboxInspectRow[] }> {
+    return inspectPatchApplyOutboxImpl(this, input);
+  }
+
+  /**
+   *  — redaction-safe latest-`patch_apply_outbox` summary for
+   * `/cli/status.dashboard`. Single RPC: SELECT latest outbox row
+   * (ORDER BY created_at DESC LIMIT 1), then if found SELECT the
+   * matching event row by `event_id` and compute `matches_event` over
+   * the redaction-safe core fields that must agree between the two
+   * projections (event_id, artifact_id, token_id, status, error_code,
+   * head_sha, dry_run_exit_code, dry_run_unavailable, gate_required,
+   * input_hash). Skips `target_paths` (array compare is structurally
+   * derived from artifact, not a written-to-row identity).
+   *
+   * No `patch_text`, raw token, raw signature, auth header, secret —
+   * the table itself never stored those.
+   */
+  @callable()
+  async getLatestPatchApplyOutboxSummary(): Promise<LatestPatchApplyOutboxSummary> {
+    return getLatestPatchApplyOutboxSummaryImpl(this);
+  }
+
+  /**
+   *  — compact, leak-safe counts for the default user-layer panel.
    * No row data, no ids, no payloads — just what the user needs to see.
    */
   @callable()
@@ -1384,36 +2804,4 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     `)[0]?.n ?? 0);
     return { inboxAddressedPending, outboxPending, approvalsPending, lastInboundAt, conversations };
   }
-}
-
-function safeParseArray<T>(raw: string): T[] {
-  try {
-    const v = JSON.parse(raw);
-    return Array.isArray(v) ? (v as T[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function rowToInboxItem(r: InboxRow): ChannelInboxItem {
-  return {
-    id: r.id,
-    provider: r.provider as ChannelProvider,
-    conversationId: r.conversation_id,
-    providerMessageId: r.provider_message_id,
-    senderProviderUserId: r.sender_provider_user_id,
-    chatType: r.chat_type as ChannelChatType,
-    addressedToAgent: r.addressed_to_agent === 1,
-    addressedSignals: safeParseArray<string>(r.addressed_signals_json),
-    text: r.text,
-    attachments: safeParseArray<ChannelAttachment>(r.attachments_json),
-    rawRef: r.raw_ref,
-    status: r.status as ChannelInboxStatus,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-    routeAction: (r.route_action as ChannelInboxItem["routeAction"]) ?? null,
-    routeReason: r.route_reason,
-    routedAt: r.routed_at,
-    handoffTaskId: r.handoff_task_id,
-  };
 }

@@ -38,7 +38,7 @@ export function requireSecret(request: Request, env: AuthEnv): Response | null {
     if (env.AGENT_THURSDAY_ALLOW_INSECURE_DEV === "true") {
       if (!warnedInsecureAllow) {
         console.warn(
-          "[agent-thursday-auth] AGENT_THURSDAY_SHARED_SECRET not set and AGENT_THURSDAY_ALLOW_INSECURE_DEV=true — allowing all traffic. This must NEVER appear in production.",
+          "[agentthursday-auth] AGENT_THURSDAY_SHARED_SECRET not set and AGENT_THURSDAY_ALLOW_INSECURE_DEV=true — allowing all traffic. This must NEVER appear in production.",
         );
         warnedInsecureAllow = true;
       }
@@ -46,7 +46,7 @@ export function requireSecret(request: Request, env: AuthEnv): Response | null {
     }
     if (!warnedRefusing) {
       console.error(
-        "[agent-thursday-auth] AGENT_THURSDAY_SHARED_SECRET not set and AGENT_THURSDAY_ALLOW_INSECURE_DEV not 'true'; refusing all traffic with 503.",
+        "[agentthursday-auth] AGENT_THURSDAY_SHARED_SECRET not set and AGENT_THURSDAY_ALLOW_INSECURE_DEV not 'true'; refusing all traffic with 503.",
       );
       warnedRefusing = true;
     }

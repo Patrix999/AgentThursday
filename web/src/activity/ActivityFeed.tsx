@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { InspectSnapshot } from "../../shared/schema";
-import { useInspect } from "../hooks/useInspect";
 import { ActivityCard } from "./ActivityCard";
 
 type Intent = NonNullable<InspectSnapshot["actionUiIntents"]>[number];
@@ -11,7 +10,7 @@ const EMPTY_COPY =
 const FEED_CAP = 30;
 
 /**
- * v3 accordion ( v3) — the operator redesign:
+ * v3 accordion ( v3) — operator redesign:
  *
  *   - The activity surface is now a right-side independent panel,
  *     not part of the conversation column.
@@ -30,8 +29,7 @@ const FEED_CAP = 30;
  * calls `scrollTo` / `scrollIntoView`. New items append at the top of
  * the accordion in place; existing scroll position is unaffected.
  */
-export function ActivityFeed() {
-  const { data } = useInspect(true);
+export function ActivityFeed({ data }: { data: InspectSnapshot | null }) {
   const visible = useMemo<Intent[]>(() => {
     const all = data?.actionUiIntents ?? [];
     return all.filter(isDefaultFeedIntent).slice(0, FEED_CAP);
@@ -61,7 +59,7 @@ export function ActivityFeed() {
         addedIds.add(intent.id);
         // New intent: expand it.
         nextExpanded[intent.id] = true;
-        // the operator rule: if a previously-collapsed item of the same type
+        // operator rule: if a previously-collapsed item of the same type
         // exists, also re-expand it — "fresh" visual same as new.
         // User toggles still win: don't override a manual collapse.
         const prevId = lastByType[intent.type];
@@ -102,6 +100,10 @@ export function ActivityFeed() {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
   }
 
+  if (data === null) {
+    return <ActivityLoadingSkeleton />;
+  }
+
   if (visible.length === 0) {
     return (
       <div className="px-4 py-3">
@@ -116,44 +118,53 @@ export function ActivityFeed() {
   return (
     <div className="px-4 py-3">
       <div className="mb-2 text-xs uppercase tracking-wide text-slate-500">Activity</div>
-      <div className="space-y-2">
+      <ul className="divide-y divide-slate-800/70 rounded border border-slate-800/70 bg-slate-950/40">
         {visible.map((intent) => {
           const isOpen = expanded[intent.id] !== false;
           const tone = headerToneFor(intent.type);
           return (
-            <div
-              key={intent.id}
-              className={`rounded-lg border ${tone.border} ${tone.bg}`}
-            >
+            <li key={intent.id}>
               <button
                 type="button"
                 onClick={() => toggle(intent.id)}
-                className="w-full text-left px-3 py-2 flex items-center gap-2 hover:brightness-125"
+                className="w-full text-left px-3 py-1.5 flex items-center gap-2 hover:bg-slate-900/60"
               >
-                <span className="text-slate-500 font-mono text-xs w-3">
+                <span className="text-slate-500 font-mono text-[10px] w-3 shrink-0">
                   {isOpen ? "▾" : "▸"}
                 </span>
-                <span className={`text-[10px] uppercase font-mono px-1.5 rounded ${tone.badge}`}>
+                <span className={`text-[10px] uppercase font-mono px-1.5 rounded shrink-0 ${tone.badge}`}>
                   {tone.label}
                 </span>
                 <span className="text-sm text-slate-200 truncate flex-1 min-w-0">
                   {intent.title}
                 </span>
-                <span className="text-[10px] text-slate-500 shrink-0 ml-2">
+                <HeaderStatusGlyph intent={intent} />
+                <span className="text-[10px] text-slate-500 shrink-0 ml-2 font-mono">
                   {relativeShort(intent.sourceEventAt)}
                 </span>
               </button>
               {isOpen && (
-                <div className="border-t border-slate-800/70 px-3 py-3">
+                <div className="px-3 pb-3 pl-8">
                   <ActivityCard intent={intent} />
                 </div>
               )}
-            </div>
+            </li>
           );
         })}
-      </div>
+      </ul>
     </div>
   );
+}
+
+//  — lifecycle status glyph in the collapsed header so the
+// operator sees running/ok/error without expanding.
+function HeaderStatusGlyph({ intent }: { intent: Intent }) {
+  const lc = (intent.component.props as { lifecycle?: { status?: unknown } } | null)?.lifecycle;
+  const status = lc && typeof lc.status === "string" ? lc.status : null;
+  if (status === null) return null;
+  if (status === "running") return <span className="shrink-0 text-[10px] text-amber-400 font-mono">⏳</span>;
+  if (status === "error") return <span className="shrink-0 text-[10px] text-rose-400 font-mono">✗</span>;
+  return <span className="shrink-0 text-[10px] text-emerald-400 font-mono">✓</span>;
 }
 
 function headerToneFor(type: Intent["type"]): {
@@ -171,10 +182,14 @@ function headerToneFor(type: Intent["type"]): {
       return { border: "border-fuchsia-800/60", bg: "bg-fuchsia-950/30", badge: "bg-fuchsia-900/60 text-fuchsia-200", label: "exec" };
     case "tool.workspace_mutation":
       return { border: "border-cyan-800/60", bg: "bg-cyan-950/30", badge: "bg-cyan-900/60 text-cyan-200", label: "ws" };
+    case "tool.lifecycle":
+      return { border: "border-indigo-800/60", bg: "bg-indigo-950/30", badge: "bg-indigo-900/60 text-indigo-200", label: "mgr" };
     case "agent.degradation":
       return { border: "border-amber-800/60", bg: "bg-amber-950/30", badge: "bg-amber-900/60 text-amber-200", label: "deg" };
     case "agent.pause":
       return { border: "border-sky-800/60", bg: "bg-sky-950/30", badge: "bg-sky-900/60 text-sky-200", label: "pause" };
+    case "workflow.run":
+      return { border: "border-orange-800/60", bg: "bg-orange-950/30", badge: "bg-orange-900/60 text-orange-200", label: "run" };
     case "generic.tool_event":
       return { border: "border-slate-700", bg: "bg-slate-900/60", badge: "bg-slate-800 text-slate-300", label: "tool" };
     case "generic.event":
@@ -194,6 +209,32 @@ function relativeShort(at: number): string {
   return `${Math.floor(h / 24)}d`;
 }
 
+function ActivityLoadingSkeleton() {
+  return (
+    <div className="px-4 py-3" aria-label="Loading activity">
+      <div className="mb-2 text-xs uppercase tracking-wide text-slate-500">Activity</div>
+      <div className="divide-y divide-slate-800/70 rounded border border-slate-800/70 bg-slate-950/40 animate-pulse">
+        {[0, 1, 2, 3].map((idx) => (
+          <div key={idx} className="px-3 py-2">
+            <div className="flex items-center gap-2">
+              <div className="h-3 w-3 rounded bg-slate-800" />
+              <div className="h-4 w-10 rounded bg-slate-800/80" />
+              <div className="h-4 min-w-0 flex-1 rounded bg-slate-800/70" />
+              <div className="h-3 w-8 rounded bg-slate-800/50" />
+            </div>
+            {idx === 0 && (
+              <div className="ml-8 mt-2 space-y-2">
+                <div className="h-3 w-9/12 rounded bg-slate-800/60" />
+                <div className="h-3 w-6/12 rounded bg-slate-800/50" />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function isDefaultFeedIntent(intent: Intent): boolean {
   if (intent.priority === "debug") return false;
   if (intent.placementHint.region === "debug") return false;
@@ -205,5 +246,7 @@ function isDefaultFeedIntent(intent: Intent): boolean {
     || intent.type === "tool.file_read"
     || intent.type === "tool.execution_result"
     || intent.type === "tool.workspace_mutation"
+    || intent.type === "tool.lifecycle"
+    || intent.type === "workflow.run"
   );
 }

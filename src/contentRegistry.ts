@@ -15,10 +15,10 @@ import type {
   ContentSourcesResponse,
 } from "./schema";
 
-const AGENT_THURSDAY_GITHUB_SOURCE: ContentSource = {
+const AGENTTHURSDAY_GITHUB_SOURCE: ContentSource = {
   id: "agentthursday-github",
   provider: "github",
-  label: "AgentThursday GitHub repo (Patrix999/AgentThursday@main)",
+  label: "AgentThursday GitHub repo (your-org/AgentThursday@main)",
   scope: "project",
   access: "read",
   authMode: "secret",
@@ -45,8 +45,8 @@ const AGENT_THURSDAY_GITHUB_SOURCE: ContentSource = {
     "dist",
     "web/dist",
   ],
-  //  v2 explicit capability declaration. GitHub provider
-  // supports the full read/list/search/health quad ().
+  //  v2  — explicit capability declaration. GitHub provider
+  // supports the full read/list/search/health quad (Cards 108 + 109).
   capabilities: {
     read: true,
     list: true,
@@ -55,9 +55,9 @@ const AGENT_THURSDAY_GITHUB_SOURCE: ContentSource = {
   },
 };
 
-//  v2 Local-fs / static docs ContentSource.
+//  v2  — Local-fs / static docs ContentSource.
 //
-//  design (`docs/design/2026-04-28-m7.4-v2-provider-selection.md`)
+//  design (``)
 // chose Local-fs as the v2 first additional provider to validate
 // `ContentSourceConnector` abstraction with a non-GitHub I/O / auth /
 // revision model. Implementation: hardcoded fixture map shipped in
@@ -68,9 +68,9 @@ const AGENT_THURSDAY_GITHUB_SOURCE: ContentSource = {
 // No `defaultRef` (no version concept); revisions are content-hash
 // snapshots emitted by the connector at read time.
 const AGENT_THURSDAY_LOCAL_FIXTURE_SOURCE: ContentSource = {
-  id: "agent-thursday-local-fixture",
+  id: "agentthursday-local-fixture",
   provider: "local-fs",
-  label: "AgentThursday Local Fixture ( v2 abstraction validator)",
+  label: "agentthursday Local Fixture ( v2 abstraction validator)",
   scope: "fixture",
   access: "read",
   authMode: "none",
@@ -78,7 +78,7 @@ const AGENT_THURSDAY_LOCAL_FIXTURE_SOURCE: ContentSource = {
   // the worker source). deniedPaths kept empty since the fixture corpus
   // contains no secrets by construction. Path policy still rejects `..`,
   // `\\`, null bytes via the connector's normalizePath.
-  //  v2 Local-fs provider supports read + list + health
+  //  v2  — Local-fs provider supports read + list + health
   // only. Search is explicitly false: `_doSearch` returns a fail-loud
   // "search not implemented for provider: local-fs" error rather than any
   // silent fallback.  fan-out reads this field to skip local-fs.
@@ -91,7 +91,7 @@ const AGENT_THURSDAY_LOCAL_FIXTURE_SOURCE: ContentSource = {
 };
 
 export const HARDCODED_REGISTRY: readonly ContentSource[] = [
-  AGENT_THURSDAY_GITHUB_SOURCE,
+  AGENTTHURSDAY_GITHUB_SOURCE,
   AGENT_THURSDAY_LOCAL_FIXTURE_SOURCE,
 ];
 

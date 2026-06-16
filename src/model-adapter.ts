@@ -112,7 +112,7 @@ class VerboseAdapter implements ModelAdapter {
         "  ○ DoD-4: 当前 model profile 元数据可感知 (provider/model/tier)。",
         "  ○ DoD-6: 全流程 event trace 可回放。",
         "",
-        "建议下一步开卡: 全流程 event trace 可回放 (DoD-6)。",
+        "建议下一步开卡:  — 全流程 event trace 可回放 (DoD-6)。",
       ].filter(Boolean).join("\n");
     } else {
       text = [
@@ -133,7 +133,7 @@ class VerboseAdapter implements ModelAdapter {
     };
     const nextAction: NextAction = completion
       ? { title: "提交当前成果进入 code review", reason: "structured analysis complete，进入 review 阶段", committed: true }
-      : { title: "开具下一张 任务卡，定义可交付条目", reason: "已完成状态分析，需进入实现规划", committed: true };
+      : { title: "开具下一张 kanban 卡，定义可交付条目", reason: "已完成状态分析，需进入实现规划", committed: true };
     const obstacle: ObstacleState = { blocked: false, reason: "", suggestedUnblockAction: "" };
     return { text, usedProfile: modelProfile, progress, nextAction, obstacle };
   }

@@ -50,7 +50,7 @@ const VALID_HASH_TABS: ReadonlySet<Tab> = new Set([
 ]);
 
 function readHashTab(): Tab | null {
-  // light deep-link from mobile context chip (and any
+  //  — light deep-link from mobile context chip (and any
   // other entry that wants to land on a specific inspect tab).
   // Reads `window.location.hash` once on mount; ignores invalid or
   // missing hashes. SSR-safe via `typeof window` guard.
@@ -77,9 +77,9 @@ export function InspectContent({ data, loading, error }: Props) {
   return (
     <div className="flex flex-col h-full">
       {data && <DegradationBanner diagnostics={data.degradationDiagnostics} />}
-      {/* desktop keeps the horizontal tab strip; mobile
+      {/*  — desktop keeps the horizontal tab strip; mobile
           gets a menu button + bottom sheet. Both variants drive the
-          same `tab` state, and the URL hash deep-link from 
+          same `tab` state, and the URL hash deep-link from
           continues to seed the initial tab regardless of viewport. */}
       <div className="hidden lg:block">
         <Tabs current={tab} onChange={setTab} />
@@ -115,15 +115,15 @@ export function InspectContent({ data, loading, error }: Props) {
 }
 
 function Tabs({ current, onChange }: { current: Tab; onChange: (t: Tab) => void }) {
-  // `min-w-0 overflow-x-auto no-scrollbar` keeps the desktop strip from
-  // pushing the page wider; per-button `flex-shrink-0 whitespace-nowrap`
-  // keeps labels intact.
+  // /147b — `min-w-0 overflow-x-auto no-scrollbar` keeps the
+  // desktop strip from pushing the page wider; per-button
+  // `flex-shrink-0 whitespace-nowrap` keeps labels intact.
   //
-  // Translate vertical mouse wheel to horizontal scroll when the strip
-  // has horizontal overflow and the user's wheel input is dominantly
-  // vertical (`|deltaY| > |deltaX|`). Trackpad horizontal gestures
-  // (deltaX dominant) keep their native behavior. Only consume the
-  // event when we actually scroll, so vertical page scrolling on
+  //  §C — translate vertical mouse wheel to horizontal scroll
+  // when the strip has horizontal overflow and the user's wheel input
+  // is dominantly vertical (`|deltaY| > |deltaX|`). Trackpad horizontal
+  // gestures (deltaX dominant) keep their native behavior. Only consume
+  // the event when we actually scroll, so vertical page scrolling on
   // viewports where the strip fits without overflow is not blocked.
   const stripRef = useRef<HTMLDivElement | null>(null);
   function onWheel(e: React.WheelEvent<HTMLDivElement>): void {
@@ -164,11 +164,11 @@ function Tabs({ current, onChange }: { current: Tab; onChange: (t: Tab) => void 
 }
 
 /**
- * mobile inspect navigation.
+ *  — mobile inspect navigation.
  *
  * Replaces the desktop horizontal tab strip on `<lg` viewports with a
  * single menu button that opens a bottom sheet listing all inspect
- * sections. the operator said the desktop tabbar didn't feel mobile-native;
+ * sections. operator said the desktop tabbar didn't feel mobile-native;
  * this surface is built around tap-to-open + tap-to-select, with a
  * tap-anywhere-on-backdrop or a Close button to dismiss. No swipe
  * gestures are added in v1 — tap is the primary mobile primitive and

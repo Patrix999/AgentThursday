@@ -7,10 +7,10 @@ import { compactPlan, applyCompactPlan } from "../api/contextActions";
 import { getDebugReadonlyNotice } from "../debugSurfaceMode";
 
 /**
- * v2 Anchor-aware compact plan preview UI.
+ *  v2  — Anchor-aware compact plan preview UI.
  *
  * Sits inside ContextPanel's "Future actions" alongside the legacy
- * CompactAction. Two-step flow: preview a plan, then explicit
+ *  CompactAction. Two-step flow: preview a plan, then explicit
  * apply. Renders only backend-supplied previews — never builds its own
  * snapshot of message content. Refreshes the inspect surface via the
  * same `agentthursday:context:compacted` event the legacy flow uses.
@@ -35,8 +35,8 @@ const DEFAULT_STRATEGY = {
 
 export function SmartCompactPlan({ actionsEnabled = true }: { actionsEnabled?: boolean }) {
   const [stage, setStage] = useState<Stage>({ kind: "idle" });
-  // opt-in semantic advisor scaffold. Default off so apply
-  // behavior remains identical to unless the operator
+  //  — opt-in semantic advisor scaffold. Default off so apply
+  // behavior remains identical to  unless the operator
   // explicitly toggles it. With no model client wired server-side
   // (current state) the apply path falls back to the deterministic
   // summary; the response carries `appliedRanges[i].semanticAdvisor`
@@ -89,7 +89,7 @@ export function SmartCompactPlan({ actionsEnabled = true }: { actionsEnabled?: b
       <div className="flex items-center gap-2 text-[11px] text-slate-300">
         <span className="font-semibold">Smart compact plan</span>
         <span className="text-[10px] text-sky-400/80 italic">
- v2 — anchor-aware, explicit apply
+           v2 — anchor-aware, explicit apply
         </span>
       </div>
       <p className="mt-1 text-[10px] text-slate-500">
@@ -246,7 +246,7 @@ function SemanticAdvisorToggle({
           Sends <span className="font-mono">semanticAdvisor:true</span> with{" "}
           <span className="font-mono">trigger:"manual"</span>. No model client is
           configured server-side, so the advisor records a fallback audit row
-          and the deterministic summary is used. Toggle off to keep
+          and the deterministic  summary is used. Toggle off to keep
           default behavior unchanged.
         </div>
       </span>
@@ -395,7 +395,7 @@ function ApplyResultView({ result }: { result: CompactPlanApplyResult }) {
       {result.deadRecordDetected && (
         <div className="rounded border border-rose-700/70 bg-rose-950/40 px-2 py-1 text-rose-200">
           ⚠ Dead-record detected — a compaction was stored but did not
-          take effect (spike Case 5). The audit log records
+          take effect ( spike Case 5). The audit log records
           which range/compaction id triggered this.
         </div>
       )}

@@ -9,7 +9,7 @@
  *  still does NOT implement (per ADR +  §Out of scope):
  *   - `content_search` / GitHub Code Search ()
  *   - R2 large-blob storage ()
- *   - OAuth / `CredentialProvider` abstraction (ADR §14 Q4)
+ *   - OAuth / `CredentialProvider` abstraction ( — ADR §14 Q4)
  *   - Audit / inspect surface ()
  *   - External writes / push / commit / PR
  *   - LLM tool registration — done in `AgentThursdayAgent.getTools()` in server.ts
@@ -60,12 +60,12 @@ import {
 } from "./localFsContentConnector";
 
 // Single-tenant default; matches AgentThursdayAgent / ChannelHubAgent convention.
-export const CONTENT_HUB_INSTANCE = "agent-thursday-dev";
+export const CONTENT_HUB_INSTANCE = "agentthursday-dev";
 
 // LRU cache caps. Best-effort; eviction runs after every cache write.
 const CACHE_MAX_ROWS = 100;
 
-// audit log caps.
+//  — audit log caps.
 const AUDIT_MAX_ROWS = 500;
 const AUDIT_PREVIEW_MAX = 120;
 
@@ -101,7 +101,7 @@ type ContentListCallableInput = {
 };
 
 type ContentSearchCallableInput = {
-  // exactly one of `sourceId` (single) or `sourceIds` (fan-out)
+  //  — exactly one of `sourceId` (single) or `sourceIds` (fan-out)
   // must be set. Server-side route validates via Zod refinement; the DO
   // callable trusts that contract and treats both-undefined or both-set as
   // a `bad-input` error to keep the LLM tool path equally fail-loud.
@@ -170,7 +170,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
   async onStart(props?: unknown): Promise<void> {
     await super.onStart(props as Record<string, unknown> | undefined);
 
-    // revision-pinned content cache. Key = (source_id, path,
+    //  — revision-pinned content cache. Key = (source_id, path,
     // revision_key, result_kind). LRU eviction by `last_access_at`. No TTL
     // (ADR §6: TTL is the偷懒 path; revision-pinned keys self-invalidate
     // when ref changes).
@@ -189,7 +189,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     `;
     this.sql`CREATE INDEX IF NOT EXISTS idx_content_cache_lru ON content_cache(last_access_at)`;
 
-    // structured audit log for ContentHub access. Row shape
+    //  — structured audit log for ContentHub access. Row shape
     // mirrors AgentThursdayAgent.event_log (event_type, payload-JSON, created_at,
     // trace_id) so reviewers can scan ContentHub access via /api/inspect
     // alongside tool/* events. `trace_id` is nullable: v1 doesn't yet thread
@@ -208,7 +208,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * append a structured audit entry. Best-effort: on serialize or
+   *  — append a structured audit entry. Best-effort: on serialize or
    * sql failure the operation is swallowed (per spec: audit must NOT break
    * the underlying content op). Caller is responsible for ensuring `payload`
    * already contains only safe fields — this helper does no further redaction.
@@ -241,7 +241,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * recent ContentHub audit events for /api/inspect. Newest-first.
+   *  — recent ContentHub audit events for /api/inspect. Newest-first.
    * Defaults to 100 rows; capped at the table's AUDIT_MAX_ROWS.
    */
   @callable()
@@ -259,7 +259,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * aggregated evidence-pack summary over the audit_log. Three
+   *  — aggregated evidence-pack summary over the audit_log. Three
    * pivot views (byTraceId / bySourceId / byOperation) computed from already-
    * redacted audit row metadata. NO raw content, NO hit previews, NO token —
    * the audit rows themselves are the safe-only source of truth ().
@@ -444,7 +444,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     };
   }
 
-  // ─── source registry listing ────────────────────────────────
+  // ───  — source registry listing ────────────────────────────────
   /**
    * List registered content sources. v1 returns hardcoded `agentthursday-github`.
    * Delegates to `listSources` in `contentRegistry.ts`.
@@ -463,7 +463,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     return result;
   }
 
-  // ─── GitHub-backed list ─────────────────────────────────────
+  // ───  — GitHub-backed list ─────────────────────────────────────
   /**
    * List a directory in a content source. For `agentthursday-github`:
    *   - empty path → synthetic top-level (registry-derived, no network)
@@ -472,7 +472,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
    * Returns `{ ok: false, error }` for path-policy / GitHub failures so
    * the API endpoint and tool wrapper can forward without try/catch.
    *
-   * public wrapper appends a `content.list` audit row to the DO
+   *  — public wrapper appends a `content.list` audit row to the DO
    * audit_log. The inner `_doList` keeps the original  logic unchanged.
    */
   @callable()
@@ -499,7 +499,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     if (!source) {
       return { ok: false, error: { code: "source-not-found", reason: `unknown source: ${input.sourceId}`, sourceId: input.sourceId } };
     }
-    //  v2 Local-fs provider branch. No network, no token,
+    //  v2  — Local-fs provider branch. No network, no token,
     // content-hash revision; everything else (path safety, audit shape,
     // ContentRef provenance) stays uniform with GitHub via the shared
     // ContentSourceConnector contract.
@@ -611,7 +611,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     return { ok: true, result };
   }
 
-  // ─── GitHub-backed read ─────────────────────────────────────
+  // ───  — GitHub-backed read ─────────────────────────────────────
   /**
    * Read a single file in a content source. Always:
    *   - rejects denied/unsafe paths before any network call
@@ -620,7 +620,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
    *   - applies high-confidence secret redaction (PEM = whole-file refusal)
    *   - returns `cacheStatus: "hit" | "miss"` and provenance
    *
-   * public wrapper appends a `content.read` audit row. The inner
+   *  — public wrapper appends a `content.read` audit row. The inner
    * `_doRead` keeps the original  logic unchanged. Audit payload
    * deliberately excludes content; only metadata fields are recorded.
    */
@@ -651,7 +651,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     if (!source) {
       return { ok: false, error: { code: "source-not-found", reason: `unknown source: ${input.sourceId}`, sourceId: input.sourceId } };
     }
-    //  v2 Local-fs provider branch. Synchronous in-process
+    //  v2  — Local-fs provider branch. Synchronous in-process
     // fixture lookup; no network, no token, content-hash revision. Honors
     // the shared ContentReadResponse contract so audit shape stays uniform.
     if (source.provider === "local-fs") {
@@ -770,7 +770,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     return { ok: true, result };
   }
 
-  // ─── search (api-search default, bounded-local opt-in) ──────
+  // ───  — search (api-search default, bounded-local opt-in) ──────
   /**
    * Literal search over an external Content Source.
    *
@@ -786,7 +786,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
    *
    * Out of scope (per ): semantic / vector / multi-source / regex.
    *
-   * public wrapper appends a `content.search` audit row. The inner
+   *  — public wrapper appends a `content.search` audit row. The inner
    * `_doSearch` keeps the original  logic unchanged. The audit payload
    * intentionally excludes hit previews to avoid duplicating result content;
    * only counts and metadata are recorded.
@@ -795,7 +795,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
   async search(input: ContentSearchCallableInput, traceId: string | null = null): Promise<ContentSearchResponse> {
     const startedAt = Date.now();
 
-    // `sourceId` ⊕ `sourceIds` mutual exclusion. The HTTP route's
+    //  — `sourceId` ⊕ `sourceIds` mutual exclusion. The HTTP route's
     // Zod refinement enforces this at request boundary; the DO callable also
     // enforces it so cross-DO callers (LLM tool wrapper) can't bypass.
     const hasSingle = typeof input.sourceId === "string" && input.sourceId.length > 0;
@@ -849,7 +849,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
       return response;
     }
 
-    // multi-source fan-out mode.
+    //  — multi-source fan-out mode.
     const sourceIds = input.sourceIds!;
     const perSource = await this._doSearchMulti(sourceIds, input);
 
@@ -900,11 +900,11 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * fan-out dispatch. For each requested sourceId, in parallel:
+   *  — fan-out dispatch. For each requested sourceId, in parallel:
    *   - registry lookup (source-not-found → per-source error)
    *   - capability gate (`capabilities.search === false` → per-source
    *     `capability-not-supported`; explicit, NOT silent skip)
-   *   - else delegate to `_doSearch` (single-source flow, includes 
+   *   - else delegate to `_doSearch` (single-source flow, includes
    *     api-search/bounded-local strategies + GitHub auth/quota mapping)
    *
    * Returns an array of `ContentSearchPerSourceState` preserving caller

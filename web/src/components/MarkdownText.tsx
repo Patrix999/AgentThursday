@@ -2,7 +2,7 @@
  * zero-dependency safe Markdown renderer for the
  * conversation dialog.
  *
- * the parser + types live in `markdownParser.ts` (JSX-free)
+ *  — the parser + types live in `markdownParser.ts` (JSX-free)
  * so the smoke test in `scripts/` can typecheck without forcing JSX
  * support into the scripts tsconfig. This file is the React render
  * layer only: it walks the AST and produces a typed React tree
@@ -45,7 +45,7 @@ function BlockView({ block }: { block: Block }) {
         </p>
       );
     case "heading": {
-      // minimal heading block. Renders as semantic <h1>–<h6>
+      //  — minimal heading block. Renders as semantic <h1>–<h6>
       // sized via Tailwind so the existing dark chat surface gets a
       // clear visual break before/after content. Inline formatting
       // inside the heading runs through `renderInline` for parity
@@ -89,7 +89,7 @@ function BlockView({ block }: { block: Block }) {
         </ol>
       );
     case "table": {
-      // table rendering. The outer wrapper is
+      //  — table rendering. The outer wrapper is
       // `overflow-x-auto max-w-full` so wide tables scroll inside the
       // message bubble instead of pushing the page out. `min-w-0` on
       // the wrapper lets the flex parent shrink the column.

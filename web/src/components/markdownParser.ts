@@ -1,5 +1,5 @@
 /**
- *  / JSX-free markdown parser.
+ *   / 150b — JSX-free markdown parser.
  *
  *  originally lived as part of `MarkdownText.tsx`. The
  * verifier () found that pulling the parser into the

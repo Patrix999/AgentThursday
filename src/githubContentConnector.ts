@@ -44,7 +44,7 @@ export class GithubContentError extends Error {
       | "list-failed"
       | "not-a-directory"
       | "no-body"
-      // search-specific failures.
+      //  — search-specific failures.
       | "quota-exhausted"
       | "code-search-failed",
     public readonly status: number | null,
@@ -64,7 +64,7 @@ export type GithubRepo = {
 //  hardcodes the source-id → repo mapping. + moves this to
 // per-source metadata (`source.providerConfig`) once OAuth providers land.
 const SOURCE_REPO_MAP: Readonly<Record<string, GithubRepo>> = {
-  "agentthursday-github": { owner: "Patrix999", repo: "AgentThursday", defaultRef: "main" },
+  "agentthursday-github": { owner: "your-org", repo: "AgentThursday", defaultRef: "main" },
 };
 
 export function getRepoForSource(sourceId: string): GithubRepo | null {
@@ -324,7 +324,7 @@ export async function fetchContentsList(
     if (r.status === 403) throw new GithubContentError("forbidden-or-rate-limited", 403, "GitHub forbidden / rate-limited");
     throw new GithubContentError("list-failed", r.status, `list failed (${r.status})`);
   }
-  // GitHub returns array for directories, object for single files. 
+  // GitHub returns array for directories, object for single files.
   // list is for directories only — fail loudly if a file path is passed.
   if (!Array.isArray(r.data)) {
     throw new GithubContentError("not-a-directory", null, `path ${cleanPath} is a file, not a directory`);
@@ -343,7 +343,7 @@ export async function fetchContentsList(
     });
 }
 
-// ─── GitHub Code Search ─────────────────────────────────────────
+// ───  — GitHub Code Search ─────────────────────────────────────────
 
 type GhCodeSearchItem = {
   path: string;

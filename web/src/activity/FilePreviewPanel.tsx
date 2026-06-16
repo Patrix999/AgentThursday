@@ -2,10 +2,12 @@ type Props = {
   sourceId: string;
   pathPreview: string;
   maxBytes?: number | null;
+  //  — bounded content preview (first ~30 lines / byte-capped).
+  resultPreview?: string | null;
 };
 
 /**
- * File preview panel. v1 surfaces which file was read,
+ *  — File preview panel. v1 surfaces which file was read,
  * from which content source, with what byte cap. The actual file
  * content is NOT in the `event_log` payload (returned to agent
  * directly), so this panel doesn't show an excerpt.  will
@@ -13,7 +15,12 @@ type Props = {
  */
 export function FilePreviewPanel(props: Props) {
   return (
-    <div className="mt-2">
+    <div className="mt-2 space-y-2">
+      {props.resultPreview && (
+        <pre className="overflow-x-auto rounded border border-slate-800 bg-slate-950/60 p-2 text-[11px] leading-snug text-slate-300 whitespace-pre-wrap break-words max-h-64">
+          {props.resultPreview}
+        </pre>
+      )}
       <Row label="path">
         <span className="text-slate-200 font-mono break-all">{props.pathPreview}</span>
       </Row>

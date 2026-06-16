@@ -8,7 +8,7 @@
 const RAW_REF_MAX = 200;
 const PENDING_CAP_PER_CONVERSATION = 50;
 
-// hard caps on inbound text + attachments JSON.
+//  — hard caps on inbound text + attachments JSON.
 // A pathological webhook (or pasted novel) can otherwise persist a
 // row whose later read trips the DO isolate memory limit. The agent
 // only ever reads the first couple thousand chars when building the

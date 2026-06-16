@@ -7,13 +7,13 @@ type Props = {
 };
 
 /**
- * Workspace mutation panel. Surfaces write-shaped agent
+ *  — Workspace mutation panel. Surfaces write-shaped agent
  * actions (checkpoint writes today + future workspace file ops) and
  * provides an "Open in workspace" affordance when the mutation
  * carries a real file path.
  *
  * The "Open in workspace" button dispatches a custom DOM event
- * (`AGENT_THURSDAY:workspace:focus-path`) that `WorkspaceFileManager`
+ * (`AGENTTHURSDAY:workspace:focus-path`) that `WorkspaceFileManager`
  * listens for. This avoids cross-cutting state lift while still
  * letting  wire focus into the existing read-only file
  * manager. Manual user focus is NOT stolen — focus only happens on
@@ -48,7 +48,7 @@ export function WorkspaceChangePanel(props: Props) {
           type="button"
           onClick={() =>
             window.dispatchEvent(
-              new CustomEvent("agent-thursday:workspace:focus-path", { detail: { path } }),
+              new CustomEvent("agentthursday:workspace:focus-path", { detail: { path } }),
             )
           }
           className="mt-2 text-xs px-2 py-1 rounded border border-cyan-800/60 bg-cyan-900/40 text-cyan-200 hover:bg-cyan-900/60"

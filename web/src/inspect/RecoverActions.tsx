@@ -4,13 +4,13 @@ import { useDebugSurfaceMode } from "../hooks/useDebugSurfaceMode";
 import { isDebugActionEnabled, getDebugReadonlyNotice } from "../debugSurfaceMode";
 
 /**
- * §B-7 — recovery actions for the debug surface.
+ *  §B-7 — recovery actions for the debug surface.
  * Only "real" endpoints that exist on the worker today are wired:
  *   - Clear stale state → POST /cli/clear-stale-state
  *   - Force continue    → POST /cli/continue (debug-flavored label)
  * Higher-level intervene flows (step-into / breakpoint) are out of scope (§Non-Goals).
  *
- * when `AGENT_THURSDAY_DEBUG_SURFACE_MODE === "readonly"` the
+ *  — when `AGENT_THURSDAY_DEBUG_SURFACE_MODE === "readonly"` the
  * buttons still render (so the operator can see what would be
  * available) but onClick surfaces a readonly notice instead of
  * hitting the API. This is a UI gate; backend endpoints stay

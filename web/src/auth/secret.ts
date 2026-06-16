@@ -3,13 +3,21 @@
  *
  * Stored in localStorage so a refresh keeps you logged in. Cleared on 401.
  *
- * v3 `X-AgentThursday-Context-Id` header carries the active
+ *   — `X-AgentThursday-Context-Id` header carries the active
  * context for per-context DO routing. Stored in localStorage so the UI
  * remembers the active context across reloads. Cleared via
  * `clearActiveContextId()` if needed.
+ *
+ *  — `agentthursday.activeAgentPin.id` records the user's explicit
+ * selector pick (a cloud `agent_id`, which per  equals the DO
+ * name). When set, `useWorkspace` suppresses the canonical-pointer
+ * reconcile so the pick isn't reverted to whatever the server registry
+ * thinks is canonical. The pin and `agentthursday.contextId` carry the same
+ * value while pinned; clearing the pin leaves the context cache alone.
  */
-const SECRET_KEY = "agent-thursday.secret";
-const CONTEXT_KEY = "agent-thursday.contextId";
+const SECRET_KEY = "agentthursday.secret";
+const CONTEXT_KEY = "agentthursday.contextId";
+const AGENT_PIN_KEY = "agentthursday.activeAgentPin.id";
 
 export function getSecret(): string {
   try {
@@ -72,4 +80,50 @@ export function authHeaders(): Record<string, string> {
   const ctx = getActiveContextId();
   if (ctx) headers["X-AgentThursday-Context-Id"] = ctx;
   return headers;
+}
+
+/**
+ *  — user's explicit selector pick. When non-null, the
+ * `useWorkspace` reconcile skips revert-to-canonical-pointer so the
+ * pick is sticky across polls until the user changes it (or the
+ * pinned agent disappears from the list).
+ */
+export function getActiveAgentPin(): string | null {
+  try {
+    const v = window.localStorage.getItem(AGENT_PIN_KEY);
+    return v && v.length > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setActiveAgentPin(agentId: string): void {
+  try {
+    window.localStorage.setItem(AGENT_PIN_KEY, agentId);
+    window.localStorage.setItem(CONTEXT_KEY, agentId);
+  } catch {
+    // see setSecret — degraded behavior is acceptable.
+  }
+  try {
+    window.dispatchEvent(
+      new CustomEvent("agentthursday:active-agent:changed", { detail: { agentId } }),
+    );
+  } catch {
+    // window unavailable (SSR / tests) — events are best-effort.
+  }
+}
+
+export function clearActiveAgentPin(): void {
+  try {
+    window.localStorage.removeItem(AGENT_PIN_KEY);
+  } catch {
+    // see setSecret
+  }
+  try {
+    window.dispatchEvent(
+      new CustomEvent("agentthursday:active-agent:changed", { detail: { agentId: null } }),
+    );
+  } catch {
+    // see setActiveAgentPin
+  }
 }

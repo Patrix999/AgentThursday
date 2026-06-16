@@ -1,47 +1,45 @@
 import { useEffect, useState } from "react";
-import type { WorkspaceSnapshot } from "../../shared/schema";
-import { useInspect } from "../hooks/useInspect";
+import { Link } from "react-router-dom";
+import { PrimaryNav } from "../nav/PrimaryNav";
+import type { InspectSnapshot, WorkspaceSnapshot } from "../../shared/schema";
 import { GithubLink } from "../components/GithubLink";
 import { ContextIndicatorChip } from "../context/ContextIndicatorDialog";
 import { useDebugSurfaceMode } from "../hooks/useDebugSurfaceMode";
 import { isDebugSurfaceVisible } from "../debugSurfaceMode";
+import { ActiveAgentSelector } from "../agents/ActiveAgentSelector";
 
 type Props = {
   snapshot: WorkspaceSnapshot | null;
   lastRefreshedAt: number | null;
-  onToggleInspect?: () => void; // desktop only
-  inspectOpen?: boolean;
+  inspectSnapshot: InspectSnapshot | null;
 };
 
 const STALE_AFTER_MS = 10_000;
 
 /**
- * Top status bar. v2.5 (v2.5) — relocated the task badges
+ * Top status bar. v2.5 ( v2.5) — relocated the task badges
  * (lifecycle / loopStage / ladderTier / readyForNextRound) here and
  * pulled in agent identity (instance name) + model (provider/model id)
- * + the degradation summary state, so the bar is the single
+ * + the  degradation summary state, so the bar is the single
  * place to check "what's running, on what model, in what state". The
  * task title itself is no longer rendered here — it's surfaced in the
  * main dialog (`SummaryStream`) as a user message instead.
  */
-export function TopStatusBar({ snapshot, lastRefreshedAt, onToggleInspect, inspectOpen }: Props) {
+export function TopStatusBar({ snapshot, lastRefreshedAt, inspectSnapshot }: Props) {
   const session = snapshot?.session;
   const task = snapshot?.currentTask;
   const stateLabel = session?.agentState ?? "loading";
   const stale = useStale(lastRefreshedAt);
-  // gate the Inspect toggle button. / 173 keep the
+  //  — gate the Inspect toggle button.  / 173 keep the
   // context chip always visible (it opens the read-only
   // ContextIndicatorDialog instead of /inspect#context).
   // Treat null (mode still resolving) as "not visible yet" for Inspect only.
   const debugMode = useDebugSurfaceMode();
   const showDebugSurface = debugMode !== null && isDebugSurfaceVisible(debugMode);
 
-  // Pull model + degradation state from the inspect snapshot. We
-  // already poll inspect from `ActivityFeed`; doing it here is a
-  // duplicate poll for now (acceptable cost for v1; lift to a shared
-  // hook later if it shows up in profiling).
-  const inspect = useInspect(true);
-  const summary = inspect.data?.degradationDiagnostics?.latestSummary ?? null;
+  //  — inspect is polled once by WorkspaceShell and shared
+  // across status bars + ActivityFeed. Do not start another poll here.
+  const summary = inspectSnapshot?.degradationDiagnostics?.latestSummary ?? null;
   const modelId = summary?.modelProfile?.modelId ?? null;
   const provider = summary?.modelProfile?.provider ?? null;
   const degradationState = summary?.state ?? null;
@@ -49,21 +47,25 @@ export function TopStatusBar({ snapshot, lastRefreshedAt, onToggleInspect, inspe
   return (
     <header className="sticky top-0 z-10 px-4 py-2 bg-slate-900 border-b border-slate-800">
       <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-xs uppercase tracking-wide font-semibold text-sky-300">AgentThursday</span>
-        {session?.instanceName && (
-          <Pill label="agent" value={session.instanceName} />
-        )}
-        {/* desktop active context chip. Same semantic
+        <span className="text-xs uppercase tracking-wide font-semibold text-sky-300">agentthursday</span>
+        {/*  — active cloud agent selector. Replaces the
+            static `agent | <instanceName>` pill. The pick is sticky
+            via `setActiveAgentPin` and routed to the per-agent DO via
+            the `X-AgentThursday-Context-Id` header (: DO name ==
+            agent_id). Switching here flips composer/send/continue
+            and (within one poll) the snapshot. */}
+        <ActiveAgentSelector variant="desktop" />
+        {/*  — desktop active context chip. Same semantic
             entry point as `MobileStatusRow` (Cards 156b/156b1/156b2):
             shows the active context id (preferring
             `getActiveContextId()` localStorage). Without this, mobile
             would have a user-visible identity / discoverability
-            surface that desktop lacks — the operator's "mobile ⊆ desktop"
+            surface that desktop lacks — operator's "mobile ⊆ desktop"
             violation. The shared `contextChipLabel` helper enforces
             matching label rules between the two surfaces; desktop
             opts into a slightly longer 16-char budget given the
             wider header.
-            / 173 — chip is a first-class indicator, NOT
+             / 173 — chip is a first-class indicator, NOT
             part of the debug surface: it stays visible at all three
             `AGENT_THURSDAY_DEBUG_SURFACE_MODE` modes (enable / readonly /
             disable). Click opens the read-only
@@ -99,14 +101,15 @@ export function TopStatusBar({ snapshot, lastRefreshedAt, onToggleInspect, inspe
         )}
         <div className="flex-1" />
         <GithubLink />
-        {showDebugSurface && onToggleInspect && (
-          <button
-            onClick={onToggleInspect}
+        {showDebugSurface && (
+          <Link
+            to="/inspect"
             className="hidden lg:inline-block text-xs px-3 py-1 rounded border border-slate-700 hover:bg-slate-800"
           >
-            {inspectOpen ? "Close inspect" : "Inspect"}
-          </button>
+            Inspect
+          </Link>
         )}
+        <PrimaryNav variant="desktop-bar" />
       </div>
     </header>
   );
@@ -150,7 +153,7 @@ function AgentStateBadge({ state }: { state: string }) {
 }
 
 function DegradationBadge({ state }: { state: string | null }) {
-  // Always render — the operator asked for the degradation state to be visible
+  // Always render — operator asked for the degradation state to be visible
   // in the title bar at all times, including when it's `normal`.
   // Subdued color when normal so it doesn't draw attention.
   const label = state ?? "—";

@@ -9,7 +9,7 @@
  * Produces a single compact `TaskDegradationSummary` answering:
  *   "Is this task result usable, suspicious, blocked, or waiting for human?"
  *
- * v1 invariants (per spec red lines):
+ * v1 invariants (per kanban +  milestone red lines):
  *   - state literal contract `/degraded/blocked/needs_human` preserved
  *   - `recommendedAction` is review-oriented prose; never an automatic
  *     routing instruction (no "switch to model X" / "retry with Y")

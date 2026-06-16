@@ -17,7 +17,7 @@ export async function fetchMemoryCandidates(opts?: {
   const res = await fetch(url, { headers: authHeaders() });
   if (res.status === 401) {
     clearSecret();
-    window.dispatchEvent(new Event("agent-thursday:unauthorized"));
+    window.dispatchEvent(new Event("agentthursday:unauthorized"));
     return null;
   }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

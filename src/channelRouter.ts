@@ -93,14 +93,14 @@ export function decideRoute(row: ChannelInboxItem, ctx: RouteContext): ChannelRo
     : "mention";
   return {
     action: "process",
-    reason: `addressed via ${why} from trusted sender; submit as AgentThursday task`,
+    reason: `addressed via ${why} from trusted sender; submit as agentthursday task`,
     taskHint: row.text.slice(0, 80),
     memoryPolicy: "none",
   };
 }
 
 /**
- * Build a safe AgentThursday task prompt from a channel inbox row. Includes provider
+ * Build a safe agentthursday task prompt from a channel inbox row. Includes provider
  * metadata for traceability; explicitly does NOT include raw provider JSON.
  * Card §C-13 / §D-17.
  */
@@ -117,12 +117,12 @@ export function buildTaskPromptFromInbox(row: ChannelInboxItem): string {
     ``,
     row.text,
     ``,
-    `(This message arrived via the channel layer. Respond by addressing the sender; do not speak as the human the operator. Do not include secrets in any reply or memory entry.)`,
+    `(This message arrived via the channel layer. Respond by addressing the sender; do not speak as the human operator. Do not include secrets in any reply or memory entry.)`,
   ].join("\n");
 }
 
 /**
- * build the **user-visible** display text for a
+ *   — build the **user-visible** display text for a
  * channel inbox row. The result is what shows up as the YOU line on
  * the Web/mobile main dialog (`summaryStream`).
  *
@@ -133,7 +133,7 @@ export function buildTaskPromptFromInbox(row: ChannelInboxItem): string {
  * not to the human-facing dialog.
  *
  * Future iterations may extract a single-mention "addressed segment"
- * (e.g., text between `<@small_d>` and the next `<@…>`); the workflow's
+ * (e.g., text between `<@small_d>` and the next `<@…>`); the kanban's
  * §可选增强 calls this out as nice-to-have but not required for v1.
  */
 export function buildDisplayTextFromInbox(row: ChannelInboxItem): string {

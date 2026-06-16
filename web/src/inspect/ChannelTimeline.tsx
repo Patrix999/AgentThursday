@@ -1,6 +1,11 @@
+import { useEffect, useState } from "react";
 import type { ChannelSnapshot, ChannelInboxItem, ChannelOutboxItem, ChannelApprovalRow } from "../../shared/schema";
+import { listAgentProfiles, type AgentProfileWithLifecycle } from "../api/agentProfiles";
+import { setConversationBinding } from "../api/channelBinding";
 
 type Props = { data: ChannelSnapshot | null; loading: boolean; error: string | null };
+
+type RecentConversation = NonNullable<ChannelSnapshot["recentConversations"]>[number];
 
 /**
  * Channel inspect tab.
@@ -10,7 +15,7 @@ type Props = { data: ChannelSnapshot | null; loading: boolean; error: string | n
  *   2. recent timeline — interleaved inbox / outbox / approval entries by time
  *
  * Designed for inspect surface only ( lazy hook). Default `/` user
- * layer never mounts this; the leak guard blacklist ( + 
+ * layer never mounts this; the leak guard blacklist ( +
  * extension) ensures no stray `providerMessageId/payloadHash` appears there.
  */
 export function ChannelTimeline({ data, loading, error }: Props) {
@@ -21,8 +26,168 @@ export function ChannelTimeline({ data, loading, error }: Props) {
   return (
     <div className="space-y-4 text-xs">
       <Counts c={data.counts} />
+      <ConversationBindings conversations={data.recentConversations ?? []} />
       <Timeline data={data} />
     </div>
+  );
+}
+
+/**
+ *  — per-conversation agent binding management.
+ *  — agent-centric copy. The row says "Bound to agent X", not
+ * "profile X"; the column under the hood is still `active_profile_id`
+ * for storage compat (see ).
+ *
+ * Renders one row per recently-seen conversation with a selector +
+ * Save / Clear actions. Honest copy:
+ *   - "Unbound: routes to current active context"
+ *   - "Bound: routes addressed messages in this conversation to <agent>"
+ *
+ * Agent list is fetched once on mount from /api/agent-profiles (legacy
+ * route name; same row IS the agent). The current binding is sourced
+ * from `data.recentConversations[].activeAgentId` (with fallback to the
+ * legacy `activeProfileId` for older snapshots), which getSnapshot()
+ * already populated, so this section doesn't add a polling loop of
+ * its own — it reuses the inspect snapshot's existing 4s tick.
+ */
+function ConversationBindings({ conversations }: { conversations: RecentConversation[] }) {
+  const [agents, setAgents] = useState<AgentProfileWithLifecycle[] | null>(null);
+  const [loadingAgents, setLoadingAgents] = useState(true);
+  const [agentError, setAgentError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    listAgentProfiles()
+      .then((p) => {
+        if (cancelled) return;
+        setAgents(p ?? []);
+        setLoadingAgents(false);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setAgentError(String(e instanceof Error ? e.message : e));
+        setLoadingAgents(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (conversations.length === 0) {
+    return (
+      <div>
+        <div className="text-slate-500 uppercase tracking-wide mb-1">Conversation bindings</div>
+        <div className="text-slate-500">No conversations yet.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="text-slate-500 uppercase tracking-wide mb-1">Conversation bindings</div>
+      {agentError && (
+        <div className="text-rose-400 mb-1">Failed to load agents: {agentError}</div>
+      )}
+      <ul className="space-y-2">
+        {conversations.map((c) => (
+          <BindingRow
+            key={c.conversationId}
+            conversation={c}
+            agents={agents ?? []}
+            agentsLoading={loadingAgents}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function BindingRow({
+  conversation,
+  agents,
+  agentsLoading,
+}: {
+  conversation: RecentConversation;
+  agents: AgentProfileWithLifecycle[];
+  agentsLoading: boolean;
+}) {
+  //  — snapshot may carry `activeAgentId` (new) or only
+  // `activeProfileId` (legacy); prefer the new field, fall back to the
+  // legacy alias. Same value either way.
+  const initial = conversation.activeAgentId ?? conversation.activeProfileId ?? null;
+  // Optimistic UI: `current` reflects the last persisted binding. After a
+  // successful save/clear we update `current` so the row's "Bound to X"
+  // line refreshes without waiting for the next snapshot poll.
+  const [current, setCurrent] = useState<string | null>(initial);
+  const [selected, setSelected] = useState<string>(initial ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const currentAgent = agents.find((a) => a.id === current) ?? null;
+
+  async function save(agentId: string | null) {
+    setSaving(true);
+    setError(null);
+    const r = await setConversationBinding(conversation.conversationId, agentId);
+    setSaving(false);
+    if (!r.ok) {
+      setError(r.error?.message ?? "request failed");
+      return;
+    }
+    setCurrent(r.binding?.activeAgentId ?? null);
+    setSelected(r.binding?.activeAgentId ?? "");
+  }
+
+  const dirty = (selected || null) !== current;
+
+  return (
+    <li className="border-l-2 border-slate-700 pl-2">
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <span className="text-slate-300 font-mono text-[11px] break-all">{conversation.conversationId}</span>
+        <span className="text-slate-500">{conversation.provider}/{conversation.chatType}</span>
+        <span className="ml-auto text-slate-600 font-mono shrink-0">{shortTime(conversation.lastSeenAt)}</span>
+      </div>
+      <div className="text-slate-500 mt-0.5">
+        {current === null ? (
+          <span>Unbound: routes to current active context</span>
+        ) : (
+          <span>
+            Bound: routes addressed messages in this conversation to agent{" "}
+            <span className="text-slate-200">{currentAgent?.name ?? current}</span>
+          </span>
+        )}
+      </div>
+      <div className="mt-1 flex items-center gap-2 flex-wrap">
+        <select
+          value={selected}
+          onChange={(e) => setSelected(e.target.value)}
+          disabled={saving || agentsLoading}
+          className="bg-slate-800 text-slate-200 border border-slate-700 rounded px-1 py-0.5 text-xs"
+        >
+          <option value="">{agentsLoading ? "Loading agents…" : "(unbound)"}</option>
+          {agents.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name} {a.status !== "initialized" && a.status !== "archived" && a.status !== "deleted_marker" ? `(${a.status})` : ""}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          disabled={saving || !dirty}
+          onClick={() => save(selected.length > 0 ? selected : null)}
+          className="px-2 py-0.5 text-xs rounded bg-sky-800 text-sky-100 disabled:opacity-40"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+        <button
+          type="button"
+          disabled={saving || current === null}
+          onClick={() => save(null)}
+          className="px-2 py-0.5 text-xs rounded bg-slate-700 text-slate-200 disabled:opacity-40"
+        >
+          Clear
+        </button>
+        {error && <span className="text-rose-400">{error}</span>}
+      </div>
+    </li>
   );
 }
 

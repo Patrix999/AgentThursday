@@ -18,7 +18,7 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        // §D-8: split react / router into a vendor chunk so the app
+        //  §D-8: split react / router into a vendor chunk so the app
         // entry stays small and is downloaded fresh on each deploy.
         manualChunks: {
           vendor: ["react", "react-dom", "react-router-dom"],

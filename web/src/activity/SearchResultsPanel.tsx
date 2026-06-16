@@ -6,10 +6,12 @@ type Props = {
   strategy?: string | null;
   pathPreview?: string | null;
   maxResults?: number | null;
+  //  — first matches as `file:line: text` (byte-capped).
+  resultPreview?: string | null;
 };
 
 /**
- * Search results panel. v1 surfaces what was searched and
+ *  — Search results panel. v1 surfaces what was searched and
  * where, not the hits themselves (search hits aren't persisted in
  * `event_log`; they're returned to the agent reply directly). When
  * we later persist `tool.content_search.ok` follow-up events we can
@@ -42,10 +44,15 @@ export function SearchResultsPanel(props: Props) {
           <span className="text-slate-400 font-mono break-all">{props.pathPreview}</span>
         </Row>
       )}
-      {props.maxResults && (
-        <Row label="cap">
-          <span className="text-slate-400">{props.maxResults} hits</span>
+      {props.maxResults != null && (
+        <Row label="hits">
+          <span className="text-slate-400">{props.maxResults}</span>
         </Row>
+      )}
+      {props.resultPreview && (
+        <pre className="mt-1 overflow-x-auto rounded border border-slate-800 bg-slate-950/60 p-2 text-[11px] leading-snug text-slate-300 whitespace-pre-wrap break-words max-h-64">
+          {props.resultPreview}
+        </pre>
       )}
     </div>
   );

@@ -11,7 +11,7 @@ type State = {
 /**
  * poll `/api/memory` every 10s. Slower than workspace because
  * memory changes are rare. On 401 mirrors `useWorkspace`: clearSecret +
- * dispatch `agent-thursday:unauthorized` so SecretGate re-prompts.
+ * dispatch `agentthursday:unauthorized` so SecretGate re-prompts.
  */
 export function useMemorySnapshot(intervalMs = 10_000): State {
   const [state, setState] = useState<State>({ data: null, loading: true, error: null });
@@ -24,7 +24,7 @@ export function useMemorySnapshot(intervalMs = 10_000): State {
         const res = await fetch("/api/memory", { headers: authHeaders() });
         if (res.status === 401) {
           clearSecret();
-          window.dispatchEvent(new Event("agent-thursday:unauthorized"));
+          window.dispatchEvent(new Event("agentthursday:unauthorized"));
           return;
         }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);

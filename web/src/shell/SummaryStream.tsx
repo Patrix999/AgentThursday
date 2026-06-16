@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { formatMessageTime } from "./messageTime";
 import type { WorkspaceSnapshot } from "../../shared/schema";
 import { MarkdownText } from "../components/MarkdownText";
 
@@ -31,6 +32,10 @@ export function SummaryStream({ snapshot }: Props) {
     }
   }, [visible]);
 
+  if (snapshot === null) {
+    return <SummaryLoadingSkeleton />;
+  }
+
   if (visible.length === 0) {
     return <div className="px-4 py-3 text-sm text-slate-500">No activity yet.</div>;
   }
@@ -41,7 +46,10 @@ export function SummaryStream({ snapshot }: Props) {
         {visible.map((m) => (
           <li key={m.id} className="flex items-start gap-2 text-sm min-w-0">
             <KindLabel kind={m.kind} />
-            {/* safe Markdown rendering. The renderer never
+            <span className="shrink-0 text-[10px] text-slate-600 font-mono pt-0.5 tabular-nums">
+              {formatMessageTime(m.at)}
+            </span>
+            {/*  — safe Markdown rendering. The renderer never
                 uses dangerouslySetInnerHTML, so injected `<script>`
                 tags or other raw HTML render as plain text. URL allowlist
                 blocks `javascript:` / `data:` schemes. `min-w-0` on the
@@ -67,4 +75,22 @@ function KindLabel({ kind }: { kind: "system" | "assistant" | "user" | "summary"
   } as const;
   const { label, cls } = map[kind];
   return <span className={`text-xs font-mono ${cls} shrink-0 w-10`}>{label}</span>;
+}
+
+function SummaryLoadingSkeleton() {
+  return (
+    <div className="px-4 py-3" aria-label="Loading messages">
+      <ul className="space-y-3 animate-pulse">
+        {[0, 1, 2].map((idx) => (
+          <li key={idx} className="flex items-start gap-2 text-sm min-w-0">
+            <span className="h-4 w-10 rounded bg-slate-800" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="h-4 w-11/12 rounded bg-slate-800/80" />
+              <div className="h-4 w-7/12 rounded bg-slate-800/60" />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }

@@ -1,7 +1,7 @@
 /**
- *  v2 Local-fs / static docs ContentSource connector.
+ *  v2  — Local-fs / static docs ContentSource connector.
  *
- *  design (`docs/design/2026-04-28-m7.4-v2-provider-selection.md`)
+ *  design (``)
  * picked Local-fs as the v2 first additional provider. Implementation form:
  * a hardcoded fixture map shipped with the worker. The connector exists to
  * validate `ContentSourceConnector` abstraction (different I/O / auth /
@@ -29,7 +29,7 @@ import type {
   ContentFileEntry,
 } from "./schema";
 
-export const LOCAL_FS_SOURCE_ID = "agent-thursday-local-fixture";
+export const LOCAL_FS_SOURCE_ID = "agentthursday-local-fixture";
 
 /**
  * Hardcoded fixture map for the Local-fs connector. Keys are fixture paths
@@ -41,7 +41,7 @@ export const LOCAL_FS_SOURCE_ID = "agent-thursday-local-fixture";
  */
 const LOCAL_FS_FIXTURES: Readonly<Record<string, string>> = {
   "README.md": [
-    "# AgentThursday Local Fixture (v2 abstraction validator)",
+    "# agentthursday Local Fixture (v2 abstraction validator)",
     "",
     "This is the  v2  Local-fs connector fixture corpus.",
     "It exists to prove ContentSource abstraction works for a non-GitHub",
@@ -50,12 +50,12 @@ const LOCAL_FS_FIXTURES: Readonly<Record<string, string>> = {
     "It is **not** the agent's Tier 0 workspace. It is a fixed dev fixture",
     "shipped inside the worker at deploy time.",
     "",
-    "See `docs/design/2026-04-28-m7.4-v2-provider-selection.md` for design.",
+    "See `` for design.",
     "",
   ].join("\n"),
-  "samples/hello.txt": "Hello from the AgentThursday local fixture.\nLine 2.\nLine 3.\n",
+  "samples/hello.txt": "Hello from the agentthursday local fixture.\nLine 2.\nLine 3.\n",
   "samples/config.json": JSON.stringify({
-    name: "agent-thursday-local-fixture",
+    name: "agentthursday-local-fixture",
     purpose: " v2 abstraction validator",
     revisionStrategy: "content-hash",
   }, null, 2) + "\n",

@@ -12,12 +12,12 @@ type Props = {
 };
 
 /**
- * + context chip is a first-class indicator,
+ *   +  — context chip is a first-class indicator,
  * not part of the debug/inspect surface. Clicking opens this read-only
  * dialog instead of navigating to `/inspect#context`, so it remains
  * useful when `AGENT_THURSDAY_DEBUG_SURFACE_MODE=disable` hides Inspect.
  *
- * dialog content / visual matches the desktop ContextRail
+ *  — dialog content / visual matches the desktop ContextRail
  * (rail + hover card) reference: identity row, model + budget summary
  * with stacked composition bar, threshold lines (soft / auto / danger
  * with % of window), system-overhead breakdown, and a closed-context

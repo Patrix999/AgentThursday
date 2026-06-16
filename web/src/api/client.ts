@@ -4,7 +4,7 @@ import { authHeaders, clearSecret } from "../auth/secret";
  * single POST helper for all mutating actions.
  *
  * - Always attaches `X-AgentThursday-Secret` (via authHeaders())
- * - On 401: clearSecret + dispatch `agent-thursday:unauthorized` so SecretGate re-prompts
+ * - On 401: clearSecret + dispatch `agentthursday:unauthorized` so SecretGate re-prompts
  *   (mirrors useWorkspace polling behavior)
  * - Returns { ok, status, data } so callers can show inline errors without
  *   throwing — a failed mutation must not blow up its sibling cards.
@@ -23,7 +23,7 @@ export async function postJson<T = unknown>(
     });
     if (res.status === 401) {
       clearSecret();
-      window.dispatchEvent(new Event("agent-thursday:unauthorized"));
+      window.dispatchEvent(new Event("agentthursday:unauthorized"));
       return { ok: false, status: 401, data: null, error: "auth.required" };
     }
     let data: T | null = null;

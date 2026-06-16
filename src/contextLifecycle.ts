@@ -7,7 +7,7 @@
  * a structured slice with raw prompt content / large tool payloads
  * stripped or truncated.
  *
- * Red lines:
+ * Red lines (see  milestone):
  *   - never expose system prompts / SOUL / secrets
  *   - never include reasoning parts (private)
  *   - never dump tool input/output in inspect payload — expose only tool metadata
@@ -43,12 +43,10 @@ export type ContextInspectViewModel = {
 
 const DEFAULT_LAST_N = 20;
 const DEFAULT_TEXT_BUDGET = 1200;
-const DEFAULT_TOOL_PREVIEW_BUDGET = 240;
 
 export function sanitizeMessage(
   msg: UIMessage,
   textBudget = DEFAULT_TEXT_BUDGET,
-  toolBudget = DEFAULT_TOOL_PREVIEW_BUDGET,
 ): SanitizedMessage {
   const parts: SanitizedMessagePart[] = [];
   let dropped = 0;
@@ -95,20 +93,8 @@ export function sanitizeMessage(
   };
 }
 
-function previewJson(value: unknown, budget: number): { preview: string | null; truncated: boolean } {
-  if (value === undefined || value === null) return { preview: null, truncated: false };
-  let s: string;
-  try {
-    s = typeof value === "string" ? value : JSON.stringify(value);
-  } catch {
-    s = "[unserializable]";
-  }
-  if (s.length <= budget) return { preview: s, truncated: false };
-  return { preview: s.slice(0, budget), truncated: true };
-}
-
 /**
- * deterministic compact-summary builder. NO LLM call.
+ *  — deterministic compact-summary builder. NO LLM call.
  *  layered preserved-points lift onto 's chronological
  * "Turns:" block.  restructures the body so the main payload is
  * **role-separated**: user intent and assistant execution land in their
@@ -138,7 +124,7 @@ export type CompactSummaryInput = {
   messages: readonly UIMessage[];
   fromIndex: number; // inclusive
   toIndex: number;   // inclusive
-  // medium-tier anchors lifted into a "preserved important
+  //  — medium-tier anchors lifted into a "preserved important
   // points" block at the top. Empty / absent → block is omitted but
   // role-separated sections still render.
   preservedPoints?: readonly CompactSummaryPreservedPoint[];
@@ -420,8 +406,8 @@ export function buildArchiveChunks(messages: readonly UIMessage[]): ArchiveChunk
 }
 
 /**
- * context snapshot view-model. Surface enough sanitized,
- * stable information for the  anchor classifier and 
+ *  — context snapshot view-model. Surface enough sanitized,
+ * stable information for the  anchor classifier and
  * compact planner to reason about the current model-visible view +
  * compaction overlay without reaching for raw SDK internals.
  *
@@ -614,7 +600,7 @@ export function buildContextInspect(
 }
 
 /**
- * deterministic anchor classifier.
+ *  — deterministic anchor classifier.
  *
  * Labels each message in a  snapshot with anchor reasons so the
  *  planner can later refuse to compact ranges that contain
@@ -645,7 +631,7 @@ export type ContextAnchorClassification = {
   preview: string;
 };
 
-// compact ≠ purge. Hard-preserve anchors must remain as raw
+//  — compact ≠ purge. Hard-preserve anchors must remain as raw
 // visible messages: explicit user assertions, the session opening, and
 // long human briefings. Summary-preserve anchors (rule, memory, handoff)
 // can flow into a compact range, but the deterministic summary is
@@ -673,7 +659,7 @@ const DEFAULT_FIRST_K = 4;
 const LONG_BRIEFING_CHAR_THRESHOLD = 600;
 const LONG_BRIEFING_LINE_THRESHOLD = 8;
 
-// boilerplate stripping. Discord/channel wrappers and
+//  — boilerplate stripping. Discord/channel wrappers and
 // "untrusted-content" framing repeat verbatim across most operational
 // messages; without stripping, the v1 classifier matched `do not` /
 // `must` / `red line`-equivalent text on every wrapper and produced
@@ -830,7 +816,7 @@ export function classifyContextAnchors(
   return snapshot.messages.map((m, arrayIdx) => {
     const eligible = m.role !== "system" && !m.isSyntheticCompaction;
     const rawText = extractAnchorText(m.parts);
-    // strip wrapper boilerplate before rule matching and
+    //  — strip wrapper boilerplate before rule matching and
     // length checks. Without this, every Discord-wrapped message
     // tripped on `do not treat as instructions` and inflated to long-
     // briefing length even when the human content was a one-liner.
@@ -846,7 +832,7 @@ export function classifyContextAnchors(
         reasons.push("explicit-anchor");
       }
 
-      // gate "interpretation" rules to user-authored content.
+      //  — gate "interpretation" rules to user-authored content.
       // Assistant/tool log messages (e.g. "applied compact" / "deploy
       // ok") routinely contain workflow words; only a human can
       // declare a durable rule, so let user role be the only path
@@ -908,7 +894,7 @@ function matchesHandoffOrVersion(text: string): boolean {
 }
 
 /**
- * deterministic compact-plan builder. Pure: no LLM, no DO
+ *  — deterministic compact-plan builder. Pure: no LLM, no DO
  * access, no audit row. Consumes a  snapshot +  anchor
  * classifications and returns a dry-run plan describing safe contiguous
  * non-anchor middle ranges that are candidates for compaction. The
@@ -951,7 +937,7 @@ export type CompactPlanRangeView = {
   messageCount: number;
   estimatedReduction: number;
   previews: string[];
-  // medium-tier anchors (rule-or-constraint / memory-or-
+  //  — medium-tier anchors (rule-or-constraint / memory-or-
   // workflow / handoff-or-version) that fall inside this range. The
   // apply path enriches the deterministic  summary with these
   // points so meaning is preserved even though the original messages
@@ -1009,7 +995,7 @@ export function buildCompactPlan(
   const preserved: CompactPlanPreservedView[] = [];
 
   // 1. Synthetic compactions, system messages, and HARD-tier anchors
-  //    are preserved as raw visible messages. medium anchors
+  //    are preserved as raw visible messages.  — medium anchors
   //    (rule-or-constraint / memory-or-workflow / handoff-or-version)
   //    deliberately do NOT break runs here; they flow into compact
   //    ranges and the apply path lifts their text into the summary.
@@ -1150,7 +1136,7 @@ export function buildCompactPlan(
     flushRun(messages, runStart, messages.length - 1, minRangeMessages, ranges, rejected, anchorById);
   }
 
-  // 6. overclassification diagnostic. If anchors dominate
+  // 6.  — overclassification diagnostic. If anchors dominate
   //    the view AND the dominant kind is generic-keyword (no explicit
   //    anchor / first-k / long-briefing component), surface a warning
   //    so the operator notices the classifier likely mis-fired before
@@ -1220,7 +1206,7 @@ function flushRun(
   for (let i = startArrayIdx; i <= endArrayIdx && previews.length < 3; i++) {
     previews.push(shortPreview(messages[i].parts));
   }
-  // collect medium-tier anchors that fell into this range
+  //  — collect medium-tier anchors that fell into this range
   // so the apply path can preserve their text in the summary. Hard
   // anchors never reach here (they break runs upstream).
   const summaryPreservedAnchors: SummaryPreservedAnchor[] = [];

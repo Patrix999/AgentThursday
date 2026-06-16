@@ -7,12 +7,12 @@ type GateState =
   | { kind: "needs-secret"; reason: "empty" | "wrong"; prefill?: string }
   | { kind: "misconfigured" };
 
-// Read `?token=<secret>` from the current URL without auto-saving it.
-// The token is surfaced to the SecretPrompt as a prefill so the user
-// still has to confirm submission. After a successful submit the
-// token is removed from the URL via `history.replaceState` so a
-// copy/paste of the address bar (or the browser history entry) no
-// longer carries the secret.
+//  §D — read `?token=<secret>` from the current URL without
+// auto-saving it. The token is surfaced to the SecretPrompt as a
+// prefill so the user still has to confirm submission. After a
+// successful submit the token is removed from the URL via
+// `history.replaceState` so a copy/paste of the address bar (or the
+// browser history entry) no longer carries the secret.
 const URL_TOKEN_PARAM = "token";
 function readUrlToken(): string {
   try {
@@ -48,9 +48,9 @@ export function SecretGate({ children }: { children: React.ReactNode }) {
   async function probe(silent: boolean) {
     const prefill = readUrlToken();
     if (prefill) {
-      // URL token is an explicit auth handoff and must take precedence
-      // over any locally cached secret. Always show the auth page so
-      // the user can confirm or correct it.
+      //  patch — URL token is an explicit auth handoff and
+      // must take precedence over any locally cached secret. Always
+      // show the auth page so the user can confirm or correct it.
       setState({ kind: "needs-secret", reason: "empty", prefill });
       return;
     }
@@ -85,8 +85,8 @@ export function SecretGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void probe(false);
     const onUnauthorized = () => void probe(false);
-    window.addEventListener("agent-thursday:unauthorized", onUnauthorized);
-    return () => window.removeEventListener("agent-thursday:unauthorized", onUnauthorized);
+    window.addEventListener("agentthursday:unauthorized", onUnauthorized);
+    return () => window.removeEventListener("agentthursday:unauthorized", onUnauthorized);
   }, []);
 
   if (state.kind === "checking") {
@@ -117,8 +117,8 @@ export function SecretGate({ children }: { children: React.ReactNode }) {
         prefill={state.prefill ?? ""}
         onSubmit={(s) => {
           setSecret(s);
-          // Strip ?token= from URL only AFTER an explicit user submit,
-          // so the token is never silently persisted.
+          //  §D — strip ?token= from URL only AFTER an explicit
+          // user submit, so the token is never silently persisted.
           clearUrlToken();
           void probe(true);
         }}
@@ -138,9 +138,9 @@ function SecretPrompt({
   prefill: string;
   onSubmit: (s: string) => void;
 }) {
-  // Initialise from prefill (URL ?token=) but require an explicit
-  // submit; never auto-save. Users see the prefilled value and either
-  // accept or correct it.
+  //  §D — initialise from prefill (URL ?token=) but require an
+  // explicit submit; never auto-save. Users see the prefilled value
+  // and either accept or correct it.
   const [value, setValue] = useState(prefill);
   return (
     <FullScreen>
@@ -148,7 +148,7 @@ function SecretPrompt({
         className="max-w-sm w-full space-y-3"
         onSubmit={(e) => { e.preventDefault(); if (value) onSubmit(value); }}
       >
-        <div className="text-lg font-semibold">AgentThursday workspace</div>
+        <div className="text-lg font-semibold">agentthursday workspace</div>
         {reason === "wrong" && (
           <div className="text-rose-400 text-sm">Secret rejected by worker (401). Try again.</div>
         )}

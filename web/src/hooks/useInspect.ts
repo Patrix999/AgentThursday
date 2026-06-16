@@ -15,7 +15,7 @@ type State = {
  * useInspect 停止 polling"). 5s interval — slower than workspace, since
  * inspect data changes less critically.
  *
- * On 401 mirrors `useWorkspace`: clearSecret + dispatch `agent-thursday:unauthorized`
+ * On 401 mirrors `useWorkspace`: clearSecret + dispatch `agentthursday:unauthorized`
  * so SecretGate re-prompts.
  */
 export function useInspect(enabled: boolean, intervalMs = 5000): State {
@@ -35,7 +35,7 @@ export function useInspect(enabled: boolean, intervalMs = 5000): State {
         const res = await fetch("/api/inspect", { headers: authHeaders() });
         if (res.status === 401) {
           clearSecret();
-          window.dispatchEvent(new Event("agent-thursday:unauthorized"));
+          window.dispatchEvent(new Event("agentthursday:unauthorized"));
           return;
         }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);

@@ -42,7 +42,7 @@ name = "AgentThursdayAgent"
 class_name = "AgentThursdayAgent"
 
 # separate ChannelHubAgent DO for inbox/outbox/identity/conversation.
-# See docs/design/-review-notes.md §1 — kept separate from AgentThursdayAgent
+# See  §1 — kept separate from AgentThursdayAgent
 # from day 1 to avoid migration debt later.
 [[durable_objects.bindings]]
 name = "ChannelHubAgent"
@@ -51,7 +51,7 @@ class_name = "ChannelHubAgent"
 # separate ContentHubAgent DO for provider-agnostic content
 # source registry / future cache / future audit. Kept off AgentThursdayAgent so
 # external Content Source state never leaks into agent event_log or Tier 0
-# workspace storage. ADR: docs/adr/2026-04-28-m7.4-contenthub-source-connectors.md
+# workspace storage. ADR:
 [[durable_objects.bindings]]
 name = "ContentHubAgent"
 class_name = "ContentHubAgent"
@@ -83,6 +83,29 @@ new_sqlite_classes = ["ContentHubAgent"]
 [[migrations]]
 tag = "v5"
 new_sqlite_classes = ["DiscordGatewayAgent"]
+
+# `AgentRunWorkflow` binding. `POST /api/agent-runs` mints an instance
+# via `env.AGENT_RUN_WORKFLOW.create(...)` to drive a multi-step agent
+# run as a durable Cloudflare Workflow.
+[[workflows]]
+name = "agent-run"
+binding = "AGENT_RUN_WORKFLOW"
+class_name = "AgentRunWorkflow"
+
+# orchestration-as-code executor (descriptor-driven). Runs a validated
+# phase/agent descriptor as a durable Cloudflare Workflow.
+[[workflows]]
+name = "workflow-executor"
+binding = "WORKFLOW_EXECUTOR"
+class_name = "WorkflowExecutor"
+
+# Cloudflare Workers version metadata binding. Surfaces the current
+# deploy's version id / tag / timestamp via `env.VERSION_METADATA`.
+# Read-only, non-secret, automatically populated by the Workers runtime.
+# Fail-soft: consumers return null fields if the binding is absent
+# (local dev without the binding, or future shape drift).
+[version_metadata]
+binding = "VERSION_METADATA"
 
 [ai]
 binding = "AI"
@@ -152,6 +175,29 @@ AGENT_THURSDAY_PAUSE_ON_NEEDS_HUMAN = "false"
 # real secrets (`AGENT_THURSDAY_SHARED_SECRET`, `DISCORD_BOT_TOKEN`,
 # `DISCORD_PUBLIC_KEY`, `GITHUB_TOKEN`) go through `wrangler secret put`.
 AGENT_THURSDAY_TRUTHFULNESS_GATE = "warn"
+
+# per-turn inference loop step cap (Think SDK default is 10, which kills
+# any real software-dev turn mid-work). Clamped to [10, 120].
+AGENT_THURSDAY_TURN_MAX_STEPS = "48"
+
+# AgentRunWorkflow multi-step orchestration tunables.
+# AGENT_THURSDAY_AGENT_RUN_WAIT_TIMEOUT: duration string passed to
+#   step.waitForEvent("user-reply", {timeout}). Default 24 hours.
+#   Accepts Cloudflare's "<N> <unit>" grammar (e.g. "1 hour", "7 days").
+#   Wall-clock during the pause is not billed; the upper bound is only
+#   paid-tier state retention.
+# AGENT_THURSDAY_AGENT_RUN_FORCE_PAUSE: dev/test-only env-flag fixture.
+#   "true" makes every first-turn return status="awaiting_event" so the
+#   multi-step + sendEvent branch can be exercised end-to-end. Must stay
+#   "false" in production.
+AGENT_THURSDAY_AGENT_RUN_WAIT_TIMEOUT = "24 hours"
+AGENT_THURSDAY_AGENT_RUN_FORCE_PAUSE = "false"
+
+# Optional sandbox repo-materialization overrides (set via
+# `wrangler secret put` when used; not committed here):
+#   AGENT_THURSDAY_REPO_URL    : git URL the dev-shell sandbox clones from.
+#   AGENT_THURSDAY_GIT_TOKEN   : narrow-scope PAT for that clone (falls
+#                                back to GITHUB_TOKEN). Never written here.
 
 # debug surface mode for the Web UI.
 #

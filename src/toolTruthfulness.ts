@@ -105,27 +105,27 @@ function isNegation(window: string): boolean {
   // adjacency regex to fire, so the existing path miscategorizes the
   // refusal as a fabricated claim.
   return /(?:没(?:有)?(?:真)?(?:正)?调(?:用)?|未(?:真)?调(?:用)?|没真调|不会调用|没尝试|没真正|心算了|错误声称|并未(?:真)?调|实际上(?:并)?没调|fabricate|编造)/i.test(window)
-    // explicit refusal-to-claim verbs ("不能/不会/不要/不可" + "声称/假装/假称/宣称/说我调/说自己调"):
+    //  — explicit refusal-to-claim verbs ("不能/不会/不要/不可" + "声称/假装/假称/宣称/说我调/说自己调"):
     //   "不能声称我调用了" / "不会假装调用" / "不要声称我执行" / "不可宣称"
     || /不(?:能|会|要|可)\s*(?:声称|假装|假称|宣称|说\s*(?:我|自己)?\s*调)/i.test(window)
-    // "并未/没/未 + 执行/运行/发起/做/跑" — covers tool verbs
+    //  — "并未/没/未 + 执行/运行/发起/做/跑" — covers tool verbs
     // that aren't "调":  "并未执行 X" / "没有运行任何工具" / "未发起 X".
     || /(?:并未|没(?:有)?|未)\s*(?:执行|运行|发起|做|跑)/i.test(window)
-    // "声称/假装 + (我/自己?)? + 调" — meta-claim language is
+    //  — "声称/假装 + (我/自己?)? + 调" — meta-claim language is
     // almost always refusal/discussion-of-claims, not actual claim. A real
     // fabrication says "我刚才调用了", not "我声称我调用了 X".
     || /(?:声称|假装|假称|宣称)\s*(?:我|自己)?\s*调(?:用)?(?:了|过|过的)?/i.test(window)
-    // explicit prohibition leading the sentence:
+    //  — explicit prohibition leading the sentence:
     //   "禁止...调用" / "拒绝声称调用" / "不允许假装调用".
     || /(?:禁止|拒绝|不允许)[^。\n]{0,60}(?:调|声称|假装)/i.test(window)
-    // "在没有/缺乏 (真实)? ... dispatch" English+CN mixed
+    //  — "在没有/缺乏 (真实)? ... dispatch" English+CN mixed
     // pattern, matches  case 4-bis verbatim shape.
     || /(?:在\s*没有|缺乏|没\s*有)\s*(?:真实|实际|真正)?[^。\n]{0,30}\s*dispatch/i.test(window)
     || /\b(?:did\s*n['o]?t|didn['o]?t|never)\s+(?:call|invoke|run|try|use)\b/i.test(window)
-    // EN refusal-to-claim: cannot/won't/will not + claim/say/pretend/assert.
+    //  — EN refusal-to-claim: cannot/won't/will not + claim/say/pretend/assert.
     || /\b(?:cannot|can\s*not|won['o]?t|will\s+not|shall\s+not|must\s+not)\s+(?:claim|say|pretend|assert|state)\b/i.test(window)
     || /\bnot\s+claim\s+(?:that\s+I\s+(?:did|called|ran|invoked)|to\s+have)/i.test(window)
-    // EN explicit dispatch denial: "no tool was dispatched" /
+    //  — EN explicit dispatch denial: "no tool was dispatched" /
     // "no tool dispatched" / "without dispatching".
     || /\bno\s+tool\s+(?:was\s+)?dispatched\b/i.test(window)
     || /\bwithout\s+dispatching\b/i.test(window)
@@ -177,4 +177,106 @@ export function renderTruthfulnessWarning(fabricated: string[]): string {
  */
 export function renderInlineJsonWarning(): string {
   return `⚠️ Truthfulness gate: this reply emits tool-call-shaped JSON inline but the trace shows no actual tool dispatch. The assistant likely produced a tool-call schema as text instead of invoking it. Treat the reply as unverified.`;
+}
+
+/**
+ * Manager-tier truthfulness drift watched list.
+ *
+ * Layered on top of (NOT folded into) `KNOWN_TOOL_NAMES`. Keeping it
+ * separate keeps  / 102a behavior byte-identical for non-manager
+ * flows and lets the manager-tier drift gate widen scope independently.
+ *
+ * Includes every canonical `manager.*` adapter currently registered
+ * (kept in sync by the adapter-coverage guard in
+ * `managerTruthfulnessDrift.test.ts`) plus the two workspace-write claim
+ * verbs called out by ADR §7 — these are the verbs a manager reply would
+ * use to claim file mutations that never actually happened in the same
+ * turn trace.
+ */
+export const MANAGER_TIER_WATCHED_TOOL_NAMES: readonly string[] = [
+  "manager.agent_create",
+  "manager.agent_list",
+  "manager.agent_message",
+  "manager.agent_update",
+  "manager.skillset_create",
+  "manager.skillset_list",
+  "manager.skillset_read",
+  "manager.skillset_update",
+  "manager.subagent_summaries",
+  "manager.task_merge",
+  "manager.task_complete",
+  //  — agent-side workflow executor entry + run-tree read.
+  "manager.workflow_execute",
+  "manager.workflow_status",
+  //  — named workflow store.
+  "manager.workflow_save",
+  "manager.workflow_list",
+  "manager.workflow_run_named",
+  "write",
+  "edit",
+];
+
+export type ManagerTruthfulnessDriftPayload = {
+  claimed_tool_ids: string[];
+  observed_tool_ids: string[];
+  missing_claims: string[];
+  extra_observed: string[];
+  has_drift: boolean;
+};
+
+/**
+ *  — manager-tier truthfulness drift compute.
+ *
+ * Pure helper: given the manager reply text, the watched-tool list, and
+ * the set of tool ids actually dispatched in the same turn, return the
+ * drift payload. `missing_claims` is the load-bearing field — these are
+ * watched tools the reply claims but the trace does not show.
+ *
+ * Conventions:
+ *   - `claimed_tool_ids` and `observed_tool_ids` are sorted, de-duped
+ *     intersections of the watched list with the reply / event_log.
+ *   - `extra_observed` is dispatched-but-not-claimed; reported for
+ *     observability symmetry but is NOT a drift signal on its own.
+ *   - `has_drift === missing_claims.length > 0`. Reply mutation /
+ *     blocking is the caller's choice; this helper is observation-only.
+ *
+ * Reuses `findToolClaims` so claim-detection semantics (negation +
+ * tagline + identifier boundary) stay aligned with  / 102a.
+ */
+export function computeManagerTruthfulnessDrift(
+  replyText: string,
+  watchedTools: readonly string[],
+  observedToolIds: ReadonlySet<string>,
+): ManagerTruthfulnessDriftPayload {
+  const watchedSet = new Set(watchedTools);
+  const claims = findToolClaims(replyText, watchedTools);
+  const claimedSet = new Set<string>();
+  for (const c of claims) claimedSet.add(c.tool);
+
+  const observedWatched = new Set<string>();
+  for (const id of observedToolIds) {
+    if (watchedSet.has(id)) observedWatched.add(id);
+  }
+
+  const missing: string[] = [];
+  for (const t of claimedSet) {
+    if (!observedWatched.has(t)) missing.push(t);
+  }
+  const extra: string[] = [];
+  for (const t of observedWatched) {
+    if (!claimedSet.has(t)) extra.push(t);
+  }
+
+  const claimed_tool_ids = [...claimedSet].sort();
+  const observed_tool_ids = [...observedWatched].sort();
+  missing.sort();
+  extra.sort();
+
+  return {
+    claimed_tool_ids,
+    observed_tool_ids,
+    missing_claims: missing,
+    extra_observed: extra,
+    has_drift: missing.length > 0,
+  };
 }

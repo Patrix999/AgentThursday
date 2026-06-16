@@ -68,7 +68,7 @@ const WORKER_SECRET = process.env["AGENT_THURSDAY_SHARED_SECRET"] ?? "";
 
 if (!WORKER_SECRET) {
   console.warn(
-    "[agent-thursday-tui] AGENT_THURSDAY_SHARED_SECRET not set — requests may 401 unless the worker has AGENT_THURSDAY_ALLOW_INSECURE_DEV=true.",
+    "[agentthursday-tui] AGENT_THURSDAY_SHARED_SECRET not set — requests may 401 unless the worker has AGENT_THURSDAY_ALLOW_INSECURE_DEV=true.",
   );
 }
 
@@ -133,7 +133,7 @@ export const useCloudResult = makePollHook<CliResultData>("/cli/result");
  * unified workspace snapshot poller.
  *
  * Sourced from `GET /api/workspace`; `WorkspaceSnapshot` is the contract +
- * is built against. App.tsx is intentionally not migrated in it keeps
+ * is built against. App.tsx is intentionally not migrated in  — it keeps
  * using `useCloudStatus` until a follow-up card retires the legacy view. This
  * hook is exported so  (TUI demotion) can adopt it without re-plumbing.
  */

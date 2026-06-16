@@ -1,5 +1,5 @@
 /**
- *  v2 Semantic Summary Advisor scaffold.
+ *  v2  — Semantic Summary Advisor scaffold.
  *
  * Optional model-assisted layer that runs ON TOP of the deterministic
  *  compact summary. The advisor never replaces the deterministic
@@ -286,7 +286,7 @@ export function validateSemanticSummary(
     };
   }
   // Anchor preservation: every preserved-point preview must appear in
-  // the model output verbatim after whitespace normalization. 
+  // the model output verbatim after whitespace normalization.
   // is an advisor scaffold, so keep the validator strict: if the model
   // cannot repeat the preserved point, the deterministic summary wins.
   const normalizedOutput = modelOutput.replace(/\s+/g, " ");

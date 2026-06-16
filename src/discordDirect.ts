@@ -1,5 +1,5 @@
 /**
- *direct Discord adapter (pure helpers).
+ * direct Discord adapter (pure helpers).
  *
  * Cloudflare Worker constraint: no persistent Gateway WebSocket. So this
  * adapter:
@@ -61,7 +61,7 @@ export type DirectDiscordConfig = {
   ignoreNoMentionInGuild: boolean;
   allowBots: "none" | "mentions" | "all";
   /**
-   * §A-1 conservative defaults: empty allowedUserIds /
+   *  §A-1 conservative defaults: empty allowedUserIds /
    * allowedChannelIds means DENY (not allow). Dev mode bypasses these so
    * local smoke can run without a real allowlist. Reuses 's
    * existing dev escape hatch (`AGENT_THURSDAY_ALLOW_INSECURE_DEV`); semantics are
@@ -110,6 +110,10 @@ export type DirectFilterInput = {
   channelId: string;
   mentionsBot: boolean;
   mentionedUserIds: string[]; // all users mentioned in the message
+  //  — reply (type=19) whose referenced message was authored by
+  // the agentthursday bot. Treated equivalent to `mentionsBot` for the guild
+  // @mention gate so reply-to-agent follow-ups aren't silently dropped.
+  replyToBot?: boolean;
 };
 
 export type DirectFilterResult =
@@ -117,7 +121,7 @@ export type DirectFilterResult =
   | { accept: false; reason: string };
 
 /**
- * derive `isDm` for the direct-filter pipeline with the
+ *  — derive `isDm` for the direct-filter pipeline with the
  * right precedence:
  *
  *   1. Explicit `chatType` if present (`"dm"` → DM; `"channel"` /
@@ -127,14 +131,14 @@ export type DirectFilterResult =
  *
  * Polling REST `GET /channels/{id}/messages` returns guild messages
  * without `guild_id`, so the heuristic alone misclassifies them as
- * DMs and bypasses `DISCORD_IGNORE_NO_MENTION`. set
+ * DMs and bypasses `DISCORD_IGNORE_NO_MENTION`.  set
  * `isDm:false`/`chatType:"channel"` on the polling payload; this
  * helper makes the filter actually honour those fields instead of
  * re-deriving.
  *
  * Pure shape — exported for unit-style smoke from `applyDirectFilters`'s
  * call sites. Accepts a structurally-compatible input rather than
- * importing the full `OpenClawDiscordInbound` type to keep
+ * importing the full `BridgeDiscordInbound` type to keep
  * `discordDirect.ts` independent of `discordBridge.ts`.
  */
 export function deriveDirectFilterIsDm(payload: {
@@ -202,11 +206,56 @@ export function applyDirectFilters(input: DirectFilterInput, cfg: DirectDiscordC
       // For v1 we let it through and let the @mention requirement (below) decide.
     }
   }
-  // Guild channels require @mention unless explicitly opted out
-  if (!input.isDm && cfg.ignoreNoMentionInGuild && !input.mentionsBot) {
+  // Guild channels require @mention unless explicitly opted out.
+  //  — reply (type=19) whose referenced message was authored by
+  // our bot counts as addressed for this gate. Without this, reply-to-agent
+  // follow-ups that omit an explicit `<@bot>` mention were silently
+  // rejected with reason "guild message without @mention".
+  if (!input.isDm && cfg.ignoreNoMentionInGuild && !input.mentionsBot && !input.replyToBot) {
     return { accept: false, reason: "guild message without @mention" };
   }
   return { accept: true };
+}
+
+/**
+ *  — re-check user/channel allowlists outside the main filter
+ * pipeline. Used by the route handler when a continuation-eligible filter
+ * rejection (`bot-author without mention (allowBots=mentions)`) fired
+ * BEFORE the allowlist gates in `applyDirectFilters`. Without this
+ * re-check, an unallowlisted bot's no-mention chunk could be merged into
+ * a victim's anchor row.
+ *
+ * Same semantics as the allowlist block inside `applyDirectFilters`
+ * (kept aligned by extraction); the route handler calls this explicitly
+ * after `classifyFilterRejection` reports `needsAllowlistRecheck=true`.
+ */
+export function checkDirectAllowlists(
+  input: { authorId: string; isDm: boolean; channelId: string },
+  cfg: DirectDiscordConfig,
+): { ok: true } | { ok: false; reason: string } {
+  if (cfg.allowedUserIds.size === 0) {
+    if (!cfg.devModeBypass) {
+      return {
+        ok: false,
+        reason: "DISCORD_ALLOWED_USERS not configured (production deny; set the var or enable AGENT_THURSDAY_ALLOW_INSECURE_DEV)",
+      };
+    }
+  } else if (!cfg.allowedUserIds.has(input.authorId)) {
+    return { ok: false, reason: "user not in DISCORD_ALLOWED_USERS" };
+  }
+  if (!input.isDm) {
+    if (cfg.allowedChannelIds.size === 0) {
+      if (!cfg.devModeBypass) {
+        return {
+          ok: false,
+          reason: "DISCORD_ALLOWED_CHANNELS not configured (production deny for guild traffic; set the var or enable AGENT_THURSDAY_ALLOW_INSECURE_DEV)",
+        };
+      }
+    } else if (!cfg.allowedChannelIds.has(input.channelId)) {
+      return { ok: false, reason: "channel not in DISCORD_ALLOWED_CHANNELS" };
+    }
+  }
+  return { ok: true };
 }
 
 // ── Inbound interaction normalization ──────────────────────────────────────
@@ -336,8 +385,26 @@ export function decodeApprovalCustomId(customId: string): {
 
 // ── Outbound build helpers ─────────────────────────────────────────────────
 
-const DISCORD_MSG_LIMIT = 2000;
-const SAFE_LIMIT = 1900; // headroom
+const SAFE_LIMIT = 1900; // headroom (Discord hard cap 2000)
+
+const DISCORD_INTERNAL_ENVELOPE_MARKER_RE = /^[ \t]*\[envelope:\s*env-[a-z0-9]+-[a-z0-9]+\s*\][ \t]*$/i;
+
+/**
+ * Remove internal agentthursday tracing markers before text becomes Discord-visible.
+ *
+ * ChannelHub may still persist marker-bearing outbox text so verifier inspect
+ * can locate a response by envelope id. This helper is intentionally scoped
+ * to the Discord delivery/rendering layer: public chat should see only the
+ * assistant reply, not internal evidence routing metadata.
+ */
+export function stripDiscordVisibleInternalMarkers(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => !DISCORD_INTERNAL_ENVELOPE_MARKER_RE.test(line))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 /**
  * Split a long text into chunks ≤ 2000 chars. Tries to break on the last
@@ -380,8 +447,9 @@ export function buildDiscordTextSendBody(input: {
   text: string;
   replyToProviderMessageId?: string | null;
 }): Record<string, unknown> {
+  const content = stripDiscordVisibleInternalMarkers(input.text);
   const body: Record<string, unknown> = {
-    content: input.text,
+    content: content.length > 0 ? content : "(empty)",
     // Conservative allowed_mentions: don't ping everyone; only reply target
     allowed_mentions: { parse: [], replied_user: false },
   };
@@ -419,8 +487,9 @@ export function buildDiscordApprovalSendBody(input: {
     components.push(btn("Always Allow", "always", 1));
   }
   components.push(btn("Deny", "deny", 4));
+  const content = stripDiscordVisibleInternalMarkers(input.text);
   const body: Record<string, unknown> = {
-    content: input.text,
+    content: content.length > 0 ? content : "(approval card)",
     components: [{ type: 1, components }],
     allowed_mentions: { parse: [], replied_user: false },
   };

@@ -13,7 +13,7 @@ type ListState = {
  *
  * Pulls `/api/workspace/files?path=<path>` once per `path` change. No polling
  * (file system changes are infrequent and the user navigates manually). On
- * 401 mirrors `useWorkspace`: clearSecret + dispatch `agent-thursday:unauthorized`.
+ * 401 mirrors `useWorkspace`: clearSecret + dispatch `agentthursday:unauthorized`.
  */
 export function useWorkspaceFiles(path: string): ListState {
   const [state, setState] = useState<ListState>({ data: null, loading: true, error: null });
@@ -28,7 +28,7 @@ export function useWorkspaceFiles(path: string): ListState {
         const res = await fetch(url, { headers: authHeaders() });
         if (res.status === 401) {
           clearSecret();
-          window.dispatchEvent(new Event("agent-thursday:unauthorized"));
+          window.dispatchEvent(new Event("agentthursday:unauthorized"));
           return;
         }
         if (!res.ok) {
@@ -74,7 +74,7 @@ export function useWorkspaceFileContent(path: string | null): ContentState {
         const res = await fetch(url, { headers: authHeaders() });
         if (res.status === 401) {
           clearSecret();
-          window.dispatchEvent(new Event("agent-thursday:unauthorized"));
+          window.dispatchEvent(new Event("agentthursday:unauthorized"));
           return;
         }
         if (!res.ok) {

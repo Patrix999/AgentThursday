@@ -121,6 +121,15 @@ export const MODEL_CONTEXT_REGISTRY: Record<string, ModelContextProfile> = {
     lastChecked: "2026-05-04",
   },
 
+  // ── Zhipu GLM (Workers AI) ────────────────────────────────────────
+  "glm-4.7-flash": {
+    modelMaxTokens: 131_072,
+    thresholds: DEFAULT_CONTEXT_THRESHOLDS,
+    source: "vendor-docs",
+    lastChecked: "2026-05-23",
+    notes: "GLM-4.7-Flash via Workers AI @cf/zai-org/glm-4.7-flash — 131,072 context window, multi-turn tool-calling optimized.",
+  },
+
   // ── Anthropic Claude 4.x / 3.x ────────────────────────────────────
   // Claude Sonnet 4 has a 1M long-context tier behind the
   // `context-1m-2025-08-07` beta header; do NOT default to 1M. Stable
@@ -131,6 +140,36 @@ export const MODEL_CONTEXT_REGISTRY: Record<string, ModelContextProfile> = {
     source: "vendor-docs",
     lastChecked: "2026-05-04",
     notes: "Anthropic Claude Opus 4.7 — 200K stable default.",
+  },
+  //  — current Anthropic models wired for real dispatch.
+  "claude-opus-4-8": {
+    modelMaxTokens: 200_000,
+    thresholds: DEFAULT_CONTEXT_THRESHOLDS,
+    source: "vendor-docs",
+    lastChecked: "2026-06-11",
+    notes: "Anthropic Claude Opus 4.8 — 200K stable default (1M tier needs beta header).",
+  },
+  "claude-fable-5": {
+    modelMaxTokens: 200_000,
+    thresholds: DEFAULT_CONTEXT_THRESHOLDS,
+    source: "vendor-docs",
+    lastChecked: "2026-06-11",
+    notes: "Anthropic Claude Fable 5 — 200K stable default (1M tier needs beta header).",
+  },
+  //  — DeepSeek (64K context, vendor docs).
+  "deepseek-chat": {
+    modelMaxTokens: 64_000,
+    thresholds: DEFAULT_CONTEXT_THRESHOLDS,
+    source: "vendor-docs",
+    lastChecked: "2026-06-11",
+    notes: "DeepSeek V3 — 64K context.",
+  },
+  "deepseek-reasoner": {
+    modelMaxTokens: 64_000,
+    thresholds: DEFAULT_CONTEXT_THRESHOLDS,
+    source: "vendor-docs",
+    lastChecked: "2026-06-11",
+    notes: "DeepSeek R1 (reasoning) — 64K context.",
   },
   "claude-sonnet-4-6": {
     modelMaxTokens: 200_000,

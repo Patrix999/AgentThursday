@@ -3,52 +3,82 @@ import { SearchResultsPanel } from "./SearchResultsPanel";
 import { FilePreviewPanel } from "./FilePreviewPanel";
 import { ExecutionResultPanel } from "./ExecutionResultPanel";
 import { WorkspaceChangePanel } from "./WorkspaceChangePanel";
+import { ManagerLifecyclePanel } from "./ManagerLifecyclePanel";
+import { WorkflowRunPanel } from "./WorkflowRunPanel";
 
 type Intent = NonNullable<InspectSnapshot["actionUiIntents"]>[number];
 
 /**
- * generic visual renderer for an `ActionUiIntent`.
+ *  — body-only renderer for an `ActionUiIntent`.
  *
- * v1 only knows how to render the four built-in component names from
- * 's backend: `GenericToolEventCard`, `GenericEventCard`,
- * `DegradationCard`, `PauseCard`. All four use a single visual chrome
- * with type-based color accent + a small structured props row, because
- *  will introduce per-tool components and we don't want to
- * over-design the chrome before that lands.
+ * Pre-247 this component wrapped its own `<article>` with border / bg /
+ * shadow + a duplicate header (badge, title, time). That double-wrapped
+ * inside ActivityFeed's accordion item border, producing the card-in-
+ * card nesting operator called out. 247 removes the inner chrome and the
+ * duplicate header — the accordion already supplies all of that.
  *
- * Visual hierarchy goal (workflow §"Make tool/action cards visually
- * prominent"): clear title, small type badge, relative timestamp,
- * accent color, and enough breathing room to read as a card — not a
- * row in a debug table.
+ * Render contract now: optional summary line, then the per-tool panel
+ * picked by `component.name`. No outer box, no second timestamp.
  */
 export function ActivityCard({ intent }: { intent: Intent }) {
-  const tone = toneForType(intent.type);
+  //  — lifecycle annotation injected by the backend pairing
+  // pass: one accordion item per ACTION (dispatch+result), with status.
+  const lc = (intent.component.props as { lifecycle?: { status?: unknown; durationMs?: unknown } } | null)?.lifecycle;
+  const lcStatus = lc && typeof lc.status === "string" ? lc.status : null;
+  const lcDuration = lc && typeof lc.durationMs === "number" ? lc.durationMs : null;
+  const autoDispatched = (intent.component.props as { autoDispatched?: unknown } | null)?.autoDispatched === true;
   return (
-    <article className={`rounded-lg border ${tone.border} ${tone.bg} p-4 shadow-sm`}>
-      <header className="flex items-baseline justify-between gap-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className={`text-xs uppercase font-mono px-2 py-0.5 rounded ${tone.badge}`}>
-            {tone.label}
-          </span>
-          <span className="text-sm font-medium text-slate-100 truncate">{intent.title}</span>
-        </div>
-        <span className="text-xs text-slate-500 shrink-0">{relativeTime(intent.sourceEventAt)}</span>
-      </header>
+    <div className="space-y-1.5">
+      {autoDispatched && (
+        <span className="mr-2 inline-block rounded bg-slate-800 px-1.5 text-[10px] text-slate-400 font-mono align-middle" title="harness 自动触发（gate-intent 守卫），非 agent 主动调用">🤖 auto</span>
+      )}
+      {lcStatus !== null && (
+        <p className="text-[11px] font-mono inline">
+          {lcStatus === "running" && <span className="text-amber-400">⏳ running…</span>}
+          {lcStatus === "ok" && (
+            <span className="text-emerald-400">✓ done{lcDuration !== null ? ` in ${formatDuration(lcDuration)}` : ""}</span>
+          )}
+          {lcStatus === "error" && (
+            <span className="text-rose-400">✗ failed{lcDuration !== null ? ` after ${formatDuration(lcDuration)}` : ""}</span>
+          )}
+        </p>
+      )}
       {intent.summary && (
-        <p className="mt-2 text-sm text-slate-300 break-words">{intent.summary}</p>
+        <p className="text-xs text-slate-400 break-words leading-snug">{intent.summary}</p>
       )}
       <ComponentBody name={intent.component.name} props={intent.component.props} />
-    </article>
+    </div>
   );
 }
 
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(s < 10 ? 1 : 0)}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m${Math.round(s % 60)}s`;
+}
+
 /**
- * dispatch to the per-component renderer based on the
+ *  — dispatch to the per-component renderer based on the
  * backend-supplied `component.name`. Each renderer takes a defensive
  * narrowing of `props: unknown` so a malformed/unknown shape degrades
  * gracefully rather than crashing the feed.
  */
 function ComponentBody({ name, props }: { name: string; props: unknown }) {
+  if (name === "WorkflowRunPanel") {
+    const p = (props ?? {}) as {
+      runId?: unknown; status?: unknown; sourceTaskId?: unknown; agentId?: unknown;
+    };
+    return (
+      <WorkflowRunPanel
+        runId={typeof p.runId === "string" ? p.runId : null}
+        status={typeof p.status === "string" ? p.status : null}
+        sourceTaskId={typeof p.sourceTaskId === "string" ? p.sourceTaskId : null}
+        agentId={typeof p.agentId === "string" ? p.agentId : null}
+      />
+    );
+  }
   if (name === "SearchResultsPanel") {
     const p = (props ?? {}) as {
       queryPreview?: unknown; mode?: unknown; sourceId?: unknown;
@@ -56,6 +86,7 @@ function ComponentBody({ name, props }: { name: string; props: unknown }) {
       maxResults?: unknown;
     };
     if (typeof p.queryPreview !== "string") return null;
+    const pp = props as { resultPreview?: unknown };
     return (
       <SearchResultsPanel
         queryPreview={p.queryPreview}
@@ -65,6 +96,7 @@ function ComponentBody({ name, props }: { name: string; props: unknown }) {
         strategy={typeof p.strategy === "string" ? p.strategy : null}
         pathPreview={typeof p.pathPreview === "string" ? p.pathPreview : null}
         maxResults={typeof p.maxResults === "number" ? p.maxResults : null}
+        resultPreview={typeof pp.resultPreview === "string" ? pp.resultPreview : null}
       />
     );
   }
@@ -73,11 +105,13 @@ function ComponentBody({ name, props }: { name: string; props: unknown }) {
       sourceId?: unknown; pathPreview?: unknown; maxBytes?: unknown;
     };
     if (typeof p.sourceId !== "string" || typeof p.pathPreview !== "string") return null;
+    const fp = props as { resultPreview?: unknown };
     return (
       <FilePreviewPanel
         sourceId={p.sourceId}
         pathPreview={p.pathPreview}
         maxBytes={typeof p.maxBytes === "number" ? p.maxBytes : null}
+        resultPreview={typeof fp.resultPreview === "string" ? fp.resultPreview : null}
       />
     );
   }
@@ -94,6 +128,7 @@ function ComponentBody({ name, props }: { name: string; props: unknown }) {
         preview={typeof p.preview === "string" ? p.preview : null}
         reason={typeof p.reason === "string" ? p.reason : null}
         sandboxId={typeof p.sandboxId === "string" ? p.sandboxId : null}
+              autoDispatched={(props as { autoDispatched?: unknown }).autoDispatched === true}
       />
     );
   }
@@ -115,19 +150,107 @@ function ComponentBody({ name, props }: { name: string; props: unknown }) {
   if (name === "GenericToolEventCard") {
     return <ToolPropsRow props={props} />;
   }
+  if (name === "ManagerLifecyclePanel") {
+    const p = (props ?? {}) as {
+      family?: unknown; phase?: unknown; status?: unknown;
+      agentId?: unknown; agentName?: unknown; taskId?: unknown;
+      envelopeId?: unknown; conversationId?: unknown; source?: unknown;
+      model?: unknown; skillset?: unknown; agentStatus?: unknown;
+      agentCount?: unknown; includeArchived?: unknown;
+      textPreview?: unknown; textTruncated?: unknown; textBytes?: unknown;
+      replyPreview?: unknown; replyTruncated?: unknown; replyLength?: unknown;
+      loopTriggered?: unknown; errorCode?: unknown;
+      errorMessagePreview?: unknown; changedFields?: unknown;
+    };
+    const family = p.family;
+    const phase = p.phase;
+    if (
+      (family !== "agent_list" && family !== "agent_message"
+        && family !== "agent_create" && family !== "agent_update")
+      || (phase !== "dispatch" && phase !== "result" && phase !== "error")
+    ) return null;
+    return (
+      <ManagerLifecyclePanel
+        family={family}
+        phase={phase}
+        status={typeof p.status === "string" ? p.status : null}
+        agentId={typeof p.agentId === "string" ? p.agentId : null}
+        agentName={typeof p.agentName === "string" ? p.agentName : null}
+        taskId={typeof p.taskId === "string" ? p.taskId : null}
+        envelopeId={typeof p.envelopeId === "string" ? p.envelopeId : null}
+        conversationId={typeof p.conversationId === "string" ? p.conversationId : null}
+        source={typeof p.source === "string" ? p.source : null}
+        model={typeof p.model === "string" ? p.model : null}
+        skillset={typeof p.skillset === "string" ? p.skillset : null}
+        agentStatus={typeof p.agentStatus === "string" ? p.agentStatus : null}
+        agentCount={typeof p.agentCount === "number" ? p.agentCount : null}
+        includeArchived={typeof p.includeArchived === "boolean" ? p.includeArchived : null}
+        textPreview={typeof p.textPreview === "string" ? p.textPreview : null}
+        textTruncated={typeof p.textTruncated === "boolean" ? p.textTruncated : null}
+        textBytes={typeof p.textBytes === "number" ? p.textBytes : null}
+        replyPreview={typeof p.replyPreview === "string" ? p.replyPreview : null}
+        replyTruncated={typeof p.replyTruncated === "boolean" ? p.replyTruncated : null}
+        replyLength={typeof p.replyLength === "number" ? p.replyLength : null}
+        loopTriggered={typeof p.loopTriggered === "boolean" ? p.loopTriggered : null}
+        errorCode={typeof p.errorCode === "string" ? p.errorCode : null}
+        errorMessagePreview={
+          typeof p.errorMessagePreview === "string" ? p.errorMessagePreview : null
+        }
+        changedFields={
+          Array.isArray(p.changedFields)
+            ? p.changedFields.filter((s): s is string => typeof s === "string")
+            : null
+        }
+      />
+    );
+  }
   return null;
 }
 
+/**
+ *  — compact properties row for generic tool events. Backend
+ * forwards a whitelisted subset of pre-truncated fields: `toolName`,
+ * `subEvent`, `taskId`, plus opportunistic `pathPreview` and `sourceId`
+ * for path-shaped events like `tool.content_list`. The accordion title
+ * already shows `Tool: <name> (<subEvent>)`, so this body focuses on
+ * the operator-useful correlators (path, source, task).
+ */
 function ToolPropsRow({ props }: { props: unknown }) {
-  const p = (props ?? {}) as { toolName?: string; subEvent?: string | null; taskId?: string | null };
+  const p = (props ?? {}) as {
+    toolName?: string; subEvent?: string | null; taskId?: string | null;
+    pathPreview?: string | null; sourceId?: string | null;
+  };
+  const hasTool = typeof p.toolName === "string" && p.toolName.length > 0;
+  const hasPath = typeof p.pathPreview === "string" && p.pathPreview.length > 0;
+  const hasSource = typeof p.sourceId === "string" && p.sourceId.length > 0;
+  const hasTask = typeof p.taskId === "string" && p.taskId.length > 0;
+  if (!hasTool && !hasPath && !hasSource && !hasTask) {
+    return <p className="text-xs text-slate-500 italic">No structured params logged.</p>;
+  }
   return (
-    <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
-      <dt className="text-slate-500">tool</dt>
-      <dd className="text-slate-300 font-mono break-all">
-        {p.toolName ?? "—"}
-        {p.subEvent && <span className="text-slate-500"> · {p.subEvent}</span>}
-      </dd>
-      {p.taskId && (
+    <dl className="grid grid-cols-[3.5rem_1fr] gap-x-3 gap-y-0.5 text-xs items-baseline">
+      {hasTool && (
+        <>
+          <dt className="text-slate-500">tool</dt>
+          <dd className="text-slate-300 font-mono break-all">
+            {p.toolName}
+            {p.subEvent && <span className="text-slate-500"> · {p.subEvent}</span>}
+          </dd>
+        </>
+      )}
+      {hasPath && (
+        <>
+          <dt className="text-slate-500">path</dt>
+          <dd className="text-slate-300 font-mono break-all">{p.pathPreview}</dd>
+        </>
+      )}
+      {hasSource && (
+        <>
+          <dt className="text-slate-500">source</dt>
+          <dd className="text-slate-400 font-mono break-all">{p.sourceId}</dd>
+        </>
+      )}
+      {hasTask && (
         <>
           <dt className="text-slate-500">task</dt>
           <dd className="text-slate-400 font-mono break-all">{p.taskId}</dd>
@@ -135,82 +258,4 @@ function ToolPropsRow({ props }: { props: unknown }) {
       )}
     </dl>
   );
-}
-
-function toneForType(type: Intent["type"]): {
-  border: string;
-  bg: string;
-  badge: string;
-  label: string;
-} {
-  switch (type) {
-    case "agent.degradation":
-      return {
-        border: "border-amber-800/60",
-        bg: "bg-amber-950/20",
-        badge: "bg-amber-900/60 text-amber-200",
-        label: "degradation",
-      };
-    case "agent.pause":
-      return {
-        border: "border-sky-800/60",
-        bg: "bg-sky-950/20",
-        badge: "bg-sky-900/60 text-sky-200",
-        label: "pause",
-      };
-    case "tool.search_results":
-      return {
-        border: "border-violet-800/60",
-        bg: "bg-violet-950/20",
-        badge: "bg-violet-900/60 text-violet-200",
-        label: "search",
-      };
-    case "tool.file_read":
-      return {
-        border: "border-emerald-800/60",
-        bg: "bg-emerald-950/20",
-        badge: "bg-emerald-900/60 text-emerald-200",
-        label: "file read",
-      };
-    case "tool.execution_result":
-      return {
-        border: "border-fuchsia-800/60",
-        bg: "bg-fuchsia-950/20",
-        badge: "bg-fuchsia-900/60 text-fuchsia-200",
-        label: "exec",
-      };
-    case "tool.workspace_mutation":
-      return {
-        border: "border-cyan-800/60",
-        bg: "bg-cyan-950/20",
-        badge: "bg-cyan-900/60 text-cyan-200",
-        label: "workspace",
-      };
-    case "generic.tool_event":
-      return {
-        border: "border-slate-700",
-        bg: "bg-slate-900/60",
-        badge: "bg-slate-800 text-slate-300",
-        label: "tool",
-      };
-    case "generic.event":
-      return {
-        border: "border-slate-800",
-        bg: "bg-slate-950/40",
-        badge: "bg-slate-800 text-slate-500",
-        label: "event",
-      };
-  }
-}
-
-function relativeTime(at: number): string {
-  const delta = Date.now() - at;
-  if (delta < 0) return "just now";
-  const s = Math.floor(delta / 1000);
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
 }

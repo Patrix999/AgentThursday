@@ -25,16 +25,16 @@
  *      keep using its local SQL path.
  *
  * Wrangler binding shape (documented but **not** added to wrangler.toml
- * in this card; see `docs/design/2026-05-02-m7.8-cloudflare-ai-search-adapter-spike.md`):
+ * in this card; see ``):
  *
  *   ```toml
  *   # Single-instance binding — ties the worker to ONE preconfigured
- *   # AI Search instance, e.g. an instance named "agent-thursday-conversation".
+ *   # AI Search instance, e.g. an instance named "agentthursday-conversation".
  *   # Wrangler schema (validated by node_modules/wrangler) requires
  *   # `binding` + `instance_name` (not `instance_id`).
  *   [[ai_search]]
  *   binding = "CONVERSATION_SEARCH"
- *   instance_name = "agent-thursday-conversation"
+ *   instance_name = "agentthursday-conversation"
  *
  *   # Namespace binding — lets the worker dynamically address multiple
  *   # AI Search instances inside a CF account namespace. Useful if we
@@ -43,7 +43,7 @@
  *   # requires `binding` + `namespace` (not `namespace_id`).
  *   [[ai_search_namespaces]]
  *   binding = "AI_SEARCH"
- *   namespace = "agent-thursday"
+ *   namespace = "agentthursday"
  *   ```
  *
  * Items API contract (from `AiSearchItems`):
@@ -85,7 +85,7 @@ import type {
 } from "./schema";
 
 /**
- * common adapter contract. The local SQL path in
+ *  — common adapter contract. The local SQL path in
  * `AgentThursdayAgent.conversationSearch` already produces this exact shape;
  * the future adapter wiring just hands the same `input` to whichever
  * implementation `chooseConversationSearchAdapter` returns.
@@ -169,13 +169,13 @@ interface AiSearchInstanceLike {
 /**
  * Spike-only. Implements the adapter contract against CF AI Search;
  * `search()` requires a working binding. When the binding is missing
- * (the expected outcome for this card — AgentThursday prod doesn't have AI
+ * (the expected outcome for this card — agentthursday prod doesn't have AI
  * Search provisioned yet), `search()` throws
  * `AdapterUnavailableError` and the caller is expected to fall back
  * to the local SQL adapter.
  *
  * This class is **not** instantiated by `AgentThursdayAgent.conversationSearch`
- * yet; it exists so future cards (implementation) can drop in
+ * yet; it exists so future cards (155b implementation) can drop in
  * without re-litigating the binding shape.
  */
 export class CloudflareAiSearchConversationSearchAdapter implements ConversationSearchAdapter {
@@ -290,7 +290,7 @@ export class CloudflareAiSearchConversationSearchAdapter implements Conversation
 }
 
 /**
- * capability/blocked report. Returns the adapter the
+ *  — capability/blocked report. Returns the adapter the
  * worker should use today plus a list of blocked items so callers
  * (and the inspect tab) can show "AI Search ready" vs "fall back
  * to local SQL — these are the missing pieces". Returning `null`
@@ -314,7 +314,7 @@ export function chooseConversationSearchAdapter(env: {
   if (singleInstanceBinding && typeof (singleInstanceBinding as { search?: unknown }).search === "function") {
     const remote = new CloudflareAiSearchConversationSearchAdapter({
       binding: { kind: "instance", instance: singleInstanceBinding as AiSearchInstanceLike },
-      instanceName: "agent-thursday-conversation",
+      instanceName: "agentthursday-conversation",
     });
     return { remote, blocked: [] };
   }
@@ -324,7 +324,7 @@ export function chooseConversationSearchAdapter(env: {
         kind: "namespace",
         get: (name: string) => (namespaceBinding as { get(n: string): AiSearchInstanceLike }).get(name),
       },
-      instanceName: "agent-thursday-conversation",
+      instanceName: "agentthursday-conversation",
     });
     return { remote, blocked: [] };
   }

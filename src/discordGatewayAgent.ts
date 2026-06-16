@@ -1,12 +1,12 @@
 /**
- *Cloudflare-native Discord Gateway runner.
+ * Cloudflare-native Discord Gateway runner.
  *
  * Migrates `scripts/discord-gateway-runner.ts` (host-side Node WebSocket)
  * into a Durable Object that holds the outgoing Gateway connection inside
- * Cloudflare. The host runner remains shipped as a fallback per §F;
+ * Cloudflare. The host runner remains shipped as a fallback per  §F;
  * see Completion Report for invocation.
  *
- * Lifecycle / billing honesty (§Constraints):
+ * Lifecycle / billing honesty ( §Constraints):
  *   - Discord Gateway is an OUTGOING WebSocket. Cloudflare DO WebSocket
  *     hibernation primarily applies to server-side accepted WebSockets.
  *     We do NOT assume this DO hibernates while the gateway socket is open.
@@ -25,7 +25,8 @@
  *     `/api/channel/discord/direct` ingest contract
  */
 
-import { Agent, unstable_callable as callable } from "agents";
+import { Agent, getAgentByName, unstable_callable as callable, type AgentNamespace } from "agents";
+import { AGENT_THURSDAY_REGISTRY_INSTANCE_NAME } from "./channelHub/registryName";
 import {
   buildIntentsBitfield,
   eventToDirectPayload,
@@ -39,8 +40,12 @@ import {
   type DiscordIngressMode,
   type DiscordIngressConfig,
 } from "./discordIngressConfig";
+import {
+  decideCursorAdvance,
+  type ForwardOutcome,
+} from "./discordGatewayCursor";
 
-export const DISCORD_GATEWAY_INSTANCE = "agent-thursday-dev";
+export const DISCORD_GATEWAY_INSTANCE = "agentthursday-dev";
 
 const GATEWAY_URL = "wss://gateway.discord.gg/?v=10&encoding=json";
 const DEFAULT_HEARTBEAT_MS = 41250;
@@ -66,10 +71,10 @@ type StatusRow = {
   reconnect_count: number;
   last_error_preview: string | null;
   started_at: number | null;
-  // patch — persisted so the alarm-driven watchdog can reconnect
+  //  patch — persisted so the alarm-driven watchdog can reconnect
   // after DO hibernation without re-deriving the worker URL from a request.
   worker_origin: string | null;
-  // persisted ingress mode (mirrors env config; recorded so
+  //  — persisted ingress mode (mirrors env config; recorded so
   // the inspect surface can show what the DO believed it was running
   // even if env was changed mid-flight). last_polled_at is the wall
   // clock of the last completed `pollAllChannels` sweep.
@@ -82,6 +87,14 @@ type CursorRow = {
   last_seen_message_id: string | null;
   last_polled_at: number | null;
   last_error_preview: string | null;
+  //  — when a forward to `/api/channel/discord/direct` returns
+  // non-2xx, we keep the failing message id alongside the bounded
+  // error preview so operator inspect can pinpoint exactly which
+  // message bounced. `last_failed_at` is the wall-clock of that
+  // failure. Both are cleared on the next successful sweep through
+  // this channel.
+  last_failed_message_id: string | null;
+  last_failed_at: number | null;
 };
 
 export type DiscordGatewayStatus = {
@@ -98,7 +111,7 @@ export type DiscordGatewayStatus = {
   reconnectCount: number;
   lastErrorPreview: string | null;
   startedAt: number | null;
-  // ingress-mode-aware status surface. Older clients that
+  //  — ingress-mode-aware status surface. Older clients that
   // only know the legacy fields keep working; the polling block is
   // null in non-polling modes.
   ingressMode: DiscordIngressMode;
@@ -109,6 +122,12 @@ export type DiscordGatewayStatus = {
     lastSeenMessageId: string | null;
     lastPolledAt: number | null;
     lastErrorPreview: string | null;
+    //  — forward-failure provenance. Non-null when the most
+    // recent recorded error came from forwarding a specific message
+    // that returned non-2xx; null when the cursor is healthy or the
+    // error came from somewhere else (rate-limit, fetch throw, etc.).
+    lastFailedMessageId: string | null;
+    lastFailedAt: number | null;
   }>;
 };
 
@@ -123,7 +142,7 @@ function preview(s: unknown, max = 240): string | null {
   return str.length > max ? str.slice(0, max) : str;
 }
 
-// alarm interval as a function of ingress mode. Gateway
+//  — alarm interval as a function of ingress mode. Gateway
 // mode keeps the 156p 120s watchdog cadence (hibernation-aware
 // fallback for a missed close). Polling mode uses the configured
 // poll interval (clamped 30..3600 by `loadDiscordIngressConfig`).
@@ -183,17 +202,17 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
       )
     `;
     this.sql`INSERT OR IGNORE INTO gateway_state (rowid) VALUES (1)`;
-    // patch — idempotent column add for tables created before
+    //  patch — idempotent column add for tables created before
     // worker_origin existed in the schema. SQLite throws "duplicate column"
     // when the column already exists; safe to swallow.
     try { this.sql`ALTER TABLE gateway_state ADD COLUMN worker_origin TEXT`; }
     catch { /* column already present */ }
-    // additive columns for ingress mode + polling timing.
+    //  — additive columns for ingress mode + polling timing.
     try { this.sql`ALTER TABLE gateway_state ADD COLUMN ingress_mode TEXT`; }
     catch { /* column already present */ }
     try { this.sql`ALTER TABLE gateway_state ADD COLUMN last_polled_at INTEGER`; }
     catch { /* column already present */ }
-    // per-channel polling cursor. Survives hibernation so a
+    //  — per-channel polling cursor. Survives hibernation so a
     // wake-up doesn't replay the channel from the beginning.
     this.sql`
       CREATE TABLE IF NOT EXISTS discord_poll_cursors (
@@ -203,20 +222,30 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
         last_error_preview TEXT
       )
     `;
+    //  — additive columns for forward-failure provenance.
+    // SQLite has no `ADD COLUMN IF NOT EXISTS`; idempotent via
+    // PRAGMA table_info check.
+    const cursorCols = this.sql<{ name: string }>`PRAGMA table_info(discord_poll_cursors)`;
+    if (!cursorCols.some(c => c.name === "last_failed_message_id")) {
+      this.sql`ALTER TABLE discord_poll_cursors ADD COLUMN last_failed_message_id TEXT`;
+    }
+    if (!cursorCols.some(c => c.name === "last_failed_at")) {
+      this.sql`ALTER TABLE discord_poll_cursors ADD COLUMN last_failed_at INTEGER`;
+    }
 
-    // patch — alarm-driven tick. DO outgoing WebSocket dies
+    //  patch — alarm-driven tick. DO outgoing WebSocket dies
     // silently when the DO hibernates (close handler doesn't fire on the
     // dead instance), so we need an alarm that survives hibernation to
     // notice and reconnect. `scheduleEvery` is idempotent per the Agent
     // base contract; safe to call on every onStart wake.
     //
-    // gateway watchdog at 120s as cost/noise tradeoff. The
+    //  — gateway watchdog at 120s as cost/noise tradeoff. The
     // in-socket heartbeat ACK watchdog (Discord's own ~41s heartbeat
     // round-trip path) is the primary signal for live socket health;
     // this alarm only catches the case where the DO hibernated and
     // the close handler never fired.
     //
-    // the same alarm slot is reused for polling-mode
+    //  — the same alarm slot is reused for polling-mode
     // sweeps. In gateway mode the tick runs every 120s; in polling
     // mode it runs every `DISCORD_POLL_INTERVAL_SECONDS` (clamped
     // 30..3600). `watchdogTick` is mode-aware and dispatches to the
@@ -227,7 +256,7 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * patch / / periodic alarm tick.
+   *  patch /  /  — periodic alarm tick.
    *
    * Mode-aware. Called by the Agent base alarm scheduler on the
    * cadence chosen at `onStart` / `start` time:
@@ -361,7 +390,7 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * one-shot poll on a single channel. Used by ChannelHub
+   *  — one-shot poll on a single channel. Used by ChannelHub
    * after a successful Discord outbox send so the polling experience
    * approaches WebSocket immediacy: a reply often surfaces a follow-up
    * user message, and we don't want to wait for the next scheduled
@@ -392,10 +421,10 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
     if (!token || !sharedSecret) {
       return { ok: false, mode: cfg.mode, reason: "missing env: DISCORD_BOT_TOKEN or AGENT_THURSDAY_SHARED_SECRET" };
     }
-    // entry point is for guild channels only — ChannelHub calls
+    //  entry point is for guild channels only — ChannelHub calls
     // it after a successful Discord outbox send to chase a fast follow-up
     // user message. DM polling is driven by the alarm sweep.
-    const ingested = await this.pollChannel(channelId, cfg.botId, token, sharedSecret, row.worker_origin, false);
+    const ingested = await this.pollChannel(channelId, token, row.worker_origin, false);
     return { ok: true, mode: cfg.mode, ingested };
   }
 
@@ -586,7 +615,7 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
         } else if (t === "MESSAGE_CREATE") {
           const event = frame.d as DiscordMessageCreate;
           // Fire-and-forget: forwarding errors are logged via recordError but
-          // never block the gateway dispatch loop. §D backoff is
+          // never block the gateway dispatch loop.  §D backoff is
           // expressed by Worker-side route returning quickly; if the Worker
           // is genuinely unreachable, the next message logs the same kind of
           // error and we don't tight-loop.
@@ -647,8 +676,8 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
         intents,
         properties: {
           os: "linux",
-          browser: "agent-thursday-gateway-do",
-          device: "agent-thursday-gateway-do",
+          browser: "agentthursday-gateway-do",
+          device: "agentthursday-gateway-do",
         },
       },
     }));
@@ -673,16 +702,22 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
     workerOrigin: string,
     event: DiscordMessageCreate,
     opts?: { isDmOverride?: boolean },
-  ): Promise<void> {
+  ): Promise<ForwardOutcome> {
     const botId = (this.env as { AGENT_THURSDAY_DISCORD_BOT_ID?: string }).AGENT_THURSDAY_DISCORD_BOT_ID ?? "";
     const decision = shouldForwardEvent(event, botId);
-    if (!decision.forward) return;
+    //  — distinguish "intentionally skipped" (filter) from
+    // "failed" (HTTP non-2xx / fetch throw). Filtered messages must
+    // not block the polling cursor (otherwise self-echo loops the
+    // sweep forever); only real forward failures hold the cursor.
+    if (!decision.forward) {
+      return { ok: true, outcome: "filtered" };
+    }
     const sharedSecret = (this.env as { AGENT_THURSDAY_SHARED_SECRET?: string }).AGENT_THURSDAY_SHARED_SECRET;
     if (!sharedSecret) {
       this.recordError("forward skipped: AGENT_THURSDAY_SHARED_SECRET missing");
-      return;
+      return { ok: false, reason: "shared_secret_missing" };
     }
-    // pass DM-override so polling-sourced guild messages
+    //  — pass DM-override so polling-sourced guild messages
     // (which arrive without `guild_id` over REST) aren't mistaken
     // for DMs. Gateway WS path leaves `opts` undefined so the
     // existing `!event.guild_id` heuristic still drives.
@@ -696,11 +731,17 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
       if (!res.ok) {
         const bodyPreview = preview(await res.text().catch(() => ""), 200);
         this.recordError(`forward HTTP ${res.status}: ${bodyPreview}`);
-        return;
+        return {
+          ok: false,
+          reason: `http_${res.status}${bodyPreview ? `: ${bodyPreview}` : ""}`,
+          status: res.status,
+        };
       }
       this.sql`UPDATE gateway_state SET last_forwarded_at = ${Date.now()} WHERE rowid = 1`;
+      return { ok: true, outcome: "delivered" };
     } catch (e) {
       this.recordError(`forward exception: ${preview(e)}`);
+      return { ok: false, reason: `exception: ${preview(e)}` };
     }
   }
 
@@ -725,12 +766,12 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
     if (!sharedSecret) { this.recordError("polling skipped: AGENT_THURSDAY_SHARED_SECRET missing"); return; }
     for (const channelId of cfg.allowedChannels) {
       try {
-        await this.pollChannel(channelId, cfg.botId, token, sharedSecret, workerOrigin, false);
+        await this.pollChannel(channelId, token, workerOrigin, false);
       } catch (e) {
         this.recordCursorError(channelId, `sweep exception: ${preview(e)}`);
       }
     }
-    // DM ingress for polling mode. Each configured user id is
+    //  — DM ingress for polling mode. Each configured user id is
     // resolved (idempotent) to a DM channel id via REST and polled like a
     // guild channel, but forwarded with `isDm:true` so direct-ingest /
     // ChannelHub classify it as `chatType:"dm"`. DM channel ids are
@@ -740,18 +781,42 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
       try {
         const dmChannelId = await this.resolveDmChannelId(userId, token);
         if (!dmChannelId) continue;   // resolveDmChannelId already recorded error
-        await this.pollChannel(dmChannelId, cfg.botId, token, sharedSecret, workerOrigin, true);
+        await this.pollChannel(dmChannelId, token, workerOrigin, true);
       } catch (e) {
         // Cursor row may not exist yet for a DM that's never been resolved;
         // best-effort log against the user id slot to keep diagnostics non-secret.
         this.recordCursorError(`dm:${userId}`, `dm sweep exception: ${preview(e)}`);
       }
     }
+    //  — runtime-configured bots (BYO Discord bot). Additive
+    // sweep AFTER the env bot's channels; each stored bot polls its own
+    // channels with its own token. Channel sets are disjoint by
+    // construction (save-time conflict check), so the per-channel
+    // cursor keyspace is shared safely. Registry RPC failure is
+    // fail-soft: the env sweep above already ran.
+    try {
+      const ns = this.env.AgentThursdayAgent as unknown as AgentNamespace<Agent<Env>>;
+      const registry = await getAgentByName<Env, Agent<Env>>(ns, AGENT_THURSDAY_REGISTRY_INSTANCE_NAME);
+      const bots = await (registry as unknown as {
+        getDiscordBotsSecret(): Promise<Array<{ bot_id: string; token: string; allowed_channels: string[] }>>;
+      }).getDiscordBotsSecret();
+      for (const bot of bots) {
+        for (const channelId of bot.allowed_channels) {
+          try {
+            await this.pollChannel(channelId, bot.token, workerOrigin, false);
+          } catch (e) {
+            this.recordCursorError(channelId, `bot ${bot.bot_id} sweep exception: ${preview(e)}`);
+          }
+        }
+      }
+    } catch (e) {
+      this.recordError(`stored-bot sweep skipped: ${preview(e)}`);
+    }
     this.sql`UPDATE gateway_state SET last_polled_at = ${Date.now()} WHERE rowid = 1`;
   }
 
   /**
-   * resolve a Discord user id to its DM channel id via
+   *  — resolve a Discord user id to its DM channel id via
    * `POST /users/@me/channels`. The endpoint is idempotent: Discord
    * returns the existing DM channel if one already exists, or
    * creates one. Authorization header is the bot token; never written
@@ -771,7 +836,7 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
         headers: {
           "Authorization": `Bot ${token}`,
           "Content-Type": "application/json",
-          "User-Agent": "agent-thursday-discord-poll/1",
+          "User-Agent": "agentthursday-discord-poll/1",
         },
         body: JSON.stringify({ recipient_id: userId }),
       });
@@ -816,9 +881,7 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
    */
   private async pollChannel(
     channelId: string,
-    botId: string,
     token: string,
-    sharedSecret: string,
     workerOrigin: string,
     isDm: boolean,
   ): Promise<number> {
@@ -834,7 +897,7 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
     let res: Response;
     try {
       res = await fetch(url.toString(), {
-        headers: { "Authorization": `Bot ${token}`, "User-Agent": "agent-thursday-discord-poll/1" },
+        headers: { "Authorization": `Bot ${token}`, "User-Agent": "agentthursday-discord-poll/1" },
       });
     } catch (e) {
       this.recordCursorError(channelId, `fetch throw: ${preview(e)}`);
@@ -877,33 +940,57 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
       return 0;
     }
 
-    let ingested = 0;
-    for (const m of ascending) {
-      if (!m || typeof m.id !== "string") continue;
-      // Re-use the same forward path the WebSocket handler uses, which
-      // re-applies `shouldForwardEvent` filtering (self-bot, system
-      // message types) and posts the canonical `DirectIngestPayload`.
-      // / 170 — `pollChannel` is called for both guild
-      // channel ids (`isDm:false`, classify as `chatType:"channel"`)
-      // and resolved DM channel ids (`isDm:true`, classify as
-      // `chatType:"dm"`). Discord REST's response for either path
-      // omits `guild_id` so the heuristic in `eventToDirectPayload`
-      // would otherwise mis-classify guild messages as DMs;
-      // `isDmOverride` makes the call site authoritative.
-      try {
-        await this.forwardMessage(workerOrigin, m, { isDmOverride: isDm });
-        ingested += 1;
-      } catch (e) {
-        this.recordCursorError(channelId, `forward throw: ${preview(e)}`);
+    //  — defer cursor advance until we know which (if any)
+    // forward failed. `decideCursorAdvance` walks `ascending` in order,
+    // stopping at the first non-ok outcome. Filtered messages (self-
+    // authored, system) DON'T block — otherwise a self-echo would
+    // stall the sweep forever. `delivered` counts as forward progress;
+    // `advanceTo` is the last successful id (delivered OR filtered),
+    // or `null` when the very first message failed.
+    const validMessages = ascending.filter(
+      (m): m is DiscordMessageCreate => !!m && typeof m.id === "string",
+    );
+    // Re-use the same forward path the WebSocket handler uses, which
+    // re-applies `shouldForwardEvent` filtering (self-bot, system
+    // message types) and posts the canonical `DirectIngestPayload`.
+    //  / 170 — `pollChannel` is called for both guild
+    // channel ids (`isDm:false`, classify as `chatType:"channel"`)
+    // and resolved DM channel ids (`isDm:true`, classify as
+    // `chatType:"dm"`). Discord REST's response for either path
+    // omits `guild_id` so the heuristic in `eventToDirectPayload`
+    // would otherwise mis-classify guild messages as DMs;
+    // `isDmOverride` makes the call site authoritative.
+    const decision = await decideCursorAdvance(validMessages, (m) =>
+      this.forwardMessage(workerOrigin, m, { isDmOverride: isDm }),
+    );
+
+    if (decision.failedId !== null) {
+      // Hold the cursor at the last successful id (or leave unchanged
+      // when nothing succeeded) so the next sweep re-fetches and
+      // retries `failedId`. No retry queue: the cursor IS the retry.
+      this.recordCursorError(
+        channelId,
+        `forward HTTP ${decision.failureStatus ?? "?"} on message ${decision.failedId}: ${decision.failureReason ?? "unknown"}`,
+        { failedMessageId: decision.failedId },
+      );
+      if (decision.advanceTo !== null) {
+        this.persistCursor(channelId, decision.advanceTo);
       }
+      return decision.deliveredCount;
     }
-    this.persistCursor(channelId, newestId);
-    return ingested;
+
+    // All messages succeeded (either delivered or filtered). Advance
+    // to `newestId` even if all were filtered, so we don't loop on
+    // self-echo. Filtered-only sweeps return `ingested: 0`, which
+    // matches the prior contract.
+    this.persistCursor(channelId, decision.advanceTo ?? newestId);
+    return decision.deliveredCount;
   }
 
   private readCursor(channelId: string): CursorRow | null {
     const rows = this.sql<CursorRow>`
-      SELECT channel_id, last_seen_message_id, last_polled_at, last_error_preview
+      SELECT channel_id, last_seen_message_id, last_polled_at, last_error_preview,
+             last_failed_message_id, last_failed_at
       FROM discord_poll_cursors WHERE channel_id = ${channelId} LIMIT 1
     `;
     return rows[0] ?? null;
@@ -911,13 +998,20 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
 
   private persistCursor(channelId: string, newestId: string): void {
     const now = Date.now();
+    //  — a successful sweep through this channel clears any
+    // prior forward-failure provenance: NULL out the error preview
+    // AND the last_failed_message_id / last_failed_at columns so
+    // operator inspect doesn't see a stale failed-message id after
+    // the channel recovers.
     this.sql`
-      INSERT INTO discord_poll_cursors (channel_id, last_seen_message_id, last_polled_at, last_error_preview)
-      VALUES (${channelId}, ${newestId}, ${now}, NULL)
+      INSERT INTO discord_poll_cursors (channel_id, last_seen_message_id, last_polled_at, last_error_preview, last_failed_message_id, last_failed_at)
+      VALUES (${channelId}, ${newestId}, ${now}, NULL, NULL, NULL)
       ON CONFLICT(channel_id) DO UPDATE SET
         last_seen_message_id = excluded.last_seen_message_id,
         last_polled_at = excluded.last_polled_at,
-        last_error_preview = NULL
+        last_error_preview = NULL,
+        last_failed_message_id = NULL,
+        last_failed_at = NULL
     `;
   }
 
@@ -931,21 +1025,36 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
     `;
   }
 
-  private recordCursorError(channelId: string, msg: string): void {
+  private recordCursorError(
+    channelId: string,
+    msg: string,
+    opts?: { failedMessageId?: string | null },
+  ): void {
     const truncated = preview(msg);
     const now = Date.now();
+    //  — when the error came from a specific forward failure,
+    // record the failing message id + wall-clock alongside the
+    // bounded preview so operator inspect can pinpoint exactly which
+    // message bounced. Non-forward errors (rate-limit, fetch throw,
+    // missing env, etc.) pass `failedMessageId: null` (or omit the
+    // opt) so we don't lie about provenance.
+    const failedMessageId = opts?.failedMessageId ?? null;
+    const failedAt = failedMessageId !== null ? now : null;
     this.sql`
-      INSERT INTO discord_poll_cursors (channel_id, last_seen_message_id, last_polled_at, last_error_preview)
-      VALUES (${channelId}, NULL, ${now}, ${truncated})
+      INSERT INTO discord_poll_cursors (channel_id, last_seen_message_id, last_polled_at, last_error_preview, last_failed_message_id, last_failed_at)
+      VALUES (${channelId}, NULL, ${now}, ${truncated}, ${failedMessageId}, ${failedAt})
       ON CONFLICT(channel_id) DO UPDATE SET
         last_polled_at = excluded.last_polled_at,
-        last_error_preview = excluded.last_error_preview
+        last_error_preview = excluded.last_error_preview,
+        last_failed_message_id = COALESCE(excluded.last_failed_message_id, discord_poll_cursors.last_failed_message_id),
+        last_failed_at = COALESCE(excluded.last_failed_at, discord_poll_cursors.last_failed_at)
     `;
   }
 
   private readAllCursors(): CursorRow[] {
     return this.sql<CursorRow>`
-      SELECT channel_id, last_seen_message_id, last_polled_at, last_error_preview
+      SELECT channel_id, last_seen_message_id, last_polled_at, last_error_preview,
+             last_failed_message_id, last_failed_at
       FROM discord_poll_cursors ORDER BY channel_id ASC
     `;
   }
@@ -1008,6 +1117,8 @@ export class DiscordGatewayAgent extends Agent<Env, Record<string, never>> {
         lastSeenMessageId: c.last_seen_message_id,
         lastPolledAt: c.last_polled_at,
         lastErrorPreview: c.last_error_preview,
+        lastFailedMessageId: c.last_failed_message_id,
+        lastFailedAt: c.last_failed_at,
       })),
     };
   }

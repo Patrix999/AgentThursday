@@ -46,12 +46,12 @@ export function ArchivePanel() {
     function onCompacted() {
       void load();
     }
-    window.addEventListener("agent-thursday:context:compacted", onCompacted);
-    window.addEventListener("agent-thursday:context:switched", onCompacted);
+    window.addEventListener("agentthursday:context:compacted", onCompacted);
+    window.addEventListener("agentthursday:context:switched", onCompacted);
     return () => {
       mounted = false;
-      window.removeEventListener("agent-thursday:context:compacted", onCompacted);
-      window.removeEventListener("agent-thursday:context:switched", onCompacted);
+      window.removeEventListener("agentthursday:context:compacted", onCompacted);
+      window.removeEventListener("agentthursday:context:switched", onCompacted);
     };
   }, []);
 

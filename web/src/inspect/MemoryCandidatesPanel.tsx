@@ -12,7 +12,7 @@ import { fetchMemoryCandidates } from "../api/memoryCandidates";
  * recent dialog, and existing memories. Display-only: no promote /
  * dismiss actions in v1 (those are  territory). Buttons
  * are rendered but `disabled` with a tooltip so the surface is
- * forward-compatible.
+ * forward-compatible with 154b.
  *
  * Privacy contract: the server-side generator already strips raw
  * tool payloads / SOUL / system prompt content; this component

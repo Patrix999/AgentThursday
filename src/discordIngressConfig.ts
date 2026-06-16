@@ -1,5 +1,5 @@
 /**
- * Discord ingress mode config helper.
+ *  — Discord ingress mode config helper.
  *
  * Pure, no I/O; reads env at call site. Three modes are supported:
  *
@@ -30,7 +30,7 @@ export type DiscordIngressConfig = {
   mode: DiscordIngressMode;
   pollIntervalSeconds: number;   // clamped to [POLL_INTERVAL_MIN, POLL_INTERVAL_MAX]
   allowedChannels: string[];     // parsed from comma-separated DISCORD_ALLOWED_CHANNELS
-  // Discord user ids whose DM channels should be polled as part
+  //  — Discord user ids whose DM channels should be polled as part
   // of the same alarm sweep. Polling-mode-only; gateway mode receives DM
   // MESSAGE_CREATE pushes via the WS subscription. Each id resolves to a
   // DM channel via Discord REST `POST /users/@me/channels` (idempotent).
@@ -74,7 +74,7 @@ export function loadDiscordIngressConfig(env: IngressEnv): DiscordIngressConfig 
     .map(s => s.trim())
     .filter(Boolean);
 
-  // DM user ids to poll. Same comma-separated parser as
+  //  — DM user ids to poll. Same comma-separated parser as
   // allowedChannels; values are Discord snowflake user ids. Empty means
   // "no DM polling" (the default for any deployment that doesn't opt in).
   const pollDmUserIds = String(env.DISCORD_POLL_DM_USER_IDS ?? "")
