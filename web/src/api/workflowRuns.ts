@@ -1,5 +1,5 @@
 /**
- * M9.1 observable workflow run model web API client.
+ * observable workflow run model web API client.
  *
  * Wraps the read-only inspect endpoints:
  *   GET /api/inspect/workflow-runs           → list of run rows

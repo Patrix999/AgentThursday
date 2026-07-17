@@ -22,7 +22,7 @@
  *    env stamped into the card.
  *
  * Out of scope (kept inline in `channelHub.ts`): `deliverPendingOutbound`
- * touches direct Discord sender, OpenClaw bridge HTTP, post-reply poll
+ * touches direct Discord sender, Bridge bridge HTTP, post-reply poll
  * (cross-DO RPC), and reads multiple env vars. Bridge delivery semantics
  * are an explicit non-goal for 242z5.
  */

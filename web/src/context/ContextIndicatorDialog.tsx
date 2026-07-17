@@ -12,7 +12,7 @@ type Props = {
 };
 
 /**
- * M7.9 an earlier revision + context chip is a first-class indicator,
+ * an earlier revision + context chip is a first-class indicator,
  * not part of the debug/inspect surface. Clicking opens this read-only
  * dialog instead of navigating to `/inspect#context`, so it remains
  * useful when `AGENT_THURSDAY_DEBUG_SURFACE_MODE=disable` hides Inspect.

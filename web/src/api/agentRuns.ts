@@ -1,5 +1,5 @@
 /**
- * M9.0 AgentRun web API client.
+ * AgentRun web API client.
  *
  * Wraps the 347 + an earlier revision list backend at `/api/agent-runs`:
  *   GET  /api/agent-runs                    → list (optional ?profile_id, ?limit)

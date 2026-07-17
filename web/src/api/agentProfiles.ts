@@ -1,5 +1,5 @@
 /**
- * M9.0 AgentProfile web API client.
+ * AgentProfile web API client.
  *
  * Wraps the an earlier revision backend at `/api/agent-profiles`:
  *   GET    /api/agent-profiles              → list

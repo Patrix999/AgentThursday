@@ -1,5 +1,5 @@
 /**
- * M9.0 lifecycle consensus rewrite tests.
+ * lifecycle consensus rewrite tests.
  *
  * Covers ADR v2 §2–§3: four-layer model (lifecycle, runtime health,
  * policy flags, origin), stale triggers, and stale recovery.

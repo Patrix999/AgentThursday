@@ -92,7 +92,7 @@ export function ensureChannelHubSchema(
     )
   `;
 
-  // M9.0 conversation → agent live binding. Additive,
+  // conversation → agent live binding. Additive,
   // idempotent. NULL means "unbound" (existing behavior: routePending
   // falls back to canonical active context). When set, points to an
   // agent row owned by the registry DO (stored under the legacy
@@ -164,7 +164,7 @@ export function ensureChannelHubSchema(
   `;
   agent.sql`CREATE INDEX IF NOT EXISTS idx_channel_approvals_status_at ON channel_approvals(status, created_at)`;
 
-  // M8.5 approval token store. Distinct from `channel_approvals`
+  // approval token store. Distinct from `channel_approvals`
   // (an earlier revision, outbox-level reply approval) because these tokens bind a
   // specific (agent, tool_id, input_hash) tuple for runtime tool replay
   // rather than gating an outbound message. `token_hash` is the only
@@ -204,7 +204,7 @@ export function ensureChannelHubSchema(
     if (!/duplicate column/i.test(msg)) throw e;
   }
 
-  // propose-patch artifact store (M8.6 reviewer/write-boundary
+  // propose-patch artifact store (reviewer/write-boundary
   // ADR §D4). Holds verifier-only patch proposals so an agent can surface
   // a candidate diff without writing the working tree. Apply path is NOT
   // implemented in this card — an earlier revision+ wires apply via approval replay.

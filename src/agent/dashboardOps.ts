@@ -1,5 +1,5 @@
 /**
- * M8.9 Step 9 dashboard core extraction.
+ * Step 9 dashboard core extraction.
  *
  * `getDashboardCoreFree` is the body of `AgentThursdayAgent.getDashboardCore`
  * lifted verbatim from `src/server.ts` (pre-extraction lines
@@ -200,7 +200,7 @@ export function getDashboardCoreFree(host: DashboardCoreHost): DashboardCore {
 }
 
 /**
- * M8.9 Step 9 dashboard section extraction.
+ * Step 9 dashboard section extraction.
  *
  * `buildDashboardSectionFree` is the body of the top-level
  * `buildDashboardSection(env, core)` lifted verbatim from `src/server.ts`

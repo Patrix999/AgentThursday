@@ -13,7 +13,7 @@
  *   3. tool contract dispatch_path.surface ∈ supported set
  *   4. dispatch registry has a handler for the canonical tool_id
  *
- * Tool name conversion: canonical `tool_id` (e.g. `"fyimd.convert_text"`)
+ * Tool name conversion: canonical `tool_id` (e.g. `"localdoc.convert_text"`)
  * → AI SDK key `tool_id.replace(/[^a-zA-Z0-9_]/g, "_")`. The canonical
  * id stays the event-name key (`tool.<canonical>.dispatch/result/error`)
  * so observability events remain stable across provider rename. No

@@ -9,7 +9,7 @@ import { DEMO_INSTANCE } from "../demoConstants";
 import type { AgentThursdayAgent } from "../server";
 
 /**
- * M9.0 `AgentRunWorkflow` multi-step orchestration.
+ * `AgentRunWorkflow` multi-step orchestration.
  *
  * Five-step plan (one `waitForEvent` pause max per run; an earlier revision D-2):
  *

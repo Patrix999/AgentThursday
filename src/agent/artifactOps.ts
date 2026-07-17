@@ -1,5 +1,5 @@
 /**
- * M8.9 artifactOps extraction.
+ * artifactOps extraction.
  *
  * Three artifact-share callable bodies moved verbatim from
  * `AgentThursdayAgent` (`src/server.ts:4489-4783`). No validation policy,

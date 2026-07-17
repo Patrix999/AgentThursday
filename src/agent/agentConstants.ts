@@ -11,7 +11,7 @@
 // removing ~50 LoC of literals from the entry module.
 import type { CliSession } from "../types";
 
-// M7.7v3 fresh context id budget cap (chars/4 surrogate)
+// fresh context id budget cap (chars/4 surrogate)
 // used by `storedCompactionView` in `./contextHelpers`.
 export const COMPACTION_SUMMARY_PREVIEW_BUDGET = 600;
 
@@ -43,7 +43,7 @@ export const KNOWN_TOOL_NAMES: readonly string[] = [
   "content_search",
   // agent-facing conversation archive search.
   "conversation_search",
-  // 2026-06-19 — global workspace file share (replaces fyimd).
+  // 2026-06-19 — global workspace file share (replaces localdoc).
   "share_file",
   "list_shared_files",
   "read_shared_file",

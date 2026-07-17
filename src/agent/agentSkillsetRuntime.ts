@@ -1,4 +1,4 @@
-// M9.0 AgentProfile.skillset runtime resolution.
+// AgentProfile.skillset runtime resolution.
 //
 // Pure helper that turns the per-profile `AgentProfile.skillset`
 // selection into the effective set of skillset ids whose tools the

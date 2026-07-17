@@ -1,6 +1,6 @@
 /**
- * M8.9 Step 6 compactionOps pure/read surfaces extraction.
- * M8.9 Step 6 compactionOps apply surfaces extraction.
+ * Step 6 compactionOps pure/read surfaces extraction.
+ * Step 6 compactionOps apply surfaces extraction.
  *
  * Compaction-related helpers pulled verbatim from `AgentThursdayAgent`
  * (`src/server.ts`). No call shapes, return shapes, event names,

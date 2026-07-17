@@ -1,5 +1,5 @@
 /**
- * M7.7 v2 Semantic Summary Advisor scaffold.
+ * v2 Semantic Summary Advisor scaffold.
  *
  * Optional model-assisted layer that runs ON TOP of the deterministic
  * an earlier revision compact summary. The advisor never replaces the deterministic

@@ -7,7 +7,7 @@
  * a structured slice with raw prompt content / large tool payloads
  * stripped or truncated.
  *
- * Red lines (see M7.7 milestone):
+ * Red lines (see milestone):
  *   - never expose system prompts / SOUL / secrets
  *   - never include reasoning parts (private)
  *   - never dump tool input/output in inspect payload — expose only tool metadata
@@ -715,7 +715,7 @@ const MEMORY_SPECIFIC_PATTERNS: RegExp[] = [
 ];
 const MEMORY_SPECIFIC_LITERALS_CN = ["工作流规则", "验收规则", "记住", "请记住", "记忆中"];
 
-// Handoff-or-version-marker v2 — drop generic `Card N`, `v2`, `M7.7`,
+// Handoff-or-version-marker v2 — drop generic `Card N`, `v2`, ``,
 // `handoff`, `checkpoint`. Require unambiguous handoff phrasing.
 const HANDOFF_SPECIFIC_PATTERNS: RegExp[] = [
   /\bhandoff summary\b/i,

@@ -36,7 +36,7 @@ export interface DispatchHandler<TInput = unknown, TOutput = unknown> {
   inputSchema: z.ZodSchema<TInput, any, any>;
   // optional `ctx` exposes a narrow per-handler interface
   // for stateful tools (e.g. artifact.write needs DO callable access).
-  // Stateless adapters (fyimd/runtime_summary) ignore the third arg.
+  // Stateless adapters (localdoc/runtime_summary) ignore the third arg.
   execute: (input: TInput, env: unknown, ctx?: unknown) => Promise<TOutput>;
 }
 

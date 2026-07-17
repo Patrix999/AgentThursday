@@ -1,5 +1,5 @@
 /**
- * M8.9 `getTools()` family extraction step 5: memory
+ * `getTools()` family extraction step 5: memory
  * family E (`remember`, `recall`).
  *
  * Per an earlier revision preflight §4 split order this is the fifth step — two

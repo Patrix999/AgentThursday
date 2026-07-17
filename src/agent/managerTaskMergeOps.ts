@@ -1,5 +1,5 @@
 /**
- * M9.1 `manager.task.merged` emitter v1.
+ * `manager.task.merged` emitter v1.
  *
  * Pure orchestrator helper for the new audit-grade merge event. Mirrors
  * the an earlier revision read-side pattern (`managerSubagentSummaries`): the

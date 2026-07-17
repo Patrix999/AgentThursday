@@ -14,7 +14,7 @@ type NewContextStage =
 const DEFAULT_NEW_CONTEXT_REASON = "manual-ui-new";
 
 /**
- * M7.7v3 confirmation-gated `new context` action. UI copy
+ * confirmation-gated `new context` action. UI copy
  * deliberately distinguishes this from `<ResetAction>`: reset KEEPS the
  * same context identity and only clears messages; new opens a fresh
  * `contextId` and audit-links the previous one. v1 still clears
@@ -65,7 +65,7 @@ export function NewContextAction({ totalMessageCount, actionsEnabled }: { totalM
       <div className="flex items-center gap-2 text-[11px] text-slate-300">
         <span className="font-semibold">New context (audit-linked)</span>
         <span className="text-[10px] text-violet-400/80 italic">
-          M7.7v3 — fresh contextId · v1 fallback (clears in same DO)
+          fresh contextId · v1 fallback (clears in same DO)
         </span>
       </div>
       <p className="mt-1 text-[10px] text-slate-500">
@@ -173,7 +173,7 @@ function NewContextConfirm({
           value={reason}
           maxLength={200}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="e.g. switching from M7.7 work to M8 planning"
+          placeholder="e.g. switching from work to M8 planning"
           className="mt-0.5 w-full rounded bg-slate-950/70 border border-slate-700 px-2 py-1 text-[11px] text-slate-200 placeholder-slate-600 focus:outline-none focus:border-violet-500"
         />
       </label>

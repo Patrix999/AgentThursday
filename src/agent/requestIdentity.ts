@@ -1,5 +1,5 @@
 /**
- * M9.3 user-product multi-tenancy: request identity.
+ * user-product multi-tenancy: request identity.
  *
  * The console is single-tenant today (one shared secret == the operator).
  * The user product reaches it over a private service binding and adds a

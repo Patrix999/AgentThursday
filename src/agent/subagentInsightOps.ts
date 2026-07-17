@@ -1,5 +1,5 @@
 /**
- * M9.4 A: 群体记忆第二步 (subagent insight promotion v1).
+ * A: 群体记忆第二步 (subagent insight promotion v1).
  *
  * Pure helpers — no DO, no env, no SQL. The DO @callable wrappers
  * (`pushSubagentInsight` / `readSubagentInsights`) and the

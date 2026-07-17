@@ -1,7 +1,7 @@
 /**
- * M9.0 manager skillset dispatch HTTP surface.
+ * manager skillset dispatch HTTP surface.
  *
- * Mirrors `dispatchFyimdRoutes.ts`: each `/api/dispatch/manager/<tool>`
+ * Mirrors `dispatchLocaldocRoutes.ts`: each `/api/dispatch/manager/<tool>`
  * path resolves the handler via the adapter registry
  * (`getDispatchHandler`) so the agent's dynamic-tool surface and the
  * HTTP surface share the exact same execute path.
@@ -24,7 +24,7 @@
  *       agent_loop_timeout                                      → 504
  *       internal / unknown                                      → 500
  *   - `status === "failed"`, reason → equivalent of the above   → see code
- *   - `status === "blocked"`                                    → 503 (parity with fyimd)
+ *   - `status === "blocked"`                                    → 503 (parity with localdoc)
  *   - dispatch missing handler                                  → 500
  *
  * Adapters MUST return the same body shape declared in each tool's

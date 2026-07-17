@@ -14,7 +14,7 @@ import {
   ChannelCompactSummarySchema,
 } from "../schema";
 import { ChannelHubAgent } from "../channelHub";
-import { OpenClawDiscordInboundSchema, normalizeOpenClawPayload } from "../discordBridge";
+import { BridgeDiscordInboundSchema, normalizeBridgePayload } from "../discordBridge";
 import {
   verifyDiscordSignature,
   loadDirectDiscordConfig,
@@ -78,7 +78,7 @@ import type { RequestIdentity } from "../agent/requestIdentity";
  *   /api/channel/discord/direct         POST  an earlier revision direct ingest (auth-gated)
  *   /api/channel/identity/role          POST  an earlier revision set identity role
  *   /api/channel/route-pending          POST  an earlier revision route pending
- *   /api/channel/discord/openclaw       POST  an earlier revision OpenClaw bridge (legacy)
+ *   /api/channel/discord/bridge       POST  an earlier revision bridge (legacy)
  */
 
 type ChannelHubStub = Awaited<ReturnType<typeof getAgentByName<Env, ChannelHubAgent>>>;
@@ -90,7 +90,7 @@ export interface ChannelDeps {
   // merge on the direct-ingest path. Optional so existing test
   // harnesses keep working; absent ⇒ env-only allowlist.
   getRegistryStub?: () => Promise<unknown>;
-  // M9.2 (2026-06-26) — resolved tenant identity for the user-side
+  // (2026-06-26) — resolved tenant identity for the user-side
   // conversation-binding owner-scoping. Absent / kind==="admin" ⇒ the
   // operator console (unrestricted, current behavior); kind==="user" ⇒ a
   // gateway-proxied tenant, who may only bind/clear their OWN conversations
@@ -117,7 +117,7 @@ export interface ChannelDeps {
 }
 
 /**
- * M9.2 — the union of the SCOPED caller's BYO-bot channels, for conversation
+ * the union of the SCOPED caller's BYO-bot channels, for conversation
  * ownership. Returns `null` for the admin/operator console (no `identity` or
  * `kind==="admin"`) ⇒ no ownership restriction (current behavior). For a scoped
  * tenant, returns their channels (empty set ⇒ owns no conversations, fail closed).
@@ -229,7 +229,7 @@ export async function handleChannel(
   // signature. CF Worker can't run the Gateway WebSocket, so normal
   // MESSAGE_CREATE arrives via the auth-gated /api/channel/discord/direct
   // path (below) — typically populated by a sidecar gateway runner OR by
-  // smoke tests using the an earlier revision OpenClaw payload shape.
+  // smoke tests using the an earlier revision Bridge payload shape.
   if (url.pathname === "/discord/interactions" && request.method === "POST") {
     const sig = request.headers.get("X-Signature-Ed25519");
     const ts = request.headers.get("X-Signature-Timestamp");
@@ -348,17 +348,17 @@ export async function handleChannel(
     return json({ type: 4, data: { content: "interaction type not supported", flags: 64 } });
   }
 
-  // auth-gated direct ingest path. Same OpenClaw payload shape
+  // auth-gated direct ingest path. Same Bridge payload shape
   //  so a sidecar gateway runner can post message-create-shaped events
-  // here without renaming the contract. Bridge endpoint /api/channel/discord/openclaw
+  // here without renaming the contract. Bridge endpoint /api/channel/discord/bridge
   // is preserved as a compatibility alias.
   if (url.pathname === "/api/channel/discord/direct" && request.method === "POST") {
     let body: unknown;
     try { body = await request.json(); } catch { return json({ code: "request.invalid-json" }, 400); }
-    const parsed = OpenClawDiscordInboundSchema.safeParse(body);
+    const parsed = BridgeDiscordInboundSchema.safeParse(body);
     if (!parsed.success) return json({ code: "request.invalid-shape", issues: parsed.error.issues }, 400);
     // Apply an earlier revision Hermes-inspired filters BEFORE normalization so we don't
-    // persist messages we'd just ignore. Bridge path (openclaw) keeps the
+    // persist messages we'd just ignore. Bridge path (bridge) keeps the
     // old behavior — operators can ingest unfiltered there.
     const cfg = loadDirectDiscordConfig(env);
     // stored bots' channels are first-class allowed
@@ -431,9 +431,9 @@ export async function handleChannel(
           }
         }
         // Continuation is text-only; we need a conversation id to look up
-        // the anchor. Re-derive via `normalizeOpenClawPayload` and then
+        // the anchor. Re-derive via `normalizeBridgePayload` and then
         // call the merge path with the result.
-        const envelope = await normalizeOpenClawPayload(parsed.data, env);
+        const envelope = await normalizeBridgePayload(parsed.data, env);
         const stub = await deps.getChannelStub();
         const mergeResult = await stub.tryIngestContinuation({
           provider: "discord",
@@ -482,7 +482,7 @@ export async function handleChannel(
       }
       return json({ ok: false, ignored: true, reason: filterRes.reason }, 200);
     }
-    const envelope = await normalizeOpenClawPayload(parsed.data, env);
+    const envelope = await normalizeBridgePayload(parsed.data, env);
     const stub = await deps.getChannelStub();
     const result = await stub.ingestInbound(envelope);
     // an earlier revision v2 — first-chunk routing debounce. When the inserted
@@ -530,7 +530,7 @@ export async function handleChannel(
     });
   }
 
-  // M7.3 an earlier revision helper — set channel identity role (trusted/unknown).
+  // an earlier revision helper — set channel identity role (trusted/unknown).
   if (url.pathname === "/api/channel/identity/role" && request.method === "POST") {
     let body: unknown;
     try { body = await request.json(); } catch { return json({ code: "request.invalid-json" }, 400); }
@@ -568,7 +568,7 @@ export async function handleChannel(
     return json(ChannelRoutePendingResultSchema.parse(result));
   }
 
-  // M9.0 conversation → agent live binding.
+  // conversation → agent live binding.
   // GET reads (returns `activeAgentId: null` for unknown/unbound
   // conversations rather than 404, so the UI has one branch instead of
   // two). POST sets or clears the binding; agent existence + status
@@ -578,7 +578,7 @@ export async function handleChannel(
   // response carries both `activeAgentId` and `activeProfileId` so
   // clients of either era work. Passing both with conflicting values
   // returns 400.
-  // M9.2 — owner-scoped LIST for the user-app binding UI: the caller's
+  // owner-scoped LIST for the user-app binding UI: the caller's
   // conversations (channel ∈ their BYO bots) + current binding. Admin → all.
   if (url.pathname === "/api/channel/conversation-binding/list" && request.method === "GET") {
     const callerChannels = await resolveCallerChannels(deps);
@@ -595,7 +595,7 @@ export async function handleChannel(
       return json({ code: "request.invalid-shape", message: "conversation_id required (1..200 chars)" }, 400);
     }
     const stub = await deps.getChannelStub();
-    // M9.2 — a scoped tenant may only read a binding for a conversation they own
+    // a scoped tenant may only read a binding for a conversation they own
     // (else they could probe other tenants' bindings by conversation_id).
     const callerChannels = await resolveCallerChannels(deps);
     if (callerChannels !== null) {
@@ -630,7 +630,7 @@ export async function handleChannel(
       return json({ code: "request.invalid-shape", message: "profile_id must be string or null" }, 400);
     }
     const stub = await deps.getChannelStub();
-    // M9.2 — owner-scope a scoped tenant: they may only bind/clear a conversation
+    // owner-scope a scoped tenant: they may only bind/clear a conversation
     // they OWN (channel ∈ their BYO bots) and only bind it to an agent they OWN.
     // Admin/console (callerChannels === null) keeps today's unrestricted behavior.
     const callerChannels = await resolveCallerChannels(deps);
@@ -682,21 +682,21 @@ export async function handleChannel(
     return json(result);
   }
 
-  // OpenClaw Discord bridge inbound. Translates the narrow
-  // OpenClaw payload into ChannelMessageEnvelope and persists via an earlier revision
+  // Bridge Discord bridge inbound. Translates the narrow
+  // Bridge payload into ChannelMessageEnvelope and persists via an earlier revision
   // ingestInbound. Same /api/* auth gate; raw Discord JSON is NOT accepted.
-  if (url.pathname === "/api/channel/discord/openclaw" && request.method === "POST") {
+  if (url.pathname === "/api/channel/discord/bridge" && request.method === "POST") {
     let body: unknown;
     try {
       body = await request.json();
     } catch {
       return json({ code: "request.invalid-json" }, 400);
     }
-    const parsed = OpenClawDiscordInboundSchema.safeParse(body);
+    const parsed = BridgeDiscordInboundSchema.safeParse(body);
     if (!parsed.success) {
       return json({ code: "request.invalid-shape", issues: parsed.error.issues }, 400);
     }
-    const envelope = await normalizeOpenClawPayload(parsed.data, env);
+    const envelope = await normalizeBridgePayload(parsed.data, env);
     const stub = await deps.getChannelStub();
     const result = await stub.ingestInbound(envelope);
     const routeSummary = await deps.autoRouteAfterIngest(stub, result.inserted);

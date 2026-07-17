@@ -1,5 +1,5 @@
 /**
- * M9.0 channel conversation → agent binding client.
+ * channel conversation → agent binding client.
  * agent-centric naming. Client surfaces both `activeAgentId`
  * (preferred) and `activeProfileId` (legacy alias, same value); POST
  * accepts an agent id and is sent over the wire under both `agent_id`

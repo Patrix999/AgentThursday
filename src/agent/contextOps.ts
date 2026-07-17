@@ -1,5 +1,5 @@
 /**
- * M8.9 Step 6 contextOps pointer/history extraction.
+ * Step 6 contextOps pointer/history extraction.
  *
  * Six active-pointer / context-history helpers pulled verbatim from
  * `AgentThursdayAgent` (`src/server.ts` lines ~4672–4783). No SQL strings,
@@ -258,7 +258,7 @@ export function listContextHistoryFree(host: ContextPointerHost): ContextHistory
 }
 
 // ── model resolution / budget / inspect ───────────────────
-// Verbatim ports of the M7.9 an earlier revision resolver, an earlier revision budget, and
+// Verbatim ports of the an earlier revision resolver, an earlier revision budget, and
 // an earlier revision inspect surfaces from `AgentThursdayAgent`. Selection invariants
 // (configured vs lastObserved, conservative budget on mismatch,
 // placeholder gating, awareness preferring observed) preserved.

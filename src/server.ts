@@ -316,7 +316,7 @@ import {
   markDocumentResolved,
   markDocumentFailed,
 } from "./agent/uploadedDocumentOps";
-import { fyimdPollOnce } from "./agent/documentConverter";
+import { localdocPollOnce } from "./agent/documentConverter";
 import { keywordSnippets } from "./agent/documentContent";
 import {
   type CompactionReadHost,
@@ -446,7 +446,7 @@ const GROK_DEFAULT_BASE_URL = "https://api.x.ai/v1";
 // memory than per-turn fragments. A separate one-shot fires when a TEMPORARY subagent
 // finalizes (see the submitTask trigger) so short subagent tasks aren't missed.
 const MEMORY_CONSOLIDATION_TURN_THRESHOLD = 8;
-// M9.4 (2026-06-25) — truthfulness rework cap (the operator: "三次然后旧 warning"). When a
+// (2026-06-25) — truthfulness rework cap (the operator: "三次然后旧 warning"). When a
 // turn fabricates a tool claim but dispatched NO real tool, re-run the model with
 // a correction up to this many times before falling back to the warn-append.
 // Operationally overridable via env.AGENT_THURSDAY_TRUTHFULNESS_MAX_REWORKS (0 = disable
@@ -769,8 +769,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   // execute) lets `buildWorkspaceSnapshot`'s 2b fallback surface the
   // ack on `/api/workspace.summaryStream`. Reset at submitTask top.
   private _currentTaskRememberAck: string | null = null;
-  // current agent-turn evidence envelope id + the set of M8.1
-  // tool ids that fired during this turn through the agent-facing tool
+  // current agent-turn evidence envelope id + the set of // tool ids that fired during this turn through the agent-facing tool
   // wrappers. Populated at the top of submitTask (createDraft) and by
   // each wrapped tool's `recordWrappedToolId` callback; consumed at the
   // bottom of submitTask to seal the envelope (claimed_tools = wrapped
@@ -1389,7 +1388,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   configureSession(session: Session): Session {
     return session
       .withContext("soul", { provider: { get: async () => `${await this._resolveBaseSoul()}\n\n${this.readKnowledge()}` } })
-      // M9.0 persona-weave. APPEND a `## Persona` block
+      // persona-weave. APPEND a `## Persona` block
       // sourced from the per-profile `AgentProfile.persona` .
       // No-op for the registry DO (`DEMO_INSTANCE`) and for any
       // instance whose name does not resolve to an AgentProfile row,
@@ -1522,7 +1521,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     }
   }
 
-  // M9.0 persona-weave provider. Resolves the per-profile
+  // persona-weave provider. Resolves the per-profile
   // DO's own AgentProfile via the registry DO and composes the
   // `## Persona` block via the pure `composePersonaBlock` helper.
   // Logs `system_prompt.persona.composed` to event_log each time the
@@ -1691,15 +1690,15 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   }
 
   /**
-   * M8.2 Agent Tool Surface Integration Skeleton.
+   * Agent Tool Surface Integration Skeleton.
    *
-   * Returns the AI-SDK-compatible tool subset for the M8.1 read /
+   * Returns the AI-SDK-compatible tool subset for the read /
    * verify tools: repo_read, repo_grep, git_status, git_show,
    * gate_typecheck, evidence_get. Write / commit / push / deploy
    * intentionally omitted — they stay locked behind /api/dev-shell
    * admin endpoints until a future card opens them.
    *
-   * Each tool routes through the existing M8.1 dispatcher so
+   * Each tool routes through the existing dispatcher so
    * denylist + safety + observability are uniform with admin
    * endpoint behavior.
    */
@@ -2131,7 +2130,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   }
 
   getTools() {
-    // the M8.1 dev-shell tools (repo_read/repo_grep/git_*/repo_prepare/
+    // the dev-shell tools (repo_read/repo_grep/git_*/repo_prepare/
     // repo_write/repo_patch/gate_*) materialize the PRIVATE operator repo
     // (your-org/AgentThursday) into a SHARED `agentthursday-dev-shell` sandbox via the global
     // GITHUB_TOKEN, and the write variants mutate that shared checkout. They are
@@ -2158,7 +2157,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       // (`review_project_status` / `write_checkpoint` / `review_note` /
       // `advance_kanban_card`): operator project-management tools. A user-product
       // agent must not advertise/own "kanban 推进 / checkpoint / 项目状态"
-      // (the operator 2026-06-18). Gate by the cached owner verdict like the M8.1 surface;
+      // (the operator 2026-06-18). Gate by the cached owner verdict like the surface;
       // fail-closed (unresolved owner → not operator → no lifecycle tools).
       ...(isOperator ? buildCoreTools({
         sql: <T = Record<string, string | number | boolean | null>>(
@@ -2196,7 +2195,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
         getAgentThursdayState: () => this.agentthursdayState,
         setAgentThursdayState: (next) => this.setAgentThursdayState(next),
       }),
-      // M7.4 an earlier revision mitigation 1: temporarily hide low-priority
+      // an earlier revision mitigation 1: temporarily hide low-priority
       // memory management tools from the LLM tool spec to test the Kimi
       // tool-count/description-size threshold hypothesis. DO callables
       // remain available for API/inspect paths; only model-facing tools
@@ -2266,7 +2265,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
         },
         logEvent: (type, payload) => this.logEvent(type, payload),
       }),
-      // 2026-06-19 — global workspace file share (replaces fyimd). Unconditional
+      // 2026-06-19 — global workspace file share (replaces localdoc). Unconditional
       // (every agent, operator or user-owned). The agent shares one of its own
       // workspace files into the owner-scoped registry pool and pastes the
       // returned owner-gated URL into its reply. Reads fail CLOSED on an
@@ -2403,7 +2402,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     // reconstruction); the persona context provider that normally fills it
     // (`composePersonaContext`) does NOT re-run when `super.onStart()` restores a
     // frozen prompt from promptStore — so after eviction a custom skillset (e.g.
-    // the Publisher's `external-publishing` → `fyimd`) silently drops out of the
+    // the Publisher's `external-publishing` → `localdoc`) silently drops out of the
     // snapshot and its tools vanish, even though the durable `effectiveSkillsetIds`
     // still names it. `onStart` shares the cache's lifetime (both reset on
     // reconstruction), so refreshing here aligns them by construction, independent
@@ -2549,7 +2548,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     for (const m of messages) {
       if (m.role === "user") {
         const ut = aggregateTextParts(m);
-        // M9.4 — skip a truthfulness-rework CORRECTION: it's an internal reprimand,
+        // skip a truthfulness-rework CORRECTION: it's an internal reprimand,
         // not real user input, so it must not anchor a dialog turn or reach Track M
         // memory consolidation. The following corrected assistant reply then attaches
         // to the original user task (the prior anchor), which is what we want.
@@ -2789,7 +2788,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     if (d.category === "fabricated-orchestration") {
       return `${renderOrchestrationFabricationWarning()}\n\n${text}`;
     }
-    // M7.6 v3 — inline-JSON-without-dispatch also gets a user-visible
+    // v3 — inline-JSON-without-dispatch also gets a user-visible
     // marker now (previously log-only). the operator: "这种错误应该抓到 downgrade".
     if (d.verdict.fabricated.length === 0) {
       const inlineWarning = renderInlineJsonWarning();
@@ -2912,7 +2911,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       }));
       this.logEvent("supplier.signal.summary", {
         taskId,
-        // M7.5 an earlier revision convention — current task id doubles as cross-DO
+        // an earlier revision convention — current task id doubles as cross-DO
         // trace id elsewhere; keep null until a separate carrier exists.
         traceId: null,
         model: this._lastStepModel?.modelId ?? null,
@@ -2922,7 +2921,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
         //     (`unsupported_model`, 400)
         //   - getModel() resolves only workers-ai targets, fail-softs
         //     to the WA default for legacy / unknown profiles
-        // So this label still matches the actual adapter in M9.0 v1.
+        // So this label still matches the actual adapter in v1.
         // If a future card opens a non-WA dispatch path,
         // `_resolveWorkersAITargetWithFallback()` and this site both
         // need to learn how to surface the new provider.
@@ -3035,7 +3034,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       .filter((s): s is string => s !== null)
       .join("\n\n");
     const prevTaskObj = this.agentthursdayState.currentTaskObject;
-    // M8.9 Step 10 phase A resume-intent short-circuit. Helper
+    // Step 10 phase A resume-intent short-circuit. Helper
     // returns either a paused early-return (with the exact log payload +
     // SubmitTaskResult the orchestrator emits/returns verbatim) or a
     // proceed decision carrying `isExplicitResume` for downstream phases.
@@ -3050,7 +3049,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     }
     const isExplicitResume = resumeDecision.isExplicitResume;
 
-    // M8.9 Step 10 phase B task identity decision. Pure helper
+    // Step 10 phase B task identity decision. Pure helper
     // returns the source / isResubmit / taskObject / nextTaskTitle and the
     // discriminated `nextStatePatchKind` ("resume-or-resubmit" vs
     // "new-task") so the orchestrator below still owns nextState assembly
@@ -3127,13 +3126,13 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     // saveMessages so we can scope the "what tools actually dispatched in
     // THIS round" query to events emitted during the loop.
     const truthfulnessStartTs = Date.now();
-    // M8.9 Step 10 phase C turn-scope reset. Helper returns a
+    // Step 10 phase C turn-scope reset. Helper returns a
     // patch with exactly three keys; orchestrator destructures and assigns
     // so the position (after `truthfulnessStartTs` snapshot, before
     // envelope draft) does not drift.
-    //   - supplierSignals: M7.5 an earlier revision collector (populated by
+    //   - supplierSignals: an earlier revision collector (populated by
     //     onStepFinish + onError during saveMessages)
-    //   - truthfulnessVerdict: M7.5 an earlier revision (prevents stale verdict leak
+    //   - truthfulnessVerdict: an earlier revision (prevents stale verdict leak
     //     into supplier summary)
     //   - rememberAck: an earlier revision (fallback path only fires for THIS round)
     const turnReset = buildTurnScopeResetPatch();
@@ -3263,7 +3262,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
           VALUES (${tuTaskId}, ${turnUserMessageId}, 0, 0, NULL, NULL, NULL, ${Date.now()})`;
       }
     } catch { /* fail-soft */ }
-    // M9.4 (2026-06-25) — truthfulness REWORK loop (the operator: "让 agent 返工，直到给出
+    // (2026-06-25) — truthfulness REWORK loop (the operator: "让 agent 返工，直到给出
     // 符合要求的结果；三次然后旧 warning"). If this round produced NO real tool
     // dispatch but the reply fabricates a tool claim / inline-json result, the
     // model didn't touch the world — so we can safely re-run it with a correction
@@ -3363,7 +3362,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     // a warning line prepended to the user-visible reply + a structured
     // `tool.truthfulness.violation` event for inspect. Mode controlled by
     // env.AGENT_THURSDAY_TRUTHFULNESS_GATE: "warn" (default) | "log-only" | "off".
-    // M8.9 Step 11 phase H reply assembly chain. Three-step
+    // Step 11 phase H reply assembly chain. Three-step
     // order is load-bearing (see helper docstring): truthfulness gate →
     // supplier degradation marker → remember-ack fallback. The
     // truthfulness gate's side effect on `_currentTaskTruthfulnessVerdict`
@@ -3442,7 +3441,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
         provider: this._lastStepModel?.provider ?? null,
         // see comment above the supplier.signal.summary
         // site for the workers-ai-only invariant. Stays accurate
-        // for M9.0 v1.
+        // for v1.
         adapter: "workers-ai-provider",
         finalLifecycle,
         now: Date.now(),
@@ -3505,7 +3504,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     // guard skips, an earlier revision still warns, envelope still fails. The
     // guard is fail-soft on every branch: any throw is logged but
     // never breaks the turn.
-    // M8.9 Step 12 an earlier revision decision/plan computed by helper;
+    // Step 12 an earlier revision decision/plan computed by helper;
     // long-await + an earlier revision pinned attribution + event emission stay in
     // the orchestrator. Helper purity: no `this`, no `await`, no logEvent.
     // detectGateIntent throw propagates here and the outer catch logs
@@ -3645,7 +3644,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
         });
       } catch { /* fail-soft: never break submitTask on guard logging */ }
     }
-    // M8.9 Step 11 prompt-side intent guard decision
+    // Step 11 prompt-side intent guard decision
     // . Helper computes a decision
     // record + deferred event list; orchestrator owns logEvent, the
     // outer fail-soft catch, and outer-scope seal flag / replyText
@@ -3704,7 +3703,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
           : note;
       }
     } catch { /* fail-soft: dangling-intent guard must not break submitTask */ }
-    // M8.9 Step 11 visible reply safety helper.
+    // Step 11 visible reply safety helper.
     // Extracts an earlier revision/e visible override + an earlier revision unwrapped-mutation
     // prepend into a single pure decision. Helper returns final replyText,
     // the `mutationIntentObservedUnwrapped` flag (consumed downstream by
@@ -3978,7 +3977,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
       // stale envelope_id can't leak into the next turn.
       try {
         if (envelopeId) {
-          // M8.9 Step 10 phase S seal opts derivation. Pure
+          // Step 10 phase S seal opts derivation. Pure
           // helper computes wrappedDispatchCount, totalSupplierToolCalls,
           // promptMutationIntentNoExecution, the 6-flag readOnlySafe AND,
           // and the `_finalizeTaskTurn` opts shape (incl. claimedTools
@@ -4084,7 +4083,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return getLastTraceView(this._statusViewsHost());
   }
 
-  // ── M9.0 AgentProfile storage callables ───────────────
+  // ── AgentProfile storage callables ───────────────
   // Pure helpers in `./agent/agentProfileOps`. Routes register on the
   // DEMO_INSTANCE registry DO so AgentProfile rows are global config
   // (visible across contexts), not scoped to a single context DO.
@@ -4258,7 +4257,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return user;
   }
 
-  // ── M9.0 manager custom skillset callables (registry DO) ─
+  // ── manager custom skillset callables (registry DO) ─
   // Same substrate as agent_profile: SQLite on the registry DO so
   // custom skillset rows are global config. Manager HTTP routes
   // resolve the registry stub via getAgentByName(env.AgentThursdayAgent,
@@ -4642,7 +4641,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return readTurnSharePublicRow(this._turnShareHost(), input?.share_id ?? "");
   }
 
-  // ── Workspace file share (2026-06-19, replaces fyimd) ──────────────────────
+  // ── Workspace file share (2026-06-19, replaces localdoc) ──────────────────────
   // Registry-DO chokepoint for the global `share_file` capability. Validation
   // (secret-scan / size / filename) and owner resolution run HERE so no agent
   // path can bypass them. Owner = the sharing agent's profile owner; fail-soft
@@ -4785,10 +4784,10 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
 
   /**
    * Async upload (the operator: 改异步): record a PDF/office doc whose conversion is still
-   * running on fyimd's queue. Metadata-only — NO R2 write yet (the markdown
-   * doesn't exist); `pending_ref` is fyimd's poll URL. A later list/read calls
+   * running on localdoc's queue. Metadata-only — NO R2 write yet (the markdown
+   * doesn't exist); `pending_ref` is localdoc's poll URL. A later list/read calls
    * `resolvePendingDocuments` / `documentRead`, which polls that URL and fills the
-   * markdown when fyimd finishes. Reached only from the upload route (same admin
+   * markdown when localdoc finishes. Reached only from the upload route (same admin
    * secret + session-owner boundary as recordDocument).
    */
   @callable()
@@ -4821,7 +4820,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   }
 
   /**
-   * Poll a single processing doc's fyimd job once and, if it's done, fetch the
+   * Poll a single processing doc's localdoc job once and, if it's done, fetch the
    * markdown → write R2 → flip the row to `done`. Idempotent: the row is re-checked
    * `processing` before the write (overlapping polls are harmless — identical
    * markdown), and `markDocumentResolved`/`markDocumentFailed` only touch a still-
@@ -4829,7 +4828,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
    */
   private async _resolvePendingRow(row: UploadedDocRow): Promise<void> {
     if (row.status !== "processing" || !row.pending_ref) return;
-    const res = await fyimdPollOnce(this.env as unknown as ConverterEnv, row.pending_ref);
+    const res = await localdocPollOnce(this.env as unknown as ConverterEnv, row.pending_ref);
     if (res.status === "processing") return;
     if (res.status === "failed") {
       markDocumentFailed(this._docOpsHost(), row.doc_id);
@@ -6120,7 +6119,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return raw;
   }
 
-  // ── M9.0 agent_run row callables (registry DO) ──────────
+  // ── agent_run row callables (registry DO) ──────────
   // Same substrate as agent_profile: SQLite on the AgentThursdayAgent DO,
   // accessed by AgentRunWorkflow.step.do via the @callable surface so
   // routes / workflows never speak SQL directly. Composition root
@@ -6265,7 +6264,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   }
 
   // ── Context Lifecycle: inspect + reset ────────────────
-  // See docs/milestones/M7.7-context-lifecycle-management.md.
+  // See docs/milestones/context-lifecycle-management.md.
   // `inspectContext` returns a sanitized view (no system prompts / SOUL /
   // secrets / raw tool payloads); `resetContext` clears transient LLM
   // messages while preserving durable state (checkpoints, memory, workspace,
@@ -7032,7 +7031,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return resetContextFree(this._contextWriteHost(), input);
   }
 
-  // ── M7.7v3 an earlier revision — Context history + multi-DO routing ──────
+  // ── an earlier revision — Context history + multi-DO routing ──────
   // an earlier revision introduced `context_history` and an audit-only newContext.
   // an earlier revision promotes the contextId from metadata to a real DO routing
   // key: subsequent /cli/* requests carry an `X-AgentThursday-Context-Id` header
@@ -7280,7 +7279,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   // ── `conversation_search` local tool + audit ─────────
   // Searches the registry's `conversation_archive` (canonical source).
   // Default behavior: cross-context (no `contextId` filter) — this is
-  // the central product proof of M7.8: from context B, the agent can
+  // the central product proof of : from context B, the agent can
   // find archived context A material without switching back. Hits are
   // capped (topK ≤ 10, default 3; snippet ≤ 2000 char hard cap with
   // 300-char default) so search never becomes a backdoor for unbounded
@@ -7414,7 +7413,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return listCompactionsFree(this._compactionReadHost());
   }
 
-  // ── M7.7 v2 Context snapshot for anchor-aware planning ────
+  // ── v2 Context snapshot for anchor-aware planning ────
   // Read-only sanitized projection of `getMessages()` + `getCompactions()`
   // intended as a stable substrate for an earlier revision's anchor classifier and
   // an earlier revision's compact planner. No audit row (cheap polling). Synthetic
@@ -7427,7 +7426,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return inspectContextSnapshotFree(this._compactionReadHost(), input);
   }
 
-  // ── M7.7 v2 Context anchor classifier ─────────────────────
+  // ── v2 Context anchor classifier ─────────────────────
   // Deterministic per-message anchor labels (no LLM, no audit row). Reuses
   // the an earlier revision snapshot as input substrate so SOUL/system/tool payloads
   // stay sanitized. an earlier revision will read this to refuse compact ranges that
@@ -7438,7 +7437,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
     return classifyContextAnchorsFree(this._compactionReadHost(), input);
   }
 
-  // ── M7.7 v2 Compact plan / apply split ────────────────────
+  // ── v2 Compact plan / apply split ────────────────────
   // `compactPlan` produces a read-only ID-based dry-run proposal built from
   // a fresh an earlier revision snapshot + an earlier revision anchors. `applyCompactPlan` takes
   // a plan back and re-runs all pre-flight checks against a fresh snapshot
@@ -7635,8 +7634,8 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
   /**
    * daily dogfood observability dashboard v1 (DO-side core).
    *
-   * Read-only aggregator over the M8.4 readiness/marker/envelope
-   * derivations. Keeps the M8.4 contract intact: this method only
+   * Read-only aggregator over the readiness/marker/envelope
+   * derivations. Keeps the contract intact: this method only
    * **reads** existing helpers (`getCliSession`, `_getNewestEnvelopeForTask`,
    * `_getCurrentTaskFinalReply`, `_hasSealedPassEnvelopeForCurrentTask`,
    * `_isHandledNoToolGateIntentFail`) and returns a flat snapshot. No
@@ -8001,7 +8000,7 @@ export class AgentThursdayAgent extends Think<Env, AgentThursdayState> {
 
   @callable()
   async recallMemory(input: { query: string; types?: MemoryType[]; limit?: number }): Promise<{ matches: MemoryRecallMatch[] }> {
-    // M9.4 — semantic recall: embed the query + active memories (bge-m3) and rank
+    // semantic recall: embed the query + active memories (bge-m3) and rank
     // by cosine (+ key-exact boost), so an agent recalls relevant memory even
     // without a keyword overlap. Fail-soft to the lexical 3-channel
     // `recallMemoryFree` on any embedding issue (query empty, no memories,
@@ -8705,7 +8704,7 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(request.url);
 
-    // M7.1 an earlier revision: CORS preflight is exempt from auth (no header on OPTIONS).
+    // an earlier revision: CORS preflight is exempt from auth (no header on OPTIONS).
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
@@ -8717,7 +8716,7 @@ export default {
       return handleHealth();
     }
 
-    // M7.1 an earlier revision + 78: auth only gates the data surface. The SPA shell
+    // an earlier revision + 78: auth only gates the data surface. The SPA shell
     // (HTML/JS/CSS bundle served by ASSETS) must load without a secret so
     // SecretGate can prompt the user. SecretGate then probes /api/workspace
     // — a 401 means "wrong secret", a 503 means "worker misconfigured".
@@ -8984,9 +8983,9 @@ export default {
       return handleApiArtifact(stub, request, url);
     }
 
-    // M9.0 manager skillset dispatch. Resolves
+    // manager skillset dispatch. Resolves
     // `manager.*` adapters from the registry; status mapping is
-    // richer than fyimd because manager tools use `{ok, error}` and
+    // richer than localdoc because manager tools use `{ok, error}` and
     // `{status, reason}` envelopes (see `dispatchManagerRoutes`).
     if (url.pathname.startsWith("/api/dispatch/manager/")) {
       const resp = await handleDispatchManagerRoutes(request, url, { env });
@@ -9078,7 +9077,7 @@ export default {
     ) {
       const resp = await handleChannel(request, url, {
         env,
-        // M9.2 — resolved tenant identity for conversation-binding owner-scoping
+        // resolved tenant identity for conversation-binding owner-scoping
         // (absent header ⇒ admin/operator console, unrestricted; proxied user ⇒ scoped).
         identity,
         getChannelStub: () => getAgentByName<Env, ChannelHubAgent>(
@@ -9125,7 +9124,7 @@ export default {
       if (resp !== null) return resp;
     }
 
-    // M9.0 AgentProfile create/list/read API. Routes go
+    // AgentProfile create/list/read API. Routes go
     // through the DEMO_INSTANCE registry DO so AgentProfile rows are
     // global config (visible across contexts), not scoped to a single
     // context DO. Auth gated by the umbrella `/api/*` requireSecret
@@ -9160,16 +9159,16 @@ export default {
           getRegistryStub(env),
         convertEnv: {
           AI: env.AI as unknown as ConverterEnv["AI"],
-          FYIMD_API_KEY: (env as { FYIMD_API_KEY?: string }).FYIMD_API_KEY,
-          FYIMD_API_BASE: (env as { FYIMD_API_BASE?: string }).FYIMD_API_BASE,
-          FYIMD_POLL_MS: (env as { FYIMD_POLL_MS?: string }).FYIMD_POLL_MS,
+          LOCALDOC_API_KEY: (env as { LOCALDOC_API_KEY?: string }).LOCALDOC_API_KEY,
+          LOCALDOC_API_BASE: (env as { LOCALDOC_API_BASE?: string }).LOCALDOC_API_BASE,
+          LOCALDOC_POLL_MS: (env as { LOCALDOC_POLL_MS?: string }).LOCALDOC_POLL_MS,
           DOC_CONVERT_TIMEOUT_MS: (env as { DOC_CONVERT_TIMEOUT_MS?: string }).DOC_CONVERT_TIMEOUT_MS,
         },
       });
       if (resp !== null) return resp;
     }
 
-    // M9.0 manager skillset HTTP surface (/api/manager/*).
+    // manager skillset HTTP surface (/api/manager/*).
     // Shares validation + persistence with the dispatch adapters via
     // `src/agent/managerOps.ts`. Auth gated by the umbrella
     // `/api/*` requireSecret above; module returns `null` for
@@ -9187,7 +9186,7 @@ export default {
       if (resp !== null) return resp;
     }
 
-    // M9.0 `POST /api/agent-runs` skeleton.
+    // `POST /api/agent-runs` skeleton.
     // adds durable `agent_run` row on the registry DO,
     // real `AgentThursdayAgent` invocation inside `AgentRunWorkflow.step.do`,
     // and `GET /api/agent-runs/:id`. Routes call the registry stub
@@ -9267,7 +9266,7 @@ export default {
       if (resp !== null) return resp;
     }
 
-    // M7.1 an earlier revision: anything not handled above falls through to:
+    // an earlier revision: anything not handled above falls through to:
     //   1. agents library router (Durable Object websockets etc.)
     //   2. static SPA assets from web/dist (binding ASSETS in wrangler.toml)
     const agentResp = await routeAgentRequest(request, env);

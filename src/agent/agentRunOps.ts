@@ -2,7 +2,7 @@ import type { AgentRunWorkflowParams } from "../workflows/AgentRunWorkflow";
 import type { RequestIdentity } from "./requestIdentity";
 
 /**
- * M9.0 `agent_run` orchestration ops.
+ * `agent_run` orchestration ops.
  *
  * Two layers:
  *  1. Pure SQL helpers (`createAgentRunRow` / `readAgentRunRow` /

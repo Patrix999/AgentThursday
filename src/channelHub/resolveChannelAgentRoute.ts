@@ -1,5 +1,5 @@
 /**
- * M9.0 Channel/Console agent live binding.
+ * Channel/Console agent live binding.
  *
  * Pure resolver: given a conversation's binding (if any) plus pre-fetched
  * agent validation, decide where an inbox row should route.

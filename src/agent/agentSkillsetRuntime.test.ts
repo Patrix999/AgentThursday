@@ -304,7 +304,7 @@ describe("agentSkillsetRuntime — describeDynamicToolBindings allowedSkillsetId
     "artifact.write",
     "artifact.read",
     "artifact.list",
-    // manager.* (kept skillset) — replaced fyimd.convert_text /
+    // manager.* (kept skillset) — replaced localdoc.convert_text /
     // skillset.runtime_summary / admin.smoke, whose skillsets were removed
     // 2026-06-17 (skillsets-as-data cleanup).
     "manager.agent_list",
@@ -334,7 +334,7 @@ describe("agentSkillsetRuntime — describeDynamicToolBindings allowedSkillsetId
     assert.ok(toolIds.has("artifact.read"));
     assert.ok(toolIds.has("artifact.list"));
     // Tools from other kept skillsets (manager). The previously-asserted
-    // fyimd.convert_text / skillset.runtime_summary / admin.smoke belonged to
+    // localdoc.convert_text / skillset.runtime_summary / admin.smoke belonged to
     // external-publishing / runtime-inspector-basic / directed-validation, all
     // removed 2026-06-17 (skillsets-as-data cleanup).
     assert.ok(toolIds.has("manager.agent_list"));

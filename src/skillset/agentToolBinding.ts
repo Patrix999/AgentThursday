@@ -82,7 +82,7 @@ export interface AgentToolBindingContext {
   }) => Promise<unknown>;
 }
 
-const M8_1 = "[M8.1 Developer Shell]";
+const M8_1 = "[Developer Shell]";
 
 const READ_INPUT_SUMMARY_CAP = 512;
 const READ_OUTPUT_SUMMARY_CAP = 256;

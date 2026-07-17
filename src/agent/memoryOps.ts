@@ -1,5 +1,5 @@
 /**
- * M8.9 Step 9 memory read-path extraction.
+ * Step 9 memory read-path extraction.
  *
  * Six memory read-side helpers pulled verbatim from `AgentThursdayAgent`
  * (`src/server.ts` lines ~1492–1529, 2904–2919, 5231–5260, 5287–5310,
@@ -974,7 +974,7 @@ export function listConsolidationRunsFree(host: MemoryReadHost, agentId: string,
   }
 }
 
-// ── M9.4 — semantic dedup (consolidation idempotency) ────────────────────────
+// ── semantic dedup (consolidation idempotency) ────────────────────────
 // Lexical dedup (substring/jaccard) misses LLM re-phrasings of the same fact, so
 // re-running consolidation kept promoting near-duplicates. Embed candidates +
 // existing memories (env.AI bge), and drop a candidate that's cosine-close to any
@@ -1025,7 +1025,7 @@ export function semanticDedupFilter(
 }
 
 /**
- * M9.4 — semantic recall ranking. `rows[i]` aligns with `rowVecs[i]` (the agent
+ * semantic recall ranking. `rows[i]` aligns with `rowVecs[i]` (the agent
  * embeds [query, ...row contents] in one bge-m3 batch). Score = max(key-exact 1.0,
  * cosine-scaled). The agent falls back to lexical `recallMemoryFree` if embedding
  * fails. Pure for testability.

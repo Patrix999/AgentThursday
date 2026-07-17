@@ -146,7 +146,7 @@ export async function handleCli(
   }
 
   // Context lifecycle (inspect + reset). See
-  // docs/milestones/M7.7-context-lifecycle-management.md. `context.new`
+  // docs/milestones/context-lifecycle-management.md. `context.new`
   // is deferred until Think SDK exposes traceable multi-thread sessions.
   if (url.pathname === "/cli/context/inspect" && request.method === "GET") {
     const lastNRaw = url.searchParams.get("lastN");
@@ -186,7 +186,7 @@ export async function handleCli(
     }
   }
 
-  // M7.7v3 new-context (v1 reset-style fallback). Closes
+  // new-context (v1 reset-style fallback). Closes
   // the active context_history row, opens a new one, clears messages.
   // Auth-gated via the global /cli/* requireSecret check above.
   if (url.pathname === "/cli/context/new" && request.method === "POST") {
@@ -334,7 +334,7 @@ export async function handleCli(
     }
   }
 
-  // M7.7v3 switch the active context to an existing
+  // switch the active context to an existing
   // context_history row. Registry-only (always DEMO_INSTANCE) so the
   // active pointer stays the single source of truth across requests.
   if (url.pathname === "/cli/context/switch" && request.method === "POST") {
@@ -404,7 +404,7 @@ export async function handleCli(
     return json(result);
   }
 
-  // M7.7 v2 Read-only context snapshot for anchor planning.
+  // v2 Read-only context snapshot for anchor planning.
   // Auth-gated by the global /cli/* requireSecret check above. No audit
   // row server-side; matches /cli/context/inspect's polling contract.
   if (url.pathname === "/cli/context/snapshot" && request.method === "GET") {
@@ -415,7 +415,7 @@ export async function handleCli(
     return json(result);
   }
 
-  // M7.7 v2 Read-only deterministic anchor classifier.
+  // v2 Read-only deterministic anchor classifier.
   // Same auth contract as /cli/context/snapshot.
   if (url.pathname === "/cli/context/anchors" && request.method === "GET") {
     const lastNRaw = url.searchParams.get("lastN");
@@ -429,7 +429,7 @@ export async function handleCli(
     return json(result);
   }
 
-  // M7.7 v2 Read-only compact-plan dry-run.
+  // v2 Read-only compact-plan dry-run.
   if (url.pathname === "/cli/context/compact-plan" && request.method === "POST") {
     let body: CompactPlanInput = {};
     try {
@@ -443,7 +443,7 @@ export async function handleCli(
     return json(result);
   }
 
-  // M7.7 v2 Explicit apply of a previously proposed plan.
+  // v2 Explicit apply of a previously proposed plan.
   // Pre-flight runs against a fresh snapshot per range.
   if (url.pathname === "/cli/context/apply-compact-plan" && request.method === "POST") {
     type ApplyBody = {

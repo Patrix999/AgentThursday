@@ -175,7 +175,7 @@ export function redactSecrets(content: string): {
     p.re.lastIndex = 0;
     if (p.re.test(content)) {
       return {
-        content: "[REDACTED:pem-private-key — file refused per M7.4 ADR §11]",
+        content: "[REDACTED:pem-private-key — file refused per ADR §11]",
         redactions: [{ offset: 0, length: content.length, kind: "pem-block" }],
         refusedWholeFile: true,
       };

@@ -5,7 +5,7 @@
  * No Discord/email adapter wiring in this card — only schema, storage, and
  * idempotent ingestion. an earlier revision+ wire actual transports.
  *
- * Boundary rationale (M7.3 review notes §1): kept as its own DO from day 1
+ * Boundary rationale (review notes §1): kept as its own DO from day 1
  * so AgentThursdayAgent's event_log isn't shared with channel events, and webhook
  * traffic patterns can scale independently of agent task patterns.
  */
@@ -839,7 +839,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
    * saveMessages never returned, the LLM's intended reply text was
    * never generated, so the round would otherwise leave the
    * conversation hanging without the `[envelope: env-...]` marker
-   * the M8.3 demo contract requires.
+   * the demo contract requires.
    *
    * This RPC enqueues a clearly-labeled fallback outbox row reusing
    * the channel/message context of the original inbound message
@@ -961,8 +961,8 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     `;
     if (rows.length === 0) return { ok: true, scanned: 0, bridgeMode: this.bridgeMode(), deliveries: [] };
 
-    const bridgeUrl = this.env.AGENT_THURSDAY_OPENCLAW_BRIDGE_URL;
-    const bridgeSecret = this.env.AGENT_THURSDAY_OPENCLAW_BRIDGE_SECRET;
+    const bridgeUrl = this.env.AGENT_THURSDAY_BRIDGE_URL;
+    const bridgeSecret = this.env.AGENT_THURSDAY_BRIDGE_SECRET;
     // bridge mode now also reflects direct Discord. Delegate to the
     // single-source-of-truth helper instead of hard-coding here.
     const bridgeMode = this.bridgeMode();
@@ -1004,7 +1004,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       let finalStatus: ChannelOutboxStatus = "sent";
       let errorOut: string | null = null;
 
-      // direct Discord delivery takes precedence over OpenClaw bridge
+      // direct Discord delivery takes precedence over bridge
       // when DISCORD_BOT_TOKEN is configured AND the row is for the discord
       // provider. Other providers (when they land) still go through bridge/dry-run.
       const useDirectDiscord = row.provider === "discord" && Boolean(this.env.DISCORD_BOT_TOKEN);
@@ -1261,7 +1261,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
 
   private bridgeMode(): "http" | "dry-run" | "discord-direct" {
     if (this.env.DISCORD_BOT_TOKEN) return "discord-direct";
-    if (this.env.AGENT_THURSDAY_OPENCLAW_BRIDGE_URL) return "http";
+    if (this.env.AGENT_THURSDAY_BRIDGE_URL) return "http";
     return "dry-run";
   }
 
@@ -1331,7 +1331,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * M9.2 (2026-06-26) — a conversation's stored `provider_channel_id`, for the
+   * (2026-06-26) — a conversation's stored `provider_channel_id`, for the
    * route-level tenant-ownership check (channel ∈ caller's BYO bots). Null when the
    * row is unknown or a pre-seed binding with no ingested channel yet — the caller
    * (canBind kernel) treats null as not-owned (fail closed).
@@ -1347,7 +1347,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * M9.2 (2026-06-26) — list conversations whose `provider_channel_id` is in
+   * (2026-06-26) — list conversations whose `provider_channel_id` is in
    * `channelIds`, with their current binding, for the user-app channel-binding UI.
    * `channelIds: null` = unfiltered (admin/operator). An empty array returns []
    * (a scoped caller with no BYO-bot channels owns no conversations). Caller is
@@ -1771,7 +1771,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * read-only M8.5 approval token inspect surface.
+   * read-only approval token inspect surface.
    *
    * Returns redacted approval rows from `agent_tool_approvals`. The
    * persisted secret material (`token_hash`) is never SELECTed; row
@@ -2161,7 +2161,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
 
   /**
    * approval-replay-driven apply with real dry-run + consume
-   * (M8.6 follow-up to an earlier revision's verify-only skeleton).
+   * (follow-up to an earlier revision's verify-only skeleton).
    *
    * Verifier-only callable. Drives the apply path with a real
    * `git apply --check` against a sandbox-resident shallow checkout —

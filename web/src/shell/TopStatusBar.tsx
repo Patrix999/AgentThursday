@@ -166,7 +166,7 @@ function DegradationBadge({ state }: { state: string | null }) {
   return (
     <span
       className={`text-xs px-2 py-0.5 rounded font-mono ${cls}`}
-      title={`Runtime degradation state: ${label} (M7.5 an earlier revision)`}
+      title={`Runtime degradation state: ${label} (an earlier revision)`}
     >
       deg: {label}
     </span>

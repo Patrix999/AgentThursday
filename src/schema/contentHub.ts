@@ -141,7 +141,7 @@ export type ContentCaller = { ownerUserId: string | null; isOperator: boolean };
 export const ContentSourceAuthModeSchema = z.enum(["public", "secret", "oauth", "mcp", "browser", "none"]);
 export type ContentSourceAuthMode = z.infer<typeof ContentSourceAuthModeSchema>;
 
-// M7.4 v2 explicit per-source capability declaration. Forward
+// v2 explicit per-source capability declaration. Forward
 // compatible: undefined `capabilities` on existing v1 sources is permitted
 // and treated as "all true" by callers that haven't adopted the field yet.
 // an earlier revision fan-out search will filter sources by `capabilities.search:true`

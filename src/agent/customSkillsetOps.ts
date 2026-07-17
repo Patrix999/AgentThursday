@@ -1,5 +1,5 @@
 /**
- * M9.0 manager-authored custom skillset storage.
+ * manager-authored custom skillset storage.
  *
  * Pure helpers backing the four CRUD @callable methods on the
  * registry DO (DEMO_INSTANCE), mirroring the shape of
@@ -338,7 +338,7 @@ export type DeleteCustomSkillsetResult =
  * 2026-06-19 — delete a custom skillset row. Owner-isolated like update: a
  * scoped caller that doesn't own the row reads as not_found (no existence
  * leak); admin (`scopeOwnerId === undefined`) can delete any row, including a
- * seeded system row whose embedded source has been removed (the fyimd
+ * seeded system row whose embedded source has been removed (the localdoc
  * external-publishing cleanup). Agents still referencing the id simply fall
  * back to their base tools — no cascade needed.
  */

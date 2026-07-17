@@ -263,7 +263,7 @@ export const BASE_SHA_RE = /^[a-f0-9]{40}$/i;
  *
  * Spec §B requires either reusing the artifact's tool_id or defining a
  * new one with explicit canonical input. an earlier revision chose the latter so
- * apply-vs-propose can be approved separately in M8.7+ without ambiguity.
+ * apply-vs-propose can be approved separately in + without ambiguity.
  */
 export const APPLY_TOOL_ID = "m8.6.apply_patch.v1";
 

@@ -1,5 +1,5 @@
 /**
- * M9.0 manager skillset core. Pure orchestration over the
+ * manager skillset core. Pure orchestration over the
  * registry-DO stub (and per-agent stubs for `sendAgentMessage`).
  * Both the HTTP route layer (`src/routes/managerRoutes.ts`) and the
  * dispatch adapters (`src/skillset/adapters/manager*.ts` via
@@ -274,7 +274,7 @@ interface RegistryStubSurface {
   // the latest workflow run for an agent (by root_agent_id),
   // owner-scoped, as a run→phases→agents tree. Powers the user-app flowchart.
   readLatestAgentWorkflowRun(input: { agent_id: string }, scopeOwnerId?: string): Promise<unknown | null>;
-  // 2026-06-19 — workspace file share (replaces fyimd). Owner-scoped reads
+  // 2026-06-19 — workspace file share (replaces localdoc). Owner-scoped reads
   // (undefined = admin/unfiltered); the user-facing routes pass the caller's
   // scope so a user only sees its own owner's shared files.
   listSharedFiles(scopeOwnerId?: string): Promise<unknown[]>;
@@ -652,7 +652,7 @@ export async function getAgentWorkflowRun(
 }
 
 /**
- * 2026-06-19 — workspace file share (replaces fyimd). Owner-scoped list of the
+ * 2026-06-19 — workspace file share (replaces localdoc). Owner-scoped list of the
  * caller's shared-file pool (metadata only). A scoped user sees only its own
  * owner's files; admin (operator console) sees all.
  */
@@ -1454,7 +1454,7 @@ export async function managerUpdateSkillset(
 
 /**
  * 2026-06-19 — delete a custom skillset row (owner-scoped). Admin (undefined
- * scope) may delete any, including a de-embedded system row (fyimd
+ * scope) may delete any, including a de-embedded system row (localdoc
  * external-publishing cleanup); a scoped user only its own (mismatch →
  * not_found, no existence leak).
  */
@@ -1491,7 +1491,7 @@ export type ManagerAgentMessageError =
   // an earlier revision D — distinct from `target_not_found`: input doesn't even
   // match the canonical `agent-<uuid>` shape, so the caller almost
   // certainly passed a display name / skillset name instead of the
-  // real agent_id (the M9.1 manager-bug shape from an earlier revision).
+  // real agent_id (the manager-bug shape from an earlier revision).
   | { code: "agent_not_found"; message: string }
   | { code: "agent_loop_timeout"; message: string }
   | { code: "internal"; message: string };

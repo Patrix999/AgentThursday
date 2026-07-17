@@ -1,5 +1,5 @@
 /**
- * M8.9 status/event views extraction.
+ * status/event views extraction.
  *
  * Six read-only status/event view helpers moved verbatim from
  * `AgentThursdayAgent` (`src/server.ts:2191-2316`). No SQL strings, table

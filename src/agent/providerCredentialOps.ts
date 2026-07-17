@@ -1,5 +1,5 @@
 /**
- * M9.3 multi-tenancy: provider-credential store, owner-scoped.
+ * multi-tenancy: provider-credential store, owner-scoped.
  *
  * Extracted from the inline `AgentThursdayAgent` @callables (an earlier revision) so the
  * tenant-isolation SQL routing is unit-testable with a fake sql host (server.ts

@@ -1,5 +1,5 @@
 /**
- * M7.4 v2 Local-fs / static docs ContentSource connector.
+ * v2 Local-fs / static docs ContentSource connector.
  *
  * an earlier revision design (`docs/design/2026-04-28-m7.4-v2-provider-selection.md`)
  * picked Local-fs as the v2 first additional provider. Implementation form:
@@ -43,7 +43,7 @@ const LOCAL_FS_FIXTURES: Readonly<Record<string, string>> = {
   "README.md": [
     "# AgentThursday Local Fixture (v2 abstraction validator)",
     "",
-    "This is the M7.4 v2 an earlier revision Local-fs connector fixture corpus.",
+    "This is the v2 an earlier revision Local-fs connector fixture corpus.",
     "It exists to prove ContentSource abstraction works for a non-GitHub",
     "provider (no network, no token, no rate limit, content-hash revision).",
     "",
@@ -56,7 +56,7 @@ const LOCAL_FS_FIXTURES: Readonly<Record<string, string>> = {
   "samples/hello.txt": "Hello from the AgentThursday local fixture.\nLine 2.\nLine 3.\n",
   "samples/config.json": JSON.stringify({
     name: "agentthursday-local-fixture",
-    purpose: "M7.4 v2 abstraction validator",
+    purpose: "v2 abstraction validator",
     revisionStrategy: "content-hash",
   }, null, 2) + "\n",
   "docs/local-fs-test.md": [

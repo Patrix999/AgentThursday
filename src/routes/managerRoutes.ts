@@ -1,5 +1,5 @@
 /**
- * M9.0 manager skillset HTTP surface.
+ * manager skillset HTTP surface.
  *
  * Routes (all under `/api/manager/`, all auth-gated by the umbrella
  * `/api/*` `requireSecret` in `src/server.ts`):
@@ -762,7 +762,7 @@ export async function handleManagerRoutes(
     }
   }
 
-  // ── /api/manager/shared-files (2026-06-19, replaces fyimd) ─────────────
+  // ── /api/manager/shared-files (2026-06-19, replaces localdoc) ─────────────
   // GET (owner-scoped metadata list) + GET /:id (serve file content). The :id
   // route is the target of the share link an agent pastes into chat; the
   // gateway injects the verified user id, so a user only opens its OWN files

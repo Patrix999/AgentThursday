@@ -1,7 +1,7 @@
 /**
  * Embedded skillset manifests — thin facade over the YAML codegen.
  *
- * an earlier revision M8.7 — `docs/skillsets/*.yaml` is the canonical source of
+ * an earlier revision `docs/skillsets/*.yaml` is the canonical source of
  * truth (ADR 2026-05-07 IM-1). The build-time codegen
  * (`scripts/generate-skillset-manifests.ts`) reads those YAMLs and
  * emits `src/skillset/generatedManifests.ts`, which this module

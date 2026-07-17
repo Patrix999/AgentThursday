@@ -1,5 +1,5 @@
 /**
- * M8.9 `getTools()` family extraction step 1: browser family F.
+ * `getTools()` family extraction step 1: browser family F.
  *
  * Per an earlier revision preflight §4, browser is the lowest-risk family — single
  * tool (`browse`), no SQL, no state mutation, no self-DO. Deps are

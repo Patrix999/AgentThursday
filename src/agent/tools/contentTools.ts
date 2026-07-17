@@ -1,5 +1,5 @@
 /**
- * M8.9 `getTools()` family extraction step 3: content
+ * `getTools()` family extraction step 3: content
  * family G (`content_sources`, `content_list`, `content_read`,
  * `content_search`).
  *

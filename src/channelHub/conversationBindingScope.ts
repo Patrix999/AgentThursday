@@ -1,5 +1,5 @@
 /**
- * M9.2 / 2026-06-26 — the tenant-isolation kernel for USER-side conversation→agent
+ * / 2026-06-26 — the tenant-isolation kernel for USER-side conversation→agent
  * binding ("补全 user 端"). Pure + exhaustively unit-tested because it is the whole
  * ballgame for this surface: a wrong answer is a cross-tenant leak.
  *

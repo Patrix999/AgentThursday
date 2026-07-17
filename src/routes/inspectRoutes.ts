@@ -453,7 +453,7 @@ export async function handleApiInspect(
     return json(InspectSnapshotSchema.parse(merged));
   }
 
-  // read-only loader state for the M8.1 static skillset
+  // read-only loader state for the static skillset
   // loader. Pure (no DO state); recomputed per request from the
   // embedded manifests so the inspect view always reflects the
   // currently deployed worker's view. V2 (tool_id ∈ contract
@@ -679,7 +679,7 @@ export async function handleApiInspect(
     return json({ generated_at: new Date().toISOString(), agent_id: agentIdParam, ...result });
   }
 
-  // M9.4 — semantic recall probe (operator-only). Runs the agent's recall tool
+  // semantic recall probe (operator-only). Runs the agent's recall tool
   // (now embedding-ranked) so the result is inspectable. No agent_id → active.
   if (url.pathname === "/api/inspect/memory/recall") {
     const query = url.searchParams.get("query") ?? "";
@@ -725,7 +725,7 @@ export async function handleApiInspect(
   // disable state and other runtime mutations are respected — see
   // `feedback_agent_surface_inspect_must_use_active_state`. The
   // classifier projects the contract registry, adapter dispatch
-  // registry, and legacy M8.1 safe-read surface into a five-state
+  // registry, and legacy safe-read surface into a five-state
   // `readiness` enum. The response never includes secret values; the
   // only field tied to secrets is `env_binding`, which is the binding
   // NAME (the value is never read here). Unknown tool ids return 404.
@@ -852,7 +852,7 @@ export async function handleApiInspect(
     return json({ error: "missing_param", expected: ["marker", "envelope_id", "conversation_id", "/<outbox_id>"] }, 400);
   }
 
-  // M8.5 approval token redacted inspect surface.
+  // approval token redacted inspect surface.
   //
   // Read-only. Auth gated by the global `requireSecret` on `/api/*`.
   // Returns rows from `agent_tool_approvals` with the persisted
@@ -896,7 +896,7 @@ export async function handleApiInspect(
     return json(result);
   }
 
-  // propose-patch artifact inspect surface (M8.6 reviewer/
+  // propose-patch artifact inspect surface (reviewer/
   // write-boundary ADR §D4). The propose POST stays in server.ts;
   // the read-only inspect GETs live here.
   //
@@ -934,7 +934,7 @@ export async function handleApiInspect(
     return json(result);
   }
 
-  // apply skeleton (M8.6 approval-replay-driven apply).
+  // apply skeleton (approval-replay-driven apply).
   // The apply-dry-run POST stays in server.ts; the read-only
   // patch-apply-events GETs live here.
   //

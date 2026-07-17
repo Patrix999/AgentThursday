@@ -1,5 +1,5 @@
 /**
- * Workspace file share — pure ops (2026-06-19, replaces fyimd external-publishing).
+ * Workspace file share — pure ops (2026-06-19, replaces localdoc external-publishing).
  *
  * A global agent capability: snapshot a single workspace file into the
  * registry-DO `shared_file` table so other agents of the SAME owner and the

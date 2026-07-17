@@ -4,8 +4,8 @@ import { z } from "zod";
  * ChannelHub envelopes & storage row schemas.
  *
  * Provider-agnostic. Discord-first but no schema field is Discord-specific.
- * See `docs/milestones/M7.3-multi-channel-communication-middle-layer.md`
- * and `docs/design/M7.3-review-notes.md`.
+ * See `docs/milestones/multi-channel-communication-middle-layer.md`
+ * and `docs/design/review-notes.md`.
  *
  * v1 P0 outbound is text-only — no `presentation.blocks/tone` (premature
  * pollution per review §5). Approval is reserved as a future `kind`

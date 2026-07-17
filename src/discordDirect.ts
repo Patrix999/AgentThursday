@@ -138,7 +138,7 @@ export type DirectFilterResult =
  *
  * Pure shape — exported for unit-style smoke from `applyDirectFilters`'s
  * call sites. Accepts a structurally-compatible input rather than
- * importing the full `OpenClawDiscordInbound` type to keep
+ * importing the full `BridgeDiscordInbound` type to keep
  * `discordDirect.ts` independent of `discordBridge.ts`.
  */
 export function deriveDirectFilterIsDm(payload: {

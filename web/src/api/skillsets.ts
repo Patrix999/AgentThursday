@@ -1,5 +1,5 @@
 /**
- * M9.0 Skillset Management UI client.
+ * Skillset Management UI client.
  *
  * Read-only wrappers around four existing inspect / runtime / options
  * endpoints. No new persistence, no mutation surface — see the card

@@ -6,10 +6,10 @@
  * and produces a capped, schema-validated `ActionUiIntent[]` view that
  * an earlier revision's frontend ActivityFeed consumes.
  *
- * v1 invariants (per kanban + M7.6 milestone red lines):
+ * v1 invariants (per kanban + milestone red lines):
  *   - **No persisted intent event** — derived fresh on every inspect read.
- *     Avoids schema churn cascading into M7.5 consumers .
- *   - **No model-declared `@component`** — that's M7.7+ P2; v1 only maps
+ *     Avoids schema churn cascading into consumers .
+ *   - **No model-declared `@component`** — that's + P2; v1 only maps
  *     known event types to a fixed set of component names.
  *   - **Raw payload hidden by default** — generic cards include only
  *     event type / timestamp / taskId / short summary. Tool events do

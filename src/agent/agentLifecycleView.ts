@@ -1,5 +1,5 @@
 /**
- * M9.0 agent lifecycle consensus rewrite v2.
+ * agent lifecycle consensus rewrite v2.
  *
  * Four-layer resolver that turns
  *
@@ -94,7 +94,7 @@ export interface AgentLifecycleView {
   parent_agent_id: string | null;
   parent_task_id: string | null;
 
-  /** M9.0 v1: always false. Reserved for future migration plane. */
+  /** v1: always false. Reserved for future migration plane. */
   migrating: boolean;
 }
 

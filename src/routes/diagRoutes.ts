@@ -1,7 +1,7 @@
 // `/api/diag/dispatch` route + helpers extracted from `server.ts`.
 //
 // Originally lived under `server.ts:8815-9033` (helpers) + `:10230-10280`
-// (inline route branch). Pattern follows M8.8 routes (`inspectRoutes`,
+// (inline route branch). Pattern follows routes (`inspectRoutes`,
 // `demoRoutes` etc.): single exported `handleDiagDispatch(...)`; helpers
 // stay file-internal. No behavior change — bodies were lifted verbatim,
 // only `env` reaches in via the function arg instead of fetch() closure.

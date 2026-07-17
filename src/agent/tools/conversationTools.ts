@@ -1,8 +1,8 @@
 /**
- * M8.9 `getTools()` family extraction step 2: conversation
+ * `getTools()` family extraction step 2: conversation
  * family H (`conversation_search`).
  *
- * M9.4 Track A (per-agent archive drain-to-self): the archive
+ * Track A (per-agent archive drain-to-self): the archive
  * search now reads the caller's OWN per-agent DO instead of RPC-ing the
  * registry (DEMO_INSTANCE). Each agent's `conversation_archive` lives on
  * its own DO (drain-to-self), so the DO injects `searchArchive` bound to its

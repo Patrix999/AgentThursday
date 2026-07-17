@@ -217,7 +217,7 @@ export type TruthfulnessClassification = {
 };
 
 /**
- * M9.4 (2026-06-25) — the side-effect-free CORE of the truthfulness gate.
+ * (2026-06-25) — the side-effect-free CORE of the truthfulness gate.
  *
  * Given the assistant `text`, the set of tools that ACTUALLY dispatched this
  * round (read by the caller from event_log), and the known tool list, return the
@@ -242,7 +242,7 @@ export function classifyTruthfulness(
   // an earlier revision Track B-4 — fenced ```json blocks: a model emitting a tool result
   // as text without dispatching is fabricating outside the tool-call frame.
   const fencedJsonCount = (text.match(/```json\b/gi) ?? []).length;
-  // M7.6 v3 — raw tool-call schema JSON in plain text (Kimi sporadically emits
+  // v3 — raw tool-call schema JSON in plain text (Kimi sporadically emits
   // `{"type":"function","name":"<known-tool>",...}` instead of a structured call).
   // Counted OUTSIDE fenced blocks so a fenced schema doesn't double-count.
   let rawSchemaCount = 0;
@@ -297,7 +297,7 @@ export function renderTruthfulnessWarning(fabricated: string[]): string {
 }
 
 /**
- * M7.6 v3 (2026-04-30) — render the user-visible warning when the
+ * v3 (2026-04-30) — render the user-visible warning when the
  * assistant emits tool-call-shaped JSON in plain text (fenced ```json
  * block or raw `{"type":"function","name":...}` schema) but no real
  * tool dispatch event was logged in the round. Distinct from the
@@ -322,7 +322,7 @@ export function renderOrchestrationFabricationWarning(): string {
 }
 
 /**
- * M9.4 (2026-06-25) — sentinel that prefixes a rework CORRECTION message
+ * (2026-06-25) — sentinel that prefixes a rework CORRECTION message
  * injected into the dialog. The model must read the correction, but it's an
  * internal reprimand, not real user input — so `getDialogTurns` skips any user
  * message starting with this marker, keeping synthetic corrections out of Track
@@ -334,7 +334,7 @@ export const TRUTHFULNESS_REWORK_SENTINEL = "[[agentthursday:truthfulness-rework
 export type TruthfulnessReworkAction = "rework" | "clean" | "warn-fallback" | "skip";
 
 /**
- * M9.4 — the pure per-iteration decision of the rework loop, extracted so the
+ * the pure per-iteration decision of the rework loop, extracted so the
  * SAFETY invariant is unit-testable without a DO/model. Given the current
  * attempt's state:
  *   - `skip`          — empty reply, nothing to judge → stop the loop.
@@ -358,7 +358,7 @@ export function decideTruthfulnessRework(args: {
 }
 
 /**
- * M9.4 — the corrective instruction fed back to the model when a turn fabricated
+ * the corrective instruction fed back to the model when a turn fabricated
  * a tool claim / inline-json result WITHOUT dispatching any real tool (the operator: "让
  * agent 返工，直到给出符合要求的结果"). Tells it exactly what was wrong and the two
  * acceptable fixes (actually call the tool, or drop the claim), then to reply

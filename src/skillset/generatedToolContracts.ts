@@ -3,7 +3,7 @@
 // Regenerate via: npm run tools:generate
 // CI guard:        npm run tools:check
 //
-// an earlier revision M8.8 — yaml → tool contract codegen.
+// an earlier revision yaml → tool contract codegen.
 // Output is unioned over the hand-written CONTRACTS array in
 // contractRegistry.ts at module load; duplicate tool_ids throw.
 
@@ -15,7 +15,7 @@ import type { ToolContract } from "./contractRegistry";
 export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
   ({
     "tool_id": "admin.smoke",
-    "description": "跑一个 allowlisted harmless admin smoke case，对真实 admin endpoint 做端到端验证；agentD 不直接接触 AGENT_THURSDAY_SHARED_SECRET（由 adapter 边界注入），返回结构化 evidence。an earlier revision case_id=sandbox-exec-printf 走 sandbox HTTP path；an earlier revision case_id=remember-ack-empty-fallback 走 in-process helper；an earlier revision 新增四个 cliStubProbe case_id（context-active-inspect-smoke / context-lifecycle-noop-smoke / compaction-plan-dry-run-smoke / archive-inspect-smoke）走 AgentThursdayAgent stub @callable，验证 M8.9 Step 6（an earlier revision–286）context/archive/compaction free function 抽取的行为保留；an earlier revision 新增 case_id=cli-status-dashboard-shape-smoke，走 adapter-side requireSecret 注入 + getDashboardCore 调用 + buildDashboardSectionFree 组合，返回 dashboard 六个 top-level key 的 presence booleans + outbox/patch-apply 的 kind 判别 + drift flag 名称白名单 + version 字段 presence。所有 case 都是 read-only 或 documented no-op；不会修改消息、archive、active pointer，不会触发 destructive lifecycle 操作。缺 env binding（Sandbox / AgentThursdayAgent / Secret）或 stub 方法抛错时回 `blocked`，不抛 503/500。",
+    "description": "跑一个 allowlisted harmless admin smoke case，对真实 admin endpoint 做端到端验证；agentD 不直接接触 AGENT_THURSDAY_SHARED_SECRET（由 adapter 边界注入），返回结构化 evidence。an earlier revision case_id=sandbox-exec-printf 走 sandbox HTTP path；an earlier revision case_id=remember-ack-empty-fallback 走 in-process helper；an earlier revision 新增四个 cliStubProbe case_id（context-active-inspect-smoke / context-lifecycle-noop-smoke / compaction-plan-dry-run-smoke / archive-inspect-smoke）走 AgentThursdayAgent stub @callable，验证 Step 6（an earlier revision–286）context/archive/compaction free function 抽取的行为保留；an earlier revision 新增 case_id=cli-status-dashboard-shape-smoke，走 adapter-side requireSecret 注入 + getDashboardCore 调用 + buildDashboardSectionFree 组合，返回 dashboard 六个 top-level key 的 presence booleans + outbox/patch-apply 的 kind 判别 + drift flag 名称白名单 + version 字段 presence。所有 case 都是 read-only 或 documented no-op；不会修改消息、archive、active pointer，不会触发 destructive lifecycle 操作。缺 env binding（Sandbox / AgentThursdayAgent / Secret）或 stub 方法抛错时回 `blocked`，不抛 503/500。",
     "dispatch_path": {
       "surface": "fetch_path",
       "identifier": "/api/dispatch/admin/smoke"
@@ -34,7 +34,7 @@ export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
             "archive-inspect-smoke",
             "cli-status-dashboard-shape-smoke"
           ],
-          "description": "允许的 smoke case id；闭合 enum。v1  提供 sandbox-exec-printf / remember-ack-empty-fallback；an earlier revision 新增四个 AgentThursdayAgent stub 探针 (context-active-inspect-smoke / context-lifecycle-noop-smoke / compaction-plan-dry-run-smoke / archive-inspect-smoke)，验证 M8.9 Step 6 free function 抽取的行为保留；an earlier revision 新增 cli-status-dashboard-shape-smoke，给 directed validation agent 一个安全的 /cli/status 等价 dashboard shape 探针（仅 read-only composition，不跑 sweepStaleDraftEnvelopes，不返回 raw payload）。"
+          "description": "允许的 smoke case id；闭合 enum。v1  提供 sandbox-exec-printf / remember-ack-empty-fallback；an earlier revision 新增四个 AgentThursdayAgent stub 探针 (context-active-inspect-smoke / context-lifecycle-noop-smoke / compaction-plan-dry-run-smoke / archive-inspect-smoke)，验证 Step 6 free function 抽取的行为保留；an earlier revision 新增 cli-status-dashboard-shape-smoke，给 directed validation agent 一个安全的 /cli/status 等价 dashboard shape 探针（仅 read-only composition，不跑 sweepStaleDraftEnvelopes，不返回 raw payload）。"
         }
       },
       "required": [

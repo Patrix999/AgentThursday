@@ -1,5 +1,5 @@
 /**
- * M9.1 observable workflow run model: pure ID derivation +
+ * observable workflow run model: pure ID derivation +
  * row → tree assembly for the workflow ledger.
  *
  * This module is intentionally pure (no DO, no env, no SQL) so the

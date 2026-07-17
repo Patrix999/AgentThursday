@@ -20,7 +20,7 @@
  *
  * first stateful adapter family (`artifact.*`) added the
  * optional 3rd `ctx` arg to `DispatchHandler.execute`; stateless
- * adapters (fyimd, runtime_summary) ignore it. Adding more stateless
+ * adapters (localdoc, runtime_summary) ignore it. Adding more stateless
  * tools still does not require touching dispatchRegistry /
  * agentDynamicTools.
  */

@@ -112,7 +112,7 @@ export const ContextResetResultSchema = z.object({
 });
 export type ContextResetResult = z.infer<typeof ContextResetResultSchema>;
 
-// M7.7v3 Context history / new-context (v1 reset-style fallback).
+// Context history / new-context (v1 reset-style fallback).
 // True multi-DO context switching is deferred to an earlier revision; v1 closes the
 // active context_history row, opens a new one with a fresh contextId, and
 // clears messages in the same DO. Old transcripts are NOT preserved (only
@@ -148,7 +148,7 @@ export const NewContextResultSchema = z.object({
   beforeMessageCount: z.number().int().nonnegative(),
   afterMessageCount: z.number().int().nonnegative(),
   preservedDurableState: z.boolean(),
-  // M7.7v3 per-context DO routing flips this to `true` for
+  // per-context DO routing flips this to `true` for
   // contexts created from v2 onwards. v1-era contexts (created before
   // routing was in place) are still flagged `false` in their original
   // audit rows because their raw transcripts were cleared in the
@@ -163,7 +163,7 @@ export const NewContextResultSchema = z.object({
 });
 export type NewContextResult = z.infer<typeof NewContextResultSchema>;
 
-// M7.7v3 switch active context to an existing context_history
+// switch active context to an existing context_history
 // id. Audit-only on the registry DO; per-context DOs continue to own
 // their messages independently. `previousContextId` may equal
 // `newContextId` if the operator switches to the already-active context
@@ -224,7 +224,7 @@ export const CompactionsListSchema = z.object({
 });
 export type CompactionsList = z.infer<typeof CompactionsListSchema>;
 
-// M7.7 v2 Context snapshot for anchor-aware planning. Mirrors
+// v2 Context snapshot for anchor-aware planning. Mirrors
 // `buildContextSnapshot` in `src/contextLifecycle.ts`. `parts` reuses the
 // passthrough an earlier revision schema so any future part shapes ride forward
 // without breaking the API. `compactedRanges` resolves message-ID
@@ -263,7 +263,7 @@ export const ContextSnapshotResultSchema = z.object({
 });
 export type ContextSnapshotResult = z.infer<typeof ContextSnapshotResultSchema>;
 
-// M7.7 v2 deterministic anchor classifier output. Per-message
+// v2 deterministic anchor classifier output. Per-message
 // classification (anchors AND non-anchors) so the planner can also see
 // which messages are NOT preserved. `reasons` is a list, not a single
 // label, so callers can audit every rule that fired.
@@ -302,7 +302,7 @@ export const ContextAnchorsResultSchema = z.object({
 });
 export type ContextAnchorsResult = z.infer<typeof ContextAnchorsResultSchema>;
 
-// M7.7 v2 compact plan / apply split. The plan is a read-only
+// v2 compact plan / apply split. The plan is a read-only
 // dry-run proposal of safe ID-based compaction ranges; apply takes a plan
 // back and re-runs all pre-flight checks against a fresh snapshot before
 // each `addCompaction` call. No automatic compaction; no LLM summary.
@@ -330,7 +330,7 @@ export const CompactPlanPreservedSchema = z.object({
   preview: z.string(),
 });
 
-// M7.7 v2 medium-tier anchors lifted into the compact
+// v2 medium-tier anchors lifted into the compact
 // summary. Optional + omitted when empty so older plans / clients
 // continue to parse cleanly.
 export const SummaryPreservedAnchorSchema = z.object({
@@ -377,7 +377,7 @@ export const CompactPlanResultSchema = z.object({
 });
 export type CompactPlanResult = z.infer<typeof CompactPlanResultSchema>;
 
-// M7.7 v2 semantic summary advisor audit. Optional + emitted
+// v2 semantic summary advisor audit. Optional + emitted
 // only when the advisor was invoked (input.semanticAdvisor === true on
 // apply). `qualityFlags` documents validator outcomes; `fallbackReason`
 // is null on success and populated when the deterministic summary was

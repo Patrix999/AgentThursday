@@ -1,5 +1,5 @@
 /**
- * Workspace file share — agent-facing tools (2026-06-19, replaces fyimd).
+ * Workspace file share — agent-facing tools (2026-06-19, replaces localdoc).
  *
  * Global capability (returned unconditionally from `getTools()`, so every
  * agent — operator or user-owned — has it). An agent shares a single file from

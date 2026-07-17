@@ -1,5 +1,5 @@
 /**
- * M8.9 `getTools()` family extraction step 4: core
+ * `getTools()` family extraction step 4: core
  * lifecycle family C (`review_project_status`, `write_checkpoint`,
  * `review_note`, `advance_kanban_card`).
  *

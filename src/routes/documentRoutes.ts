@@ -3,7 +3,7 @@ import { json } from "../httpUtil";
 import type { AgentThursdayAgent } from "../server";
 import { type RequestIdentity, ownerUserIdFor, scopeOwnerIdFor } from "../agent/requestIdentity";
 import { isCodeFile, isPlainTextFile, markdownForTextFile } from "../agent/documentContent";
-import { convertBinaryDocument, fyimdSubmit, isPdfOrOffice, type ConverterEnv } from "../agent/documentConverter";
+import { convertBinaryDocument, localdocSubmit, isPdfOrOffice, type ConverterEnv } from "../agent/documentConverter";
 
 /**
  * Card (2026-06-23) — user document upload routes (`/api/manager/documents`).
@@ -27,8 +27,8 @@ export interface AiMarkdown {
 export interface DocumentRoutesDeps {
   identity: RequestIdentity;
   getRegistryStub: () => Promise<AgentThursdayAgentStub>;
-  // 2026-06-25 — converter env: CF `toMarkdown` baseline + fyimd async queue for
-  // PDF/office (gated on FYIMD_API_KEY). Replaces the single `ai.toMarkdown` call.
+  // 2026-06-25 — converter env: CF `toMarkdown` baseline + localdoc async queue for
+  // PDF/office (gated on LOCALDOC_API_KEY). Replaces the single `ai.toMarkdown` call.
   convertEnv: ConverterEnv;
 }
 
@@ -75,17 +75,17 @@ export async function handleDocumentRoutes(
     if (bytes.byteLength > MAX_BYTES) return json({ code: "too_large", message: "file exceeds the 10 MB limit" }, 400);
     const mime = request.headers.get("content-type") || "application/octet-stream";
 
-    // PDF/office uploads route to fyimd's async queue — hard PDFs take minutes,
+    // PDF/office uploads route to localdoc's async queue — hard PDFs take minutes,
     // too long for a synchronous request (it would blow the gateway timeout).
-    // `fyimdSubmit` returns fast: a poll URL → record `processing` + return 202
+    // `localdocSubmit` returns fast: a poll URL → record `processing` + return 202
     // immediately (the markdown is filled lazily on the next list/read); inline
-    // markdown (a fast input fyimd finished synchronously) records like the rest.
-    // Non-PDF binaries + the fyimd-unavailable fallback use the CF baseline. (the operator:
+    // markdown (a fast input localdoc finished synchronously) records like the rest.
+    // Non-PDF binaries + the localdoc-unavailable fallback use the CF baseline. (the operator:
     // 改异步吧 没转换好之前给用户转圈.)
     let markdown: string | null = null;
-    if (isPdfOrOffice(mime) && deps.convertEnv.FYIMD_API_KEY) {
+    if (isPdfOrOffice(mime) && deps.convertEnv.LOCALDOC_API_KEY) {
       try {
-        const submit = await fyimdSubmit(deps.convertEnv, bytes, mime);
+        const submit = await localdocSubmit(deps.convertEnv, bytes, mime);
         if ("jsonUrl" in submit) {
           const sha256 = await sha256Hex(bytes);
           const stub = await deps.getRegistryStub();
@@ -100,9 +100,9 @@ export async function handleDocumentRoutes(
           if (!r.ok) return json({ code: r.code, message: r.message }, 500);
           return json({ ok: true, doc_id: r.doc_id, filename, status: "processing" }, 202);
         }
-        markdown = submit.done; // fast PDF fyimd finished inline
+        markdown = submit.done; // fast PDF localdoc finished inline
       } catch {
-        markdown = null; // fyimd unconfigured/outage → CF baseline below
+        markdown = null; // localdoc unconfigured/outage → CF baseline below
       }
     }
 
@@ -112,7 +112,7 @@ export async function handleDocumentRoutes(
           const text = new TextDecoder().decode(bytes);
           markdown = markdownForTextFile(filename, text);
         } else {
-          // CF `toMarkdown` baseline (images + the fyimd-down fallback for PDFs).
+          // CF `toMarkdown` baseline (images + the localdoc-down fallback for PDFs).
           const conv = await convertBinaryDocument({ env: deps.convertEnv, bytes, filename, mime });
           markdown = conv.markdown;
         }
@@ -135,7 +135,7 @@ export async function handleDocumentRoutes(
   // GET /api/manager/documents — list the owner's documents (metadata only).
   if (pathname === PREFIX && request.method === "GET") {
     const stub = await deps.getRegistryStub();
-    // Lazily resolve any of this owner's docs still on fyimd's queue before
+    // Lazily resolve any of this owner's docs still on localdoc's queue before
     // listing — the frontend polls this endpoint to animate the upload spinner,
     // so the poll itself converges the queue (no background DO timer to lose on
     // deploy; the durable `pending_ref` re-polls until done).

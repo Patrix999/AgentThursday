@@ -1,5 +1,5 @@
 /**
- * M8.5 approval token helpers.
+ * approval token helpers.
  *
  * Per `docs/adr/2026-05-09-m8.5-approval-replay-runtime-wire-up.md` and
  * approval tokens bind one approval decision to one tool dispatch:

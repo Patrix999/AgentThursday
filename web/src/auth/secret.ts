@@ -3,7 +3,7 @@
  *
  * Stored in localStorage so a refresh keeps you logged in. Cleared on 401.
  *
- * M7.7v3 `X-AgentThursday-Context-Id` header carries the active
+ * `X-AgentThursday-Context-Id` header carries the active
  * context for per-context DO routing. Stored in localStorage so the UI
  * remembers the active context across reloads. Cleared via
  * `clearActiveContextId()` if needed.

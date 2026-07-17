@@ -1,5 +1,5 @@
 /**
- * M9.0 AgentProfile storage helpers.
+ * AgentProfile storage helpers.
  *
  * Pure helpers (no `this`, no `env`, no `ctx`) backing the three
  * AgentProfile create/list/read @callable methods on `AgentThursdayAgent`.

@@ -6,7 +6,7 @@ import { useMemoryLayers, triggerConsolidation, type MemoryLayersView } from "./
  * memory layers + two cross-cutting concerns of the active agent with live
  * prod data, so the layered memory system is verifiable, not just described.
  * Most layers are usually empty today — that emptiness IS the current-state
- * evidence (memory adoption is the M9.4 gap).
+ * evidence (memory adoption is the gap).
  */
 function hasError(v: unknown): v is { error: string } {
   return typeof v === "object" && v !== null && "error" in v;
@@ -81,7 +81,7 @@ export function MemoryLayersPanel() {
             onClick={onConsolidate}
             disabled={running}
             className="text-[11px] px-2 py-0.5 rounded bg-indigo-800/70 hover:bg-indigo-700 text-indigo-100 disabled:opacity-50"
-            title="Run LLM memory extraction → promote durable memories (M9.4 an earlier revision). Operator agents write; scoped users dry-run."
+            title="Run LLM memory extraction → promote durable memories (an earlier revision). Operator agents write; scoped users dry-run."
           >
             {running ? "consolidating…" : "↻ Run consolidation"}
           </button>
@@ -112,7 +112,7 @@ export function MemoryLayersPanel() {
           <Kv k="fact / instr" v={`${mem.fact} / ${mem.instruction}`} dim={memTotal === 0} />
           <Kv k="event / task" v={`${mem.event} / ${mem.task}`} dim={memTotal === 0} />
           <Kv k="inactive" v={mem.inactive} dim />
-          {memTotal === 0 && <div className="text-amber-400/80 text-[11px] mt-1">empty — agents aren't calling remember yet (M9.4 adoption gap)</div>}
+          {memTotal === 0 && <div className="text-amber-400/80 text-[11px] mt-1">empty — agents aren't calling remember yet (adoption gap)</div>}
           {/* the memories themselves, not just counts. */}
           <MemList label="facts" items={d.L3_agent_memories.recentFacts} />
           <MemList label="instructions" items={d.L3_agent_memories.recentInstructions} />

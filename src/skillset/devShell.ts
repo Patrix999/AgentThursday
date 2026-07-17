@@ -1,5 +1,5 @@
 /**
- * M8.1 an earlier revision + 184a — Developer Shell read + git inspect dispatcher.
+ * an earlier revision + 184a — Developer Shell read + git inspect dispatcher.
  *
  * Read-only surface only:
  *   - repo.read / repo.glob / repo.grep    (workspace SDK backend)
@@ -67,7 +67,7 @@ export interface DispatchContext {
   traceId?: string | null;
   /**
    * Optional workspace backend. When omitted, repo.* tools fall back
-   * to the M8.1 v1 stub return shape (used in unit tests).
+   * to the v1 stub return shape (used in unit tests).
    */
   workspace?: WorkspaceReadBackend;
   /**
@@ -484,7 +484,7 @@ async function realRepoPrepare(
   };
 }
 
-// ── Stub fallbacks (M8.1 v0; preserved for unit tests) ──────────────
+// ── Stub fallbacks (v0; preserved for unit tests) ──────────────
 
 function stubReadFile(path: string) {
   return { content: `# stub for ${path}`, size_bytes: 0, truncated: false };

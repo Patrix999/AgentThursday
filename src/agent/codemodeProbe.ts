@@ -1,4 +1,4 @@
-// first M8.9 extraction.
+// first extraction.
 // `AgentThursdayAgent.codemodeProbe` previously lived inline in `src/server.ts`.
 // The free function below holds the verbatim body; `AgentThursdayAgent.codemodeProbe`
 // is now a thin delegate that constructs a minimal host shim and calls

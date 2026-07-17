@@ -6,7 +6,7 @@
  * and future an earlier revision (`recommendedAction` derivation) read these profiles
  * to interpret runtime signals against an explicit baseline.
  *
- * v1 invariants (per kanban + M7.5 milestone red lines):
+ * v1 invariants (per kanban + milestone red lines):
  *   - This module does NOT route, retry, switch, pause, or score models.
  *   - Profiles are engineering facts and observed risks, not global
  *     intelligence rankings.
@@ -66,7 +66,7 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
       streamingToolCalls: "risky",
     },
     knownRisks: [
-      "Streaming finish_reason may be absent at end of stream; workers-ai-provider flush() can reject the round as `stream-truncated` (M7.4 saga 2026-04-28; nine hypotheses to localize).",
+      "Streaming finish_reason may be absent at end of stream; workers-ai-provider flush() can reject the round as `stream-truncated` (saga 2026-04-28; nine hypotheses to localize).",
       "Tool calls may be emitted as inline JSON inside assistant text rather than the structured toolCalls field, bypassing dispatch entirely (an earlier revision e2e 2026-04-29).",
       "When the inline-JSON pattern occurs, an earlier revision logs `tool.truthfulness.violation` with `category=fabricated-claim` but no structured tool dispatch happens, so an earlier revision's structural reasons (`tool_calls_present_but_not_dispatched`, `finish_reason_missing`) do not always fire on this exact path.",
     ],
@@ -85,7 +85,7 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
     },
     knownRisks: [
       "No production-grade ModelProfile-shaped evidence collected as of 2026-04-29.",
-      "Llama family streaming finish_reason regression (M7.4 saga 2026-04-28) may apply; treat with the same conservatism as Llama Scout until validated against an earlier revision supplier.signal.summary baseline.",
+      "Llama family streaming finish_reason regression (saga 2026-04-28) may apply; treat with the same conservatism as Llama Scout until validated against an earlier revision supplier.signal.summary baseline.",
     ],
     recommendedUse: [
       "Treat capability as unknown until evidence collected.",

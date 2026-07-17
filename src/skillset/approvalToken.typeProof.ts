@@ -1,8 +1,8 @@
 /**
- * an earlier revision OQ7 — type-level proof that the current evidence envelope
+ * an earlier revision Type — type-level proof that the current evidence envelope
  * accepts `evidence.approval_decision` as a closed-set member.
  *
- * an earlier revision ADR OQ7 asks: does the existing envelope schema admit an
+ * an earlier revision ADR Type asks: does the existing envelope schema admit an
  * `approval_decision` evidence entry, or do we need a separate an earlier revision
  * schema patch? This module is the proof: the literal below typechecks
  * iff `EvidenceData` has an `approval_decision?: ApprovalDecisionEvidence[]`
@@ -71,7 +71,7 @@ const _approvalEntryRefVariant: ApprovalDecisionEvidence = {
   expires_at: "2026-05-09T00:20:00.000Z",
 };
 
-export const __OQ7_PROOF__ = {
+export const __Type_PROOF__ = {
   envelope: _envelope,
   ref_variant: _approvalEntryRefVariant,
 } as const;

@@ -1,5 +1,5 @@
 /**
- * M8.9 inspect/debug views extraction.
+ * inspect/debug views extraction.
  *
  * Four read-only inspect/debug/usage view helpers moved verbatim from
  * `AgentThursdayAgent` (`src/server.ts:2239-2547`). No SQL strings, table

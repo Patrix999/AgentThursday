@@ -19,7 +19,7 @@ import type { AgentThursdayAgent } from "../server";
 import { scopeOwnerIdFor, type RequestIdentity } from "../agent/requestIdentity";
 
 /**
- * M9.0 AgentProfile create / list / read routes.
+ * AgentProfile create / list / read routes.
  *
  * Storage is on the DEMO_INSTANCE registry DO (global config); the
  * composition root resolves it via `deps.getRegistryStub()` so this

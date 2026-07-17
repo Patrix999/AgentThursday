@@ -30,7 +30,7 @@
  *   - no extension to new endpoints without editing CASE_ALLOWLIST
  *     AND docs/tools/admin.smoke.0.1.0.yaml's case_id enum.
  *
- * M8.9 Step 5 aggregate validation surface gap. Step 6
+ * Step 5 aggregate validation surface gap. Step 6
  * (an earlier revision–286) extracted context/archive/compaction surfaces from
  * `AgentThursdayAgent` into free functions on `src/agent/{archiveOps,
  * compactionOps,contextOps}.ts`. The byte-equivalent extraction needs
@@ -486,7 +486,7 @@ async function getCanonicalActiveStubForProbe(
   // Mirror `getCanonicalActiveContextDoName` semantics without
   // requiring a real Request: ask the registry for the active
   // pointer, then build a stub against that DO name. If the registry
-  // itself is the canonical active (default in M8.9 deployments),
+  // itself is the canonical active (default in deployments),
   // both stubs target the same DO.
   const registry = await getRegistryStub(env);
   let name = DEMO_INSTANCE;

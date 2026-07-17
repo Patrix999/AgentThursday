@@ -1,7 +1,7 @@
 /**
- * Discord/OpenClaw bridge inbound adapter.
+ * Discord/bridge inbound adapter.
  *
- * Accepts a narrow, OpenClaw-friendly Discord payload (NOT raw Discord JSON
+ * Accepts a narrow, Bridge-friendly Discord payload (NOT raw Discord JSON
  * as our canonical schema), normalizes it into `ChannelMessageEnvelope`, and
  * computes addressed signals before persistence. Per an earlier revision §A-3, raw
  * Discord JSON is not the contract — only this documented shape.
@@ -26,10 +26,10 @@ import type {
 } from "./schema";
 
 /**
- * The contract OpenClaw must produce. Documented + zod-validated so a drift
+ * The contract Bridge must produce. Documented + zod-validated so a drift
  * on the bridge side is visible at the AgentThursday boundary, not silently swallowed.
  */
-export const OpenClawDiscordInboundSchema = z.object({
+export const BridgeDiscordInboundSchema = z.object({
   // Identity (Discord ids — keep as opaque strings)
   guildId: z.string().nullable().optional(),
   channelId: z.string().min(1),
@@ -62,13 +62,13 @@ export const OpenClawDiscordInboundSchema = z.object({
   // Optional debug pointer; clamped to RAW_REF_MAX before storage.
   rawSnippet: z.string().optional(),
 });
-export type OpenClawDiscordInbound = z.infer<typeof OpenClawDiscordInboundSchema>;
+export type BridgeDiscordInbound = z.infer<typeof BridgeDiscordInboundSchema>;
 
 /**
  * Pick the chat type, preferring an explicit bridge value, then `isDm`,
  * then guild presence. Group is not auto-detected — bridge must mark it.
  */
-function deriveChatType(input: OpenClawDiscordInbound): ChannelChatType {
+function deriveChatType(input: BridgeDiscordInbound): ChannelChatType {
   if (input.chatType === "dm") return "dm";
   if (input.chatType === "group") return "group";
   if (input.chatType === "channel") return "channel";
@@ -84,7 +84,7 @@ function deriveChatType(input: OpenClawDiscordInbound): ChannelChatType {
 }
 
 async function deriveConversationId(
-  input: OpenClawDiscordInbound,
+  input: BridgeDiscordInbound,
   chatType: ChannelChatType,
   botId: string | null,
 ): Promise<string> {
@@ -112,7 +112,7 @@ async function deriveConversationId(
  * Casual chatter without any of the above ⇒ addressedToAgent:false.
  */
 function deriveAddressing(
-  input: OpenClawDiscordInbound,
+  input: BridgeDiscordInbound,
   chatType: ChannelChatType,
   botId: string | null,
 ): { addressedToAgent: boolean; addressedSignals: string[] } {
@@ -135,7 +135,7 @@ function deriveAddressing(
   return { addressedToAgent: signals.length > 0, addressedSignals: signals };
 }
 
-function normalizeAttachments(input: OpenClawDiscordInbound): ChannelAttachment[] {
+function normalizeAttachments(input: BridgeDiscordInbound): ChannelAttachment[] {
   return (input.attachments ?? []).map((a) => ({
     id: a.id,
     kind: classifyAttachmentKind(a.contentType, a.name),
@@ -166,11 +166,11 @@ function classifyAttachmentKind(
 }
 
 /**
- * Normalize an OpenClaw Discord payload into the an earlier revision envelope.
+ * Normalize an Bridge Discord payload into the an earlier revision envelope.
  * Bot id may be null (env unset); §D-19 guarantees graceful behavior.
  */
-export async function normalizeOpenClawPayload(
-  input: OpenClawDiscordInbound,
+export async function normalizeBridgePayload(
+  input: BridgeDiscordInbound,
   env: { AGENT_THURSDAY_DISCORD_BOT_ID?: string },
 ): Promise<ChannelMessageEnvelope> {
   const botId = env.AGENT_THURSDAY_DISCORD_BOT_ID && env.AGENT_THURSDAY_DISCORD_BOT_ID.length > 0

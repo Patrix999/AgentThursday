@@ -1,5 +1,5 @@
 /**
- * M8.1 tool contract registry.
+ * tool contract registry.
  *
  * Authority: docs/design/m8-tool-contract-tier-policy-v0.md (176).
  *
@@ -8,7 +8,7 @@
  * intentionally absent so the loader's V2 check rejects research-stub
  * (per 181a + 182 verification path).
  *
- * Every contract here has `implemented: false` for M8.1 — registry
+ * Every contract here has `implemented: false` for registry
  * exists at the contract layer, but no runtime dispatch yet. 184/185/
  * 186 will flip individual tools to `implemented: true` as they ship.
  *
@@ -485,8 +485,8 @@ const CONTRACTS: ToolContract[] = [
   },
 
   // --- T3 external network callable ---
-  // an earlier revision migrated `fyimd.convert_text` out of this hand-written
-  // array into `docs/tools/fyimd.convert_text.0.1.0.yaml`. The YAML
+  // an earlier revision migrated `localdoc.convert_text` out of this hand-written
+  // array into `docs/tools/localdoc.convert_text.0.1.0.yaml`. The YAML
   // is unioned in via `GENERATED_TOOL_CONTRACTS` below; the merge
   // throws on duplicate tool_ids so the YAML and TS surfaces never
   // silently diverge.
@@ -684,7 +684,7 @@ export const TOOL_CONTRACTS: ReadonlyMap<string, ToolContract> = REGISTRY;
 
 /**
  * Set of registered tool_ids — used by the loader for V2 validation.
- * 替代 M8.1 v0 的 STUB_KNOWN_TOOL_IDS hand-list；研究系工具
+ * 替代 v0 的 STUB_KNOWN_TOOL_IDS hand-list；研究系工具
  * (web.search / web.fetch / pdf.read) 不在此集，确保 research-stub
  * 在 V2 处仍然 load_rejected。
  */

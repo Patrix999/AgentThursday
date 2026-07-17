@@ -33,7 +33,7 @@
     "@types/react": "^18.2.0",
     "@types/ws": "^8.5.0",
     "typescript": "^5.5.0",
-    "wrangler": "^4.93.0"
+    "wrangler": "~4.93.0"
   },
   "overrides": {
     "react": "^18.2.0",

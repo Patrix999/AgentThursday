@@ -11,7 +11,7 @@ import type {
 import { getDebugReadonlyNotice } from "../debugSurfaceMode";
 
 /**
- * M7.7v3 context identity summary. Renders the active
+ * context identity summary. Renders the active
  * contextId + creation reason at the top of FutureActions so the
  * operator can see which logical context they are operating on.
  * Refreshes on `agentthursday:context:compacted` (the same event the legacy

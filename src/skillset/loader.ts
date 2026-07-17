@@ -1,12 +1,11 @@
 /**
- * M8.1 minimum static skillset loader.
+ * minimum static skillset loader.
  *
  * Reads embedded manifests, runs 175 V1/V3/V4/V5 invariants and the
  * SOUL token budget guard from ADR 2026-05-07 IM-3 + Flag 1, and
  * returns a `LoaderState` that mirrors ADR 179 IM-2 cache shape.
  *
- * V2 (tool_id ∈ 176 contract registry) is delegated to 183. M8.1
- * accepts an optional `knownToolIds` set; tool_ids outside that set
+ * V2 (tool_id ∈ 176 contract registry) is delegated to 183. * accepts an optional `knownToolIds` set; tool_ids outside that set
  * trigger `v2_missing_tool_contract` errors but do not crash the
  * loader. When `knownToolIds` is omitted the V2 check is skipped
  * entirely (skeleton mode).
@@ -37,7 +36,7 @@ export interface LoadOptions {
 /**
  * Approximate token estimate. We can't ship a real tokenizer in a
  * Worker (size + cold-start cost), and the cap is conservative
- * (1000 / 3000) so a heuristic is acceptable for M8.1. M8.2 fabric
+ * (1000 / 3000) so a heuristic is acceptable for . fabric
  * may upgrade to a Worker-friendly tokenizer.
  *
  * Heuristic: ~4 characters per token, with separate accounting for

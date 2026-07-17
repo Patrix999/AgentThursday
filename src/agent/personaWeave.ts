@@ -1,4 +1,4 @@
-// M9.0 persona-weave composition helper.
+// persona-weave composition helper.
 //
 // Pure helper that turns an `AgentProfile.persona` string (already
 // persisted by an earlier revision) into the system-prompt block consumed by the

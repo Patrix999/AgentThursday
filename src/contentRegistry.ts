@@ -45,7 +45,7 @@ const AGENTTHURSDAY_GITHUB_SOURCE: ContentSource = {
     "dist",
     "web/dist",
   ],
-  // M7.4 v2 explicit capability declaration. GitHub provider
+  // v2 explicit capability declaration. GitHub provider
   // supports the full read/list/search/health quad (an earlier revision + 109).
   capabilities: {
     read: true,
@@ -55,7 +55,7 @@ const AGENTTHURSDAY_GITHUB_SOURCE: ContentSource = {
   },
 };
 
-// M7.4 v2 Local-fs / static docs ContentSource.
+// v2 Local-fs / static docs ContentSource.
 //
 // an earlier revision design (`docs/design/2026-04-28-m7.4-v2-provider-selection.md`)
 // chose Local-fs as the v2 first additional provider to validate
@@ -70,7 +70,7 @@ const AGENTTHURSDAY_GITHUB_SOURCE: ContentSource = {
 const AGENT_THURSDAY_LOCAL_FIXTURE_SOURCE: ContentSource = {
   id: "agentthursday-local-fixture",
   provider: "local-fs",
-  label: "AgentThursday Local Fixture (M7.4 v2 abstraction validator)",
+  label: "AgentThursday Local Fixture (v2 abstraction validator)",
   scope: "fixture",
   access: "read",
   authMode: "none",
@@ -78,7 +78,7 @@ const AGENT_THURSDAY_LOCAL_FIXTURE_SOURCE: ContentSource = {
   // the worker source). deniedPaths kept empty since the fixture corpus
   // contains no secrets by construction. Path policy still rejects `..`,
   // `\\`, null bytes via the connector's normalizePath.
-  // M7.4 v2 Local-fs provider supports read + list + health
+  // v2 Local-fs provider supports read + list + health
   // only. Search is explicitly false: `_doSearch` returns a fail-loud
   // "search not implemented for provider: local-fs" error rather than any
   // silent fallback. an earlier revision fan-out reads this field to skip local-fs.

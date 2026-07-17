@@ -1,5 +1,5 @@
 /**
- * M7.1 an earlier revision §E-15 — dev-time DOM leak scanner.
+ * an earlier revision §E-15 — dev-time DOM leak scanner.
  *
  * Scans `document.body.innerText` on the user-layer routes (`/`) for inspect
  * blacklist strings. If any match, console.warn with the offending substring

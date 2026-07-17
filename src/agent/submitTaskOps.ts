@@ -1,4 +1,4 @@
-// M8.9 Step 10/11 — helper-only extraction of submitTask() phases A-S.
+// Step 10/11 — helper-only extraction of submitTask() phases A-S.
 // Pure deciders/builders; no DO/this/IO access. Composition lives in
 // server.ts `submitTask()`; this module is the byte-equivalent decision
 // surface that submitTask() consults at each phase boundary.
@@ -107,7 +107,7 @@ export function decideResumeShortCircuit(
   return { paused: false, isExplicitResume };
 }
 
-// M8.9 Step 10 helper-only extraction of submitTask() phase B
+// Step 10 helper-only extraction of submitTask() phase B
 // (task identity decision) and phase C (turn-scope state reset).
 //
 // Phase B byte-equivalent contract (an earlier revision §Behavior contracts):
@@ -187,7 +187,7 @@ export function buildTurnScopeResetPatch(): TurnScopeResetPatch {
   };
 }
 
-// M8.9 Step 10 helper-only extraction of submitTask() phase S
+// Step 10 helper-only extraction of submitTask() phase S
 // finally-block seal derivation. Computes the read-only-safe 6-flag AND,
 // dispatch counts, and `_finalizeTaskTurn` opts. Pure: no `this`/IO/await.
 //
@@ -282,7 +282,7 @@ export function deriveSubmitTaskSealOpts(input: SealOptsInput): SealOptsDecision
   };
 }
 
-// M8.9 Step 11 phase H reply assembly chain helper. Sequences
+// Step 11 phase H reply assembly chain helper. Sequences
 // the three reply-mutating steps that run between raw model output and
 // the user-visible reply:
 //
@@ -338,7 +338,7 @@ export function applyReplyAssemblyChain(
   };
 }
 
-// M8.9 Step 11 prompt-side intent guard decision helper.
+// Step 11 prompt-side intent guard decision helper.
 // Combines an earlier revision (gate-intent reply finalization guard),
 // an earlier revision (read-intent detection), and an earlier revision (mutation-intent
 // detection) into a single decision builder. Output is a decision
@@ -545,7 +545,7 @@ export function buildPromptIntentGuardDecision(
   };
 }
 
-// M8.9 Step 11 visible reply safety helper.
+// Step 11 visible reply safety helper.
 //
 // Extracts the an earlier revision/e visible-recovery override and the an earlier revision
 // unwrapped-mutation prepend from submitTask() into one pure decision.
@@ -755,7 +755,7 @@ export function buildVisibleReplySafetyDecision(
   };
 }
 
-// M8.9 Step 12 an earlier revision pre-finalize positive gate-intent
+// Step 12 an earlier revision pre-finalize positive gate-intent
 // autodispatch guard. Helper-only decision/plan extraction. Orchestrator
 // retains all host-owned side effects:
 //   - outer try/catch + `tool.gate_intent.guard.error` log

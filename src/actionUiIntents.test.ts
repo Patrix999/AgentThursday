@@ -406,7 +406,7 @@ describe("buildActionUiIntents — safety / leak invariants", () => {
 
   it("non-manager tool.* rows still fall through to generic mapper", () => {
     const intent = singleIntent([
-      row("tool.fyimd.convert_text.dispatch", { tool: "fyimd.convert_text" }),
+      row("tool.localdoc.convert_text.dispatch", { tool: "localdoc.convert_text" }),
     ]);
     assert.equal(intent.type, "generic.tool_event");
     assert.equal(intent.component.name, "GenericToolEventCard");

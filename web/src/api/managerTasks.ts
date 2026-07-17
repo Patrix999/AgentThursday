@@ -1,5 +1,5 @@
 /**
- * M9.1 manager merge UI v1.
+ * manager merge UI v1.
  *
  * Typed client for `GET /api/manager/tasks/:task_id/merge` (an earlier revision
  * reader). Mirrors `agentProfiles.ts`:

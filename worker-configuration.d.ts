@@ -45,34 +45,34 @@ interface Env {
   // external host process. Host-side `scripts/discord-gateway-runner.ts`
   // remains as the documented fallback.
   DiscordGatewayAgent: DurableObjectNamespace;
-  // AgentThursday-side Discord identity for the OpenClaw bridge inbound.
+  // AgentThursday-side Discord identity for the Bridge bridge inbound.
   // Used to compute DM conversation id and to detect `<@id>` mention in content
   // when the bridge does not pre-flag `mentionsBot`. Optional: missing id
   // produces conservative addressedToAgent:false except DM (per an earlier revision §D-19).
   AGENT_THURSDAY_DISCORD_BOT_ID?: string;
   // outbound delivery + approval cards.
-  //   AGENT_THURSDAY_OPENCLAW_BRIDGE_URL    : optional. If set, deliverPendingOutbound
+  //   AGENT_THURSDAY_BRIDGE_URL    : optional. If set, deliverPendingOutbound
   //                                  POSTs to this URL. If unset, dry-run mode
   //                                  (logs payload + marks sent without network).
-  //   AGENT_THURSDAY_OPENCLAW_BRIDGE_SECRET : optional. Sent as X-AgentThursday-Bridge-Secret on
+  //   AGENT_THURSDAY_BRIDGE_SECRET : optional. Sent as X-AgentThursday-Bridge-Secret on
   //                                  the bridge call so the bridge can verify AgentThursday.
   //   AGENT_THURSDAY_APPROVAL_ALLOW_ALWAYS  : "true" enables the `always` scope on
   //                                  approval cards. Off by default per an earlier revision
   //                                  §C-13 — the always button is hidden in card
   //                                  text and resolve downgrades it to `session`.
-  AGENT_THURSDAY_OPENCLAW_BRIDGE_URL?: string;
-  AGENT_THURSDAY_OPENCLAW_BRIDGE_SECRET?: string;
+  AGENT_THURSDAY_BRIDGE_URL?: string;
+  AGENT_THURSDAY_BRIDGE_SECRET?: string;
   AGENT_THURSDAY_APPROVAL_ALLOW_ALWAYS?: string;
   // dedicated HMAC key for M8.5 approval token signing.
   // Preferred over AGENT_THURSDAY_SHARED_SECRET; the shared secret remains a
   // migration / dev fallback (logged on the row via key_id) so existing
   // rows stay verifiable. Set in production via `wrangler secret put`.
   AGENT_THURSDAY_APPROVAL_HMAC_KEY?: string;
-  // direct Discord adapter (no OpenClaw dependency).
+  // direct Discord adapter (no Bridge dependency).
   //   DISCORD_BOT_TOKEN          : SECRET, required for direct REST send.
   //                                When set, channel_outbox rows for
   //                                provider="discord" go via Discord REST
-  //                                instead of OpenClaw bridge / dry-run.
+  //                                instead of Bridge bridge / dry-run.
   //   DISCORD_PUBLIC_KEY         : Application public key (hex). Required
   //                                for verifying signatures on the public
   //                                /discord/interactions endpoint.

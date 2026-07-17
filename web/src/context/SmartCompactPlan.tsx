@@ -7,7 +7,7 @@ import { compactPlan, applyCompactPlan } from "../api/contextActions";
 import { getDebugReadonlyNotice } from "../debugSurfaceMode";
 
 /**
- * M7.7 v2 Anchor-aware compact plan preview UI.
+ * v2 Anchor-aware compact plan preview UI.
  *
  * Sits inside ContextPanel's "Future actions" alongside the legacy
  * an earlier revision CompactAction. Two-step flow: preview a plan, then explicit
@@ -89,7 +89,7 @@ export function SmartCompactPlan({ actionsEnabled = true }: { actionsEnabled?: b
       <div className="flex items-center gap-2 text-[11px] text-slate-300">
         <span className="font-semibold">Smart compact plan</span>
         <span className="text-[10px] text-sky-400/80 italic">
-          M7.7 v2 — anchor-aware, explicit apply
+          v2 — anchor-aware, explicit apply
         </span>
       </div>
       <p className="mt-1 text-[10px] text-slate-500">

@@ -168,7 +168,7 @@ export const TYPECHECK_PHASES: ReadonlyArray<{
   //
   // Purpose: surface diagnostic evidence on production typecheck
   // timeouts. an earlier revision was opened after production root phase hit
-  // exit 124 / 600s on M8.9 Step 5 aggregate validation while local
+  // exit 124 / 600s on Step 5 aggregate validation while local
   // root tsc finishes in 2.91s — i.e. it is a sandbox-side
   // amplification, not a local type-graph regression. the operator's
   // directive: do NOT continue bumping the 600s root budget; instead
@@ -583,7 +583,7 @@ export const GATE_DEP_REQUIREMENTS: Record<
  * `npm ci`. It's deterministic and skips dependency resolution.
  *
  * 190f: when the subdir has NO tracked lockfile (the AgentThursday
- * repo's M8.0 manifest denylists `package-lock.json` so production
+ * repo's manifest denylists `package-lock.json` so production
  * checkouts never have one), use `npm install` with
  * `--no-package-lock` so npm doesn't waste time generating /
  * writing a lockfile. This matches the clean-deploy workflow that

@@ -1,5 +1,5 @@
 /**
- * M9.0 Subagent Artifact Summary Aggregation v1.
+ * Subagent Artifact Summary Aggregation v1.
  *
  * Pure helpers — no DO, no env, no SQL. The DO @callable wrappers in
  * `src/server.ts` and the manager adapter in

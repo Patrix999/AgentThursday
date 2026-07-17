@@ -28,15 +28,15 @@ export interface UploadedDocRow {
   sha256: string;
   r2_key: string;
   preview: string;
-  // 2026-06-25 async upload: 'done' (markdown in R2) | 'processing' (fyimd queue,
-  // markdown not yet fetched) | 'failed'. `pending_ref` is the fyimd poll URL while
+  // 2026-06-25 async upload: 'done' (markdown in R2) | 'processing' (localdoc queue,
+  // markdown not yet fetched) | 'failed'. `pending_ref` is the localdoc poll URL while
   // processing; null otherwise. Existing rows back-fill to 'done' (column DEFAULT).
   status: string;
   pending_ref: string | null;
   created_at: string;
 }
 
-/** Listing/search shape exposed to the tool + UI (no owner id, no r2 key, no fyimd url). */
+/** Listing/search shape exposed to the tool + UI (no owner id, no r2 key, no localdoc url). */
 export interface UploadedDocMeta {
   doc_id: string;
   filename: string;
@@ -70,7 +70,7 @@ export function listDocuments(host: DocOpsHost, scopeOwnerId?: string): Uploaded
       `;
 }
 
-/** Processing rows (fyimd queue not yet drained) for one owner — the resolve loop's input. */
+/** Processing rows (localdoc queue not yet drained) for one owner — the resolve loop's input. */
 export function listPendingDocuments(host: DocOpsHost, scopeOwnerId?: string): UploadedDocRow[] {
   return scopeOwnerId === undefined
     ? host.sql<UploadedDocRow>`SELECT * FROM uploaded_document WHERE status = 'processing'`
@@ -82,7 +82,7 @@ export function markDocumentResolved(host: DocOpsHost, docId: string, charCount:
   host.sql`UPDATE uploaded_document SET status = 'done', char_count = ${charCount}, preview = ${preview}, pending_ref = NULL WHERE doc_id = ${docId} AND status = 'processing'`;
 }
 
-/** Mark a processing row failed (fyimd error / TTL expiry) so it stops spinning. */
+/** Mark a processing row failed (localdoc error / TTL expiry) so it stops spinning. */
 export function markDocumentFailed(host: DocOpsHost, docId: string): void {
   host.sql`UPDATE uploaded_document SET status = 'failed', pending_ref = NULL WHERE doc_id = ${docId} AND status = 'processing'`;
 }

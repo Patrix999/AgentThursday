@@ -36,7 +36,7 @@ import type { AgentThursdayAgent } from "../server";
  * `server.ts` reads.
  */
 
-// M7.7v3 per-context DO routing. Reads `X-AgentThursday-Context-Id`
+// per-context DO routing. Reads `X-AgentThursday-Context-Id`
 // from the request header and uses it as the DO instance name.
 //
 // header semantics tightened for the "single active session

@@ -10,7 +10,7 @@
  *      localStorage; survives reload; suppresses the canonical-pointer
  *      reconcile in `useWorkspace` so the user's choice isn't undone.
  *   2. `storedAgentId` — last-known `agentthursday.contextId` cache (set by
- *      the M7.7v3 reconcile flow). Used as fallback when no explicit
+ *      the reconcile flow). Used as fallback when no explicit
  *      pin is present.
  *   3. First agent in `agents` — sensible default when neither prior
  *      key matches anything currently visible.

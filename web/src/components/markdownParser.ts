@@ -1,5 +1,5 @@
 /**
- * M7.8 an earlier revision — JSX-free markdown parser.
+ * an earlier revision — JSX-free markdown parser.
  *
  * an earlier revision originally lived as part of `MarkdownText.tsx`. The
  * verifier  found that pulling the parser into the

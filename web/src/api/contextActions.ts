@@ -53,7 +53,7 @@ export async function fetchCompactions(): Promise<CompactionsList | null> {
 }
 
 /**
- * M7.7 v2 anchor-aware plan / apply pair. `compactPlan`
+ * v2 anchor-aware plan / apply pair. `compactPlan`
  * proposes ID-based ranges built from a fresh snapshot + anchors;
  * `applyCompactPlan` re-runs all pre-flight checks against a fresh
  * snapshot before each `addCompaction`. Both helpers return the
@@ -83,7 +83,7 @@ export function applyCompactPlan(
 }
 
 /**
- * M7.7v3 UI-driven reset. Wraps `POST /cli/context/reset`.
+ * UI-driven reset. Wraps `POST /cli/context/reset`.
  * Server emits a `context.reset` audit row with before/after counts and
  * preserves all durable state (memory, checkpoints, workspace, event_log,
  * task metadata, model profile). UI must confirm before calling — this
@@ -94,7 +94,7 @@ export function resetContext(body: { reason?: string }) {
 }
 
 /**
- * M7.7v3 an earlier revision — `new context`. an earlier revision promotes the call
+ * an earlier revision — `new context`. an earlier revision promotes the call
  * from the v1 reset-style fallback into real per-context DO routing:
  * the previous context's transcripts stay on its own DO; the new
  * contextId routes to a fresh DO via the `X-AgentThursday-Context-Id` header.
@@ -119,7 +119,7 @@ export async function newContext(body: { reason?: string }) {
 }
 
 /**
- * M7.7v3 switch the active context to an existing
+ * switch the active context to an existing
  * context_history row. Server validates the contextId, updates the
  * registry pointer, and emits a `context.switch` audit event.
  *

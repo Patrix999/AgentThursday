@@ -20,7 +20,7 @@ import {
   DIALOG_FALLBACK_PER_MSG_CHAR_CAP,
 } from "./agentConstants";
 
-// M7.7v3 fresh context id. Crypto-random when available
+// fresh context id. Crypto-random when available
 // (Cloudflare Workers expose `crypto.randomUUID`); falls back to a
 // time + random base-36 hash for the unlikely no-crypto path so the id
 // remains unique for audit purposes.

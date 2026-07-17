@@ -1,5 +1,5 @@
 /**
- * M9.2 / 2026-06-26 — tenant-isolation kernel for per-user (BYO) content sources.
+ * / 2026-06-26 — tenant-isolation kernel for per-user (BYO) content sources.
  *
  * Pure + exhaustively tested because it decides WHICH content-source ids a caller
  * may name. This is ONE of two independent gates for BYO GitHub:

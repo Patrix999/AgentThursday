@@ -33,7 +33,7 @@ const TONE_BG: Record<SegmentTone, string> = {
 };
 
 /**
- * M7.9 an earlier revision/i/j — context indicator rail.
+ * an earlier revision/i/j — context indicator rail.
  *
  *   - Full height represents the model's max context window (when known).
  *   - Used area is drawn from the bottom: system overhead, dialog

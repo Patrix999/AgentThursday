@@ -7,8 +7,7 @@ import type { AgentThursdayAgent } from "../server";
  * `POST /api/admin/codemode-probe` route extracted from
  * `src/server.ts`.
  *
- * Body lifted verbatim from the original inline branch (was M7.3
- * an earlier revision):
+ * Body lifted verbatim from the original inline branch (was * an earlier revision):
  *   - Codemode self-probe. Bypasses the model loop; calls
  *     `executor.execute("return 1+1", [])` directly so reviewers get
  *     ground truth about whether `execute` is registered + functional.

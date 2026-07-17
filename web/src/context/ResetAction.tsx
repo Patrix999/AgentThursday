@@ -14,7 +14,7 @@ type ResetStage =
 const DEFAULT_RESET_REASON = "manual-ui-reset";
 
 /**
- * M7.7v3 confirmation-gated reset action. The destructive
+ * confirmation-gated reset action. The destructive
  * nature of reset is shown explicitly: the confirmation copy lists what
  * is cleared (transient model-visible messages, token counters) and
  * what is preserved (durable memory, checkpoints, workspace, event_log,
@@ -64,7 +64,7 @@ export function ResetAction({ totalMessageCount, actionsEnabled }: { totalMessag
       <div className="flex items-center gap-2 text-[11px] text-slate-300">
         <span className="font-semibold">Reset transient context</span>
         <span className="text-[10px] text-rose-400/80 italic">
-          M7.7v3 — destructive · audit-logged · durable state preserved
+          destructive · audit-logged · durable state preserved
         </span>
       </div>
       <p className="mt-1 text-[10px] text-slate-500">

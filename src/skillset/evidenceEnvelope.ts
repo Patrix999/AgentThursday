@@ -81,7 +81,7 @@ export interface GateLogEvidence {
 }
 
 /**
- * M8.5 approval decision evidence entry.
+ * approval decision evidence entry.
  *
  * Carried inside `EvidenceData.approval_decision` so verifier replay
  * can read the audit trail of an approval (who decided, when, signature
@@ -339,7 +339,7 @@ export class EnvelopeStore {
    * - 295e fires only when execution is entirely empty.
    * - 382 C also fires when execution has read-only tools (e.g. only
    *   `repo.read`/`repo.glob`) but no mutation tool — the subagent
-   *   "looked but never wrote", which the M9.1 dogfood revealed as the
+   *   "looked but never wrote", which the dogfood revealed as the
    *   dominant failure shape. Precedence: ranks above
    *   `mutation_intent_no_execution` (subsumes the empty case),
    *   below `mutation_intent_unwrapped_execution` (supplier-side leak is
@@ -402,7 +402,7 @@ export class EnvelopeStore {
     // Previously the seal contract only validated ring presence and
     // fabrication, so a `gate.build` that hit `tsc: not found` (exit
     // 127, phases=[]) could still produce `verdict=pass`, which broke
-    // the M8.3 demo contract: "the build gate failed but the envelope
+    // the demo contract: "the build gate failed but the envelope
     // says pass". Canonical signal is `evidence.gate_logs[].exit_code`
     // — that's the seal-time persisted record, not the in-flight
     // execution[].tool_result.output payload.
@@ -476,7 +476,7 @@ export class EnvelopeStore {
         // an earlier revision B — a real `repo.write` / `repo.patch` landed in the
         // execution ring (so this is NOT "looked but never wrote"), yet
         // the evidence ring is empty: no gate_logs. The agent mutated the
-        // worktree but never ran a gate to verify it (the M9.1 381 dogfood
+        // worktree but never ran a gate to verify it (the 381 dogfood
         // shape — narrated "I'll run typecheck" without a real gate call).
         // Emit a dedicated reason so verifiers can distinguish "wrote but
         // didn't verify" from `missing_mutation_evidence` (never wrote) and
@@ -490,7 +490,7 @@ export class EnvelopeStore {
     } else if (mutationToolsExpected && !hasMutationToolInExecution) {
       // an earlier revision C — execution ring has tool calls (so missing-rings
       // didn't fire), but none of them are mutation tools. The subagent
-      // "looked but never wrote" — the M9.1 dogfood's dominant failure
+      // "looked but never wrote" — the dogfood's dominant failure
       // shape. Hard gate.
       verdict = "fail";
       reason = "missing_mutation_evidence";

@@ -54,7 +54,7 @@ export interface ConsolidationRun {
   created_at: number;
 }
 
-/** POST the consolidation trigger (M9.4 an earlier revision). Returns the ledger entry. */
+/** POST the consolidation trigger (an earlier revision). Returns the ledger entry. */
 export async function triggerConsolidation(): Promise<Record<string, unknown>> {
   const res = await fetch("/api/inspect/memory/consolidate", { method: "POST", headers: authHeaders() });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

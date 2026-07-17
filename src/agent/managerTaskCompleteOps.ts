@@ -1,5 +1,5 @@
 /**
- * M9.1 `manager.task.completed` emitter v1.
+ * `manager.task.completed` emitter v1.
  *
  * Structured completion-record emitter the manager calls AFTER its
  * normal `replied` terminal (and optionally a an earlier revision `task_merge`

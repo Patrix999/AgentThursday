@@ -1,5 +1,5 @@
 /**
- * FTS5 conversation-archive search (M9.4 Phase 2).
+ * FTS5 conversation-archive search (Phase 2).
  *
  * The LIKE search (an earlier revision, crash-fixed by 466) is substring matching with
  * no relevance ranking; long Chinese natural-language queries degrade to one

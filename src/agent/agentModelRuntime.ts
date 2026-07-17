@@ -1,4 +1,4 @@
-// M9.0 AgentProfile model runtime routing.
+// AgentProfile model runtime routing.
 //
 // `MODEL_CONTEXT_REGISTRY` (src/contextWindowRegistry.ts) is
 // context-window metadata only. The presence of a key there does NOT
@@ -83,7 +83,7 @@ export interface AgentRuntimeModelOption {
 }
 
 const ENTRIES: readonly AgentRuntimeModelEntry[] = [
-  // Workers AI — the only runnable provider in M9.0 v1.
+  // Workers AI — the only runnable provider in v1.
   {
     id: "kimi-k2.6",
     label: "Kimi K2.6 (Workers AI)",

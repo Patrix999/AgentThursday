@@ -16,7 +16,7 @@
  *                                surface fetch_path, handler bound,
  *                                runtime tool_id present
  *   - `legacy_direct`            contract present, implemented, but
- *                                surfaced via M8.1 legacy direct wiring
+ *                                surfaced via legacy direct wiring
  *                                (do_method) rather than dynamic registry
  *   - `contract_only_no_handler` contract present, implemented, but
  *                                neither dynamic handler nor legacy wiring
@@ -73,7 +73,7 @@ const LEGACY_DIRECT_SURFACE_NAMES: ReadonlySet<string> = new Set([
 /**
  * Hand-coded `getTools()` entries that are not part of the safe-read
  * legacy surface, but also have no canonical contract registry entry.
- * These appear in `AgentThursdayAgent.getTools()` via the M8.9 per-family
+ * These appear in `AgentThursdayAgent.getTools()` via the per-family
  * builder spreads (an earlier revision-276):
  *
  *   - `browserTools.ts`       → `browse`
@@ -246,7 +246,7 @@ export function classifyTool(toolId: string, ctx: ClassifyToolCtx): InspectToolR
       ...base,
       readiness: "legacy_direct",
       reason:
-        "Contract implemented; surfaced through legacy M8.1 safe-read direct wiring rather than the dynamic registry.",
+        "Contract implemented; surfaced through legacy safe-read direct wiring rather than the dynamic registry.",
     };
   }
 

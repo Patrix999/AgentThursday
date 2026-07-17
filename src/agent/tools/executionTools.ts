@@ -1,5 +1,5 @@
 /**
- * M8.9 `getTools()` family extraction step 6 (final): execute
+ * `getTools()` family extraction step 6 (final): execute
  * family D (`execute`).
  *
  * Per an earlier revision preflight §4 split order this is the sixth and last step
@@ -31,9 +31,9 @@
  * `loader` (= `env.LOADER`) the IIFE actually uses — passing the full
  * `env` would widen the Host surface unnecessarily.
  *
- * agent-facing `sandbox_exec` tool removed for the M8.3 demo
+ * agent-facing `sandbox_exec` tool removed for the demo
  * surface. The agent runtime is read/verify only: read/git workspace
- * tools + fixed `gate.build` / `gate.typecheck` via the M8.1 dispatcher.
+ * tools + fixed `gate.build` / `gate.typecheck` via the dispatcher.
  * Arbitrary shell (pwd / ls / git clone / find /, /opt/agentthursday/prewarm-*
  * probes) was leaking into demo envelopes and breaking the showcase
  * contract. The admin `/api/sandbox/exec` endpoint in `server.ts` stays

@@ -1,10 +1,10 @@
 /**
- * 175 schema TypeScript types — minimum surface for M8.1 loader.
+ * 175 schema TypeScript types — minimum surface for loader.
  * Authority: docs/design/m8-skillset-manifest-schema-v0.md
  *
  * Detail-level fields (input_contract / output_contract / per-tier
  * approval overrides etc.) are typed as `unknown` here and validated
- * at load time by 183 contract registry; M8.1 skeleton only enforces
+ * at load time by 183 contract registry; skeleton only enforces
  * the structural skeleton needed for V1/V3/V4/V5 invariants.
  */
 

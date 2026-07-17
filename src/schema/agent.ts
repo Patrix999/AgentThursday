@@ -16,14 +16,14 @@ import { DegradationDiagnosticsSchema } from "./degradation";
  *   ---------------------------------|------------------------|-------------------------------------
  *   taskObject (TaskObject)          | M2 task lifecycle      | TaskView
  *   cliSession (CliSession)          | M3 cli session         | SessionView
- *   lastActionResult (ActionResult)  | M1.3 action result     | ArtifactView (kind="actionResult")
+ *   lastActionResult (ActionResult)  | action result     | ArtifactView (kind="actionResult")
  *   developerLoopReview              | M2 reviewer            | summary text → MessageView (kind="summary")
  *                                    |                        | + traces → TraceEvent[] (inspect)
- *   pendingToolApproval              | M5.1 tool approval     | ApprovalView (kind="tool")
+ *   pendingToolApproval              | tool approval     | ApprovalView (kind="tool")
  *   pendingKanbanMutations[]         | M2 mutation            | ApprovalView (kind="mutation")
- *   debugTrace.recentToolEvents[]    | M5.1 trace             | ToolEvent[] (inspect only)
- *   debugTrace.lastLadderTier        | M6.1 ladder            | TaskView.ladderTier + .ladderReason
- *   debugTrace.lastAssistantSummary  | M5.1                   | MessageView (kind="assistant")
+ *   debugTrace.recentToolEvents[]    | trace             | ToolEvent[] (inspect only)
+ *   debugTrace.lastLadderTier        | ladder            | TaskView.ladderTier + .ladderReason
+ *   debugTrace.lastAssistantSummary  | | MessageView (kind="assistant")
  *   deliverableGate.deliverable      | M2 deliverable         | ArtifactView (kind="deliverable")
  *
  * an earlier revision user-layer reads only:
@@ -282,11 +282,11 @@ export const MemorySnapshotSchema = z.object({
 });
 export type MemorySnapshot = z.infer<typeof MemorySnapshotSchema>;
 
-// M9.0 AgentProfile shape (per design doc §4). Closed-list
+// AgentProfile shape (per design doc §4). Closed-list
 // validation for `model` and `skillset` happens at the route layer
 // (registry / yaml-manifest lookups) — kept out of this schema so it
 // stays import-cycle-free.
-// M9.0 lifecycle consensus rewrite. Four-layer model:
+// lifecycle consensus rewrite. Four-layer model:
 //   lifecycle persisted: initialized | archived | deleted_marker
 //   runtime derived:       healthy | running | stale
 //   policy flags:           accepts_tasks | dispatch_priority | retention_policy
@@ -325,7 +325,7 @@ export const AgentProfileSchema = z.object({
 export type AgentProfile = z.infer<typeof AgentProfileSchema>;
 
 /**
- * M9.0 agent-centric naming correction. The user-facing
+ * agent-centric naming correction. The user-facing
  * concept is **Agent** (a cloud agent instance), not "profile". The
  * underlying persisted row schema is unchanged; new code that wants to
  * speak the corrected vocabulary should import `Agent`.

@@ -1,5 +1,5 @@
 /**
- * M8.9 onStart migrations / startup schema noise extraction.
+ * onStart migrations / startup schema noise extraction.
  *
  * Pulled verbatim from `AgentThursdayAgent.onStart()` in `src/server.ts` so the
  * composition-root file shrinks toward a thin orchestrator. No DDL
@@ -17,13 +17,13 @@
  *      pair, same as before)
  *   2. memory_knowledge, review_notes, checkpoints, kanban_mutations
  *      (initial CREATE only)
- *   3. agent_memories + 2 indexes (M7.2 an earlier revision)
- *   4. context_history + index, context_active (M7.7v3 an earlier revision)
+ *   3. agent_memories + 2 indexes (an earlier revision)
+ *   4. context_history + index, context_active (an earlier revision)
  *   5. conversation_archive + 2 indexes, conversation_archive_flushes
- *      + index (M7.8 an earlier revision)
- *   6. conversation_retrieval_log + index (M7.8 an earlier revision)
- *   7. context_hygiene_runs + index (M7.8 an earlier revision)
- *   8. envelope_snapshots + index (M8.3 an earlier revision)
+ *      + index (an earlier revision)
+ *   6. conversation_retrieval_log + index (an earlier revision)
+ *   7. context_hygiene_runs + index (an earlier revision)
+ *   8. envelope_snapshots + index (an earlier revision)
  *   9. skillset_disabled 
  *  10. kanban_mutations PRAGMA + 3 ALTERs (status / applied_at /
  *      evidence) — runs AFTER step 2's CREATE, exactly as before.
@@ -146,7 +146,7 @@ export async function runAgentMigrations(host: AgentMigrationHost): Promise<void
       updated_at INTEGER NOT NULL
     )
   `;
-  // M7.7v3 an earlier revision — context_history: one row per logical
+  // an earlier revision — context_history: one row per logical
   // context (open or closed). an earlier revision added the queries; the DDL was
   // dropped during the an earlier revision commit so a fresh DO would fail on
   // first query. Carrying both DDLs forward together (idempotent).
@@ -163,7 +163,7 @@ export async function runAgentMigrations(host: AgentMigrationHost): Promise<void
     )
   `;
   sql`CREATE INDEX IF NOT EXISTS idx_context_history_ended ON context_history(ended_at)`;
-  // M7.7v3 single-row pointer to the registry's active
+  // single-row pointer to the registry's active
   // contextId. CHECK (id=1) enforces uniqueness so we can do
   // INSERT OR REPLACE without juggling multiple rows. Lives only on
   // the registry DO (DEMO_INSTANCE); per-context DOs create the table
@@ -314,7 +314,7 @@ export async function runAgentMigrations(host: AgentMigrationHost): Promise<void
       reason TEXT
     )
   `;
-  // M9.0 AgentProfile storage.
+  // AgentProfile storage.
   // Stored on the DEMO_INSTANCE registry DO (global config, not
   // per-context). Defaults match an earlier revision §4 first-slice:
   // persona stored but not yet consumed; status="ready" so newly
@@ -336,7 +336,7 @@ export async function runAgentMigrations(host: AgentMigrationHost): Promise<void
       updated_at TEXT NOT NULL
     )
   `;
-  // M9.0 manager custom skillsets. Stored on the same
+  // manager custom skillsets. Stored on the same
   // DEMO_INSTANCE registry DO as agent_profile because skillset
   // definitions are global config visible to every per-context DO
   // that resolves an agent's effective skillset. id is the manifest
@@ -356,7 +356,7 @@ export async function runAgentMigrations(host: AgentMigrationHost): Promise<void
       updated_at TEXT NOT NULL
     )
   `;
-  // M9.0 AgentRun durable row. Pairs run_id ↔
+  // AgentRun durable row. Pairs run_id ↔
   // workflow_instance_id on the registry DO so a run is inspectable
   // after Cloudflare's workflow backplane purges its own state
   // (paid-tier retention is finite; the DO row outlives it). Status
@@ -376,7 +376,7 @@ export async function runAgentMigrations(host: AgentMigrationHost): Promise<void
       updated_at TEXT NOT NULL
     )
   `;
-  // M9.1 observable workflow run model. Structured ledger for
+  // observable workflow run model. Structured ledger for
   // a manager-led multi-subagent dispatch, written by the dispatch path
   // (record-only; no execution change). v1 "run" = one manager dispatch
   // invocation: `run_id = wfr-<parent_task_id>` is the observation
@@ -485,7 +485,7 @@ export async function runAgentMigrations(host: AgentMigrationHost): Promise<void
       sql`ALTER TABLE provider_credential ADD COLUMN enabled_models_json TEXT`;
     }
   }
-  // M9.3 user-product multi-tenancy groundwork (ADDITIVE ONLY;
+  // user-product multi-tenancy groundwork (ADDITIVE ONLY;
   // no behavior change in this card — enforcement lands in 426b/c).
   //   · agent_profile / discord_bot gain `owner_user_id`. A constant
   //     NOT NULL DEFAULT backfills every existing row to the admin sentinel
@@ -702,7 +702,7 @@ export async function runAgentMigrations(host: AgentMigrationHost): Promise<void
     )
   `;
   sql`CREATE UNIQUE INDEX IF NOT EXISTS app_user_provider_sub ON app_user(provider, sub)`;
-  // 2026-06-19 — workspace file share (replaces fyimd external-publishing).
+  // 2026-06-19 — workspace file share (replaces localdoc external-publishing).
   // A global agent capability: an agent snapshots a single workspace file into
   // this OWNER-SCOPED registry-DO table so (a) other agents of the same owner
   // and (b) the owner user can read it. There is deliberately NO public column
@@ -823,10 +823,10 @@ export async function runAgentMigrations(host: AgentMigrationHost): Promise<void
     )
   `;
   sql`CREATE INDEX IF NOT EXISTS uploaded_document_owner ON uploaded_document(owner_user_id, created_at)`;
-  // 2026-06-25 — async upload (fyimd queue). A PDF/office upload that fyimd routes
+  // 2026-06-25 — async upload (localdoc queue). A PDF/office upload that localdoc routes
   // to its async queue is recorded as `processing` with the poll URL in
   // `pending_ref`; it flips to `done` (markdown written to R2) when a later list /
-  // read lazily re-polls fyimd. Additive ALTER (no DROP) — existing rows back-fill
+  // read lazily re-polls localdoc. Additive ALTER (no DROP) — existing rows back-fill
   // to `done` via the DEFAULT, so old synchronous uploads keep working unchanged.
   const udCols = sql<{ name: string }>`PRAGMA table_info(uploaded_document)`;
   if (!udCols.some(c => c.name === "status")) {
