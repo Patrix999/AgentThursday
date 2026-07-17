@@ -4,7 +4,7 @@
  * Pure module: no Workers/DO imports. Importable from Node smoke tests
  * (see `scripts/contentHub-smoke.ts`) and from the `ContentHubAgent` DO.
  *
- *  will replace the hardcoded array with dynamic DO state once
+ * an earlier revision will replace the hardcoded array with dynamic DO state once
  * provider configuration moves out of build-time constants.
  */
 
@@ -24,7 +24,7 @@ const AGENTTHURSDAY_GITHUB_SOURCE: ContentSource = {
   authMode: "secret",
   defaultRef: "main",
   // Allow list = subtrees the agent should be able to read.
-  //  enforces this list before each network fetch.
+  // an earlier revision enforces this list before each network fetch.
   allowedPaths: [
     "src/",
     "docs/",
@@ -45,8 +45,8 @@ const AGENTTHURSDAY_GITHUB_SOURCE: ContentSource = {
     "dist",
     "web/dist",
   ],
-  //  v2  — explicit capability declaration. GitHub provider
-  // supports the full read/list/search/health quad (Cards 108 + 109).
+  // M7.4 v2 explicit capability declaration. GitHub provider
+  // supports the full read/list/search/health quad (an earlier revision + 109).
   capabilities: {
     read: true,
     list: true,
@@ -55,9 +55,9 @@ const AGENTTHURSDAY_GITHUB_SOURCE: ContentSource = {
   },
 };
 
-//  v2  — Local-fs / static docs ContentSource.
+// M7.4 v2 Local-fs / static docs ContentSource.
 //
-//  design (``)
+// an earlier revision design (`docs/design/2026-04-28-m7.4-v2-provider-selection.md`)
 // chose Local-fs as the v2 first additional provider to validate
 // `ContentSourceConnector` abstraction with a non-GitHub I/O / auth /
 // revision model. Implementation: hardcoded fixture map shipped in
@@ -70,7 +70,7 @@ const AGENTTHURSDAY_GITHUB_SOURCE: ContentSource = {
 const AGENT_THURSDAY_LOCAL_FIXTURE_SOURCE: ContentSource = {
   id: "agentthursday-local-fixture",
   provider: "local-fs",
-  label: "agentthursday Local Fixture ( v2 abstraction validator)",
+  label: "AgentThursday Local Fixture (M7.4 v2 abstraction validator)",
   scope: "fixture",
   access: "read",
   authMode: "none",
@@ -78,10 +78,10 @@ const AGENT_THURSDAY_LOCAL_FIXTURE_SOURCE: ContentSource = {
   // the worker source). deniedPaths kept empty since the fixture corpus
   // contains no secrets by construction. Path policy still rejects `..`,
   // `\\`, null bytes via the connector's normalizePath.
-  //  v2  — Local-fs provider supports read + list + health
+  // M7.4 v2 Local-fs provider supports read + list + health
   // only. Search is explicitly false: `_doSearch` returns a fail-loud
   // "search not implemented for provider: local-fs" error rather than any
-  // silent fallback.  fan-out reads this field to skip local-fs.
+  // silent fallback. an earlier revision fan-out reads this field to skip local-fs.
   capabilities: {
     read: true,
     list: true,
@@ -96,8 +96,23 @@ export const HARDCODED_REGISTRY: readonly ContentSource[] = [
 ];
 
 /**
- * v1 health is intentionally static —  ships no network call.
- *  replaces this with a real GitHub probe and switches `mode` to
+ * operator-internal source predicate.
+ *
+ * A `scope:"project"` source (today only `agentthursday-github`, the PRIVATE
+ * `your-org/AgentThursday` repo) is readable only via the worker's global
+ * `GITHUB_TOKEN`. The credential — not the generic `content_*` tool — is the
+ * exposure, so a user-owned (scoped) agent must never reach it. ContentHub
+ * gates on this predicate; the per-agent tool resolves its own owner and only
+ * an operator/admin caller is allowed through. Fixture (`scope:"fixture"`) and
+ * any future tenant-public scope are not operator-internal.
+ */
+export function isOperatorInternalSource(source: ContentSource | null | undefined): boolean {
+  return source != null && source.scope === "project";
+}
+
+/**
+ * v1 health is intentionally static — an earlier revision ships no network call.
+ * an earlier revision replaces this with a real GitHub probe and switches `mode` to
  * `"live"` / `"degraded"`.
  */
 export function staticHealth(_source: ContentSource): ContentSourceHealth {
@@ -115,7 +130,7 @@ export type ListSourcesInput = {
 
 /**
  * Pure listing function used by `ContentHubAgent.getSources` and by the
- *  smoke test. v1 returns the hardcoded registry.
+ * an earlier revision smoke test. v1 returns the hardcoded registry.
  *
  * @param input.includeHealth default `true`. Set `false` for cheap listing.
  * @param input.sourceId      optional filter; empty array if unmatched.

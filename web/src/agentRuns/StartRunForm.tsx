@@ -4,7 +4,7 @@ import { listAgentProfiles, type AgentProfileWithLifecycle } from "../api/agentP
 import { createAgentRun } from "../api/agentRuns";
 
 /**
- *  — compact start-run form used on `/agent-runs` and on the
+ * compact start-run form used on `/agent-runs` and on the
  * list's empty state.
  *
  *  - Picks an AgentProfile from the registry.

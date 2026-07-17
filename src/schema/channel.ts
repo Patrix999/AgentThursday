@@ -4,8 +4,8 @@ import { z } from "zod";
  * ChannelHub envelopes & storage row schemas.
  *
  * Provider-agnostic. Discord-first but no schema field is Discord-specific.
- * See `docs/milestones/-multi-channel-communication-middle-layer.md`
- * and ``.
+ * See `docs/milestones/M7.3-multi-channel-communication-middle-layer.md`
+ * and `docs/design/M7.3-review-notes.md`.
  *
  * v1 P0 outbound is text-only — no `presentation.blocks/tone` (premature
  * pollution per review §5). Approval is reserved as a future `kind`
@@ -59,7 +59,7 @@ export const ChannelMessageEnvelopeSchema = z.object({
 export type ChannelMessageEnvelope = z.infer<typeof ChannelMessageEnvelopeSchema>;
 
 /**
- * Outbound discriminated union. P0 has `text` () + `approval` ().
+ * Outbound discriminated union. P0 has `text`  + `approval` .
  * No generic `presentation.blocks/tone` (review notes §5).
  */
 const DeliveryPolicySchema = z.object({
@@ -80,11 +80,11 @@ const OutboundTextMessageSchema = z.object({
 });
 
 /**
- *  — Hermes-style approval card. Rendered to Discord as a text
+ * Hermes-style approval card. Rendered to Discord as a text
  * fallback + structured `approval` block so the bridge can attach buttons
  * if its surface supports them. Scope buttons mirror Hermes:
  * once / session / always / deny. `always` is gated behind an env flag
- * ( §C-13); when gating is on, the bridge should hide/disable that
+ * (an earlier revision §C-13); when gating is on, the bridge should hide/disable that
  * button and the resolve endpoint downgrades it to "session".
  */
 export const ApprovalScopeSchema = z.enum(["once", "session", "always", "deny"]);
@@ -127,7 +127,7 @@ export const OutboundChannelMessageSchema = z.discriminatedUnion("kind", [
 export type OutboundChannelMessage = z.infer<typeof OutboundChannelMessageSchema>;
 
 /**
- * : `busy-skip` is distinct from `wait` — `wait` consumes the row
+ * an earlier revision: `busy-skip` is distinct from `wait` — `wait` consumes the row
  * (status → deferred) because we need explicit human clarification; `busy-skip`
  * leaves the row at `received` so a later route attempt can pick it up when
  * the agent is free. The user's message must NOT be consumed just because
@@ -142,7 +142,7 @@ export const ChannelRouteDecisionSchema = z.object({
 export type ChannelRouteDecision = z.infer<typeof ChannelRouteDecisionSchema>;
 
 /**
- * Storage row reads (snapshot endpoint). Status enum mirrors §D-11 in .
+ * Storage row reads (snapshot endpoint). Status enum mirrors §D-11.
  */
 export const ChannelInboxStatusSchema = z.enum([
   "received", "routed", "processing", "handled", "ignored", "deferred", "failed",
@@ -164,7 +164,7 @@ export const ChannelInboxItemSchema = z.object({
   status: ChannelInboxStatusSchema,
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
-  //  — route metadata; null when row hasn't been routed yet.
+  // route metadata; null when row hasn't been routed yet.
   routeAction: z.enum(["process", "ignore", "wait", "escalate"]).nullable(),
   routeReason: z.string().nullable(),
   routedAt: z.number().int().nullable(),
@@ -186,7 +186,7 @@ export const ChannelOutboxItemSchema = z.object({
   attemptCount: z.number().int(),
   createdAt: z.number().int(),
   sentAt: z.number().int().nullable(),
-  //  — kind and approval link.
+  // kind and approval link.
   kind: z.enum(["text", "approval"]),
   approvalId: z.string().nullable(),
 });
@@ -255,13 +255,13 @@ export const ChannelSnapshotSchema = z.object({
   recentOutbox: z.array(ChannelOutboxItemSchema),
   recentApprovals: z.array(ChannelApprovalRowSchema),
   /**
-   *  — recently-seen conversations + their agent binding,
+   * recently-seen conversations + their agent binding,
    * for the inspect-surface binding UI. Top-N by `last_seen_at` desc.
    * Optional for backward compatibility with old snapshots; new code
    * always populates it (possibly empty). Agent name is NOT included
    * here — UI joins against `/api/agent-profiles` on the client side.
    *
-   *  — both `activeAgentId` (new, preferred) and
+   * both `activeAgentId` (new, preferred) and
    * `activeProfileId` (legacy) carry the same value. Both are optional
    * so a snapshot written by either era still validates.
    */
@@ -302,7 +302,7 @@ export const ChannelRoutePendingResultSchema = z.object({
   ok: z.boolean(),
   scanned: z.number().int(),
   /**
-   * : number of rows whose decision was `busy-skip` — i.e. would
+   * an earlier revision: number of rows whose decision was `busy-skip` — i.e. would
    * have processed but the agent was busy. These rows remain `received`
    * (not consumed) and will be reconsidered by the next routePending call.
    */
@@ -311,7 +311,7 @@ export const ChannelRoutePendingResultSchema = z.object({
     inboxId: z.string(),
     providerMessageId: z.string(),
     /**
-     *  — `invalid-binding` is added for rows whose conversation
+     * `invalid-binding` is added for rows whose conversation
      * binding points to a missing / archived profile (or where the
      * registry RPC failed). Such rows MUST NOT silently fall back to
      * the canonical active context; they park as `deferred` so an
@@ -322,15 +322,15 @@ export const ChannelRoutePendingResultSchema = z.object({
     finalStatus: ChannelInboxStatusSchema,
     handoffTaskId: z.string().nullable(),
     /**
-     *  — resolved route metadata so verifier / inspect can prove
+     * resolved route metadata so verifier / inspect can prove
      * which target the row was handed off to. Optional for backward
      * compatibility with batches that ran before the per-row resolver
      * landed; new rows always populate them.
      *
-     *  — `agent_binding` is the corrected name for what
+     * `agent_binding` is the corrected name for what an earlier revision
      * called `profile_binding`. Both values remain in the enum so old
      * persisted/parsed payloads still validate; new resolver emits
-     * `agent_binding`. See
+     * `agent_binding`. See docs/design/2026-05-24-m9.0-agent-centric-correction.md.
      */
     targetKind: z.enum([
       "agent_binding",
@@ -344,7 +344,7 @@ export const ChannelRoutePendingResultSchema = z.object({
 export type ChannelRoutePendingResult = z.infer<typeof ChannelRoutePendingResultSchema>;
 
 /**
- *  — outbound enqueue / deliver / approval-resolve API contracts.
+ * outbound enqueue / deliver / approval-resolve API contracts.
  */
 
 export const EnqueueOutboundTextRequestSchema = z.object({

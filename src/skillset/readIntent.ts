@@ -1,5 +1,5 @@
 /**
- *  — read-side intent detector.
+ * read-side intent detector.
  *
  * Mirrors the shape of `src/skillset/gateIntent.ts` but for repo-file
  * inspection prompts. The existing `readOnlySafe` classifier in
@@ -40,7 +40,6 @@ export interface ReadIntent {
  *   docs/skillsets/software-dev.0.1.0.yaml
  *   src/server.ts
  *   ./README.md
- *
  *
  * Examples that do NOT match:
  *   https://example.com/path

@@ -1,5 +1,5 @@
 /**
- *  — adapter for `manager.workflow_run_named`. Load a saved
+ * adapter for `manager.workflow_run_named`. Load a saved
  * descriptor by name, substitute `{{args.key}}` placeholders, validate,
  * and start it on the durable executor (same path as
  * manager.workflow_execute). Missing args fail fast with the full list.

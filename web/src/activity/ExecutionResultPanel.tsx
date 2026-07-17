@@ -8,7 +8,7 @@ type Props = {
 };
 
 /**
- *  — Execution result panel. v1 surfaces what was run and at
+ * Execution result panel. v1 surfaces what was run and at
  * which tier, not stdout/stderr (results aren't persisted in
  * `event_log`; returned to agent directly). The preview is already
  * truncated at the call site (200 chars for `tool.execute`,

@@ -1,5 +1,5 @@
 /**
- *  — generic tool capability inspect classifier.
+ * generic tool capability inspect classifier.
  *
  * Implements the readiness/dispatch shape behind
  * `GET /api/inspect/tool/<tool_id>`. Pure function over:
@@ -16,7 +16,7 @@
  *                                surface fetch_path, handler bound,
  *                                runtime tool_id present
  *   - `legacy_direct`            contract present, implemented, but
- *                                surfaced via  legacy direct wiring
+ *                                surfaced via M8.1 legacy direct wiring
  *                                (do_method) rather than dynamic registry
  *   - `contract_only_no_handler` contract present, implemented, but
  *                                neither dynamic handler nor legacy wiring
@@ -73,8 +73,8 @@ const LEGACY_DIRECT_SURFACE_NAMES: ReadonlySet<string> = new Set([
 /**
  * Hand-coded `getTools()` entries that are not part of the safe-read
  * legacy surface, but also have no canonical contract registry entry.
- * These appear in `AgentThursdayAgent.getTools()` via the  per-family
- * builder spreads (Cards 271-276):
+ * These appear in `AgentThursdayAgent.getTools()` via the M8.9 per-family
+ * builder spreads (an earlier revision-276):
  *
  *   - `browserTools.ts`       → `browse`
  *   - `conversationTools.ts`  → `conversation_search`
@@ -86,31 +86,35 @@ const LEGACY_DIRECT_SURFACE_NAMES: ReadonlySet<string> = new Set([
  *   - `memoryTools.ts`        → `remember`, `recall`
  *   - `executionTools.ts`     → `execute`
  *
- *  closed the pre-existing drift  §4 flagged: this
- * set previously held only Cards 274 + 276 names (5 of 13) and the
+ * an earlier revision closed the pre-existing drift an earlier revision §4 flagged: this
+ * set previously held only an earlier revision + 276 names (5 of 13) and the
  * remaining 8 names classified as `unknown_tool` even though they
  * were exposed via legacy hand-coded `tool({...})` entries. Widening
  * is metadata-only — model-facing capability is unchanged.
  */
 const LEGACY_HAND_CODED_NAMES: ReadonlySet<string> = new Set([
-  // browser ()
+  // browser 
   "browse",
-  // conversation ()
+  // conversation 
   "conversation_search",
-  // content ()
+  // content 
   "content_sources",
   "content_list",
   "content_read",
   "content_search",
-  // core ()
+  // core 
   "review_project_status",
   "write_checkpoint",
   "review_note",
   "advance_kanban_card",
-  // memory ()
+  // schedule 
+  "schedule_create",
+  "schedule_list",
+  "schedule_cancel",
+  // memory 
   "remember",
   "recall",
-  // execute ()
+  // execute 
   "execute",
 ]);
 
@@ -242,7 +246,7 @@ export function classifyTool(toolId: string, ctx: ClassifyToolCtx): InspectToolR
       ...base,
       readiness: "legacy_direct",
       reason:
-        "Contract implemented; surfaced through legacy  safe-read direct wiring rather than the dynamic registry.",
+        "Contract implemented; surfaced through legacy M8.1 safe-read direct wiring rather than the dynamic registry.",
     };
   }
 

@@ -1,8 +1,8 @@
 /**
- *  — adapter for `artifact.write` dynamic tool.
+ * adapter for `artifact.write` dynamic tool.
  *
  * Stateful adapter: routes the call through the agent's DO callable
- * `writeArtifact()` (defined in `src/server.ts` per ) so the
+ * `writeArtifact()` (defined in `src/server.ts` per an earlier revision) so the
  * 245d validation / size cap / secret scan stays the single source of
  * truth — we do NOT duplicate any of those rules here.
  *
@@ -23,7 +23,7 @@ const inputSchema = z.object({
   cardId: z.string().min(1),
   filename: z.string().min(1),
   type: z.enum(ARTIFACT_TYPES),
-  sourceAgent: z.enum(["", "", "", "verifier"] as const),
+  sourceAgent: z.enum(["agentD", "agentC", "agentP", "verifier"] as const),
   producerUserId: z.string().min(1).optional(),
   mime: z.string().min(1).optional(),
   notes: z.string().max(200).optional(),

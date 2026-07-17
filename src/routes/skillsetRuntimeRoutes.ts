@@ -1,7 +1,7 @@
 import { json } from "../httpUtil";
 
 /**
- *  — skillset runtime HTTP route family extracted from
+ * skillset runtime HTTP route family extracted from
  * `server.ts`.
  *
  * Single entry point: `handleSkillsetRuntimeRoutes(request, url, deps)`.
@@ -26,7 +26,7 @@ import { json } from "../httpUtil";
  * Stub resolution stays at the composition root in `server.ts` and is
  * passed in via `SkillsetRuntimeDeps.getActiveStub` so this module
  * never imports `getCanonicalActiveAgentThursdayAgentStub` or `AgentThursdayAgent`.
- * Per  / 266h hint, the deps type is a minimal structural
+ * Per an earlier revision hint, the deps type is a minimal structural
  * interface — the four callable methods only — to avoid pulling the
  * agent class's type graph back into the route-module import tree.
  * The disable/enable error literal unions are kept verbatim so the
@@ -64,7 +64,7 @@ export async function handleSkillsetRuntimeRoutes(
   url: URL,
   deps: SkillsetRuntimeDeps,
 ): Promise<Response | null> {
-  //  — runtime skillset snapshot read.
+  // runtime skillset snapshot read.
   // GET /api/skillset/runtime. Auth-gated via the global
   // `/api/*` requireSecret. Routes through the canonical active
   // AgentThursdayAgent so the snapshot returned is exactly the one the
@@ -75,7 +75,7 @@ export async function handleSkillsetRuntimeRoutes(
     return json(summary);
   }
 
-  //  — explicit reload action.
+  // explicit reload action.
   // POST /api/skillset/reload. Auth-gated. Increments the agent's
   // in-memory `reload_count`, rebuilds the snapshot from the
   // currently deployed `EMBEDDED_MANIFESTS`, re-applies env-binding
@@ -88,7 +88,7 @@ export async function handleSkillsetRuntimeRoutes(
     return json(summary);
   }
 
-  //  — operator disable action.
+  // operator disable action.
   // POST /api/skillset/disable. Auth-gated. Body: `{ skillset_id,
   // reason? }`. Validates that `skillset_id` is a currently loaded
   // skillset; rebuilds the snapshot with the id moved from
@@ -96,7 +96,7 @@ export async function handleSkillsetRuntimeRoutes(
   // returns the new runtime summary. HTTP 400 for missing id,
   // 404 for unknown id, 409 for ids the loader rejected.
   // Disable is in-memory ("since DO woke up"); see
-  // `` for the
+  // `docs/tests/2026-05-12-card238c-runtime-disable.md` for the
   // documented persistence boundary.
   if (url.pathname === "/api/skillset/disable" && request.method === "POST") {
     const body = (await request.json().catch(() => ({}))) as {
@@ -120,7 +120,7 @@ export async function handleSkillsetRuntimeRoutes(
     return json(result.summary);
   }
 
-  //  — operator enable action.
+  // operator enable action.
   // POST /api/skillset/enable. Auth-gated. Body: `{ skillset_id,
   // reason? }`. Idempotent: enabling an id that isn't currently
   // disabled returns the same summary without an event. 400 for
@@ -142,7 +142,7 @@ export async function handleSkillsetRuntimeRoutes(
     return json(result.summary);
   }
 
-  //  — skillset.runtime_summary dispatch route.
+  // skillset.runtime_summary dispatch route.
   // POST /api/dispatch/skillset/runtime_summary with optional empty body.
   // Auth-gated via the global secret check above. Goes through the
   // adapter-registered handler so verifier prod-smoke can replay the

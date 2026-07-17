@@ -1,12 +1,12 @@
 /**
- *  — orchestration-as-code executor v1: pure workflow descriptor
+ * orchestration-as-code executor v1: pure workflow descriptor
  * contract (schema + validator), executor-owned id derivation, and phase
  * dependency ordering. Pure (no DO/env/SQL) so the contract is
  * unit-testable; the executor (Cloudflare Workflow) consumes it.
  *
- * Executor run identity is DISTINCT from 's ad-hoc
+ * Executor run identity is DISTINCT from an earlier revision's ad-hoc
  * `wfr-<parent_task_id>`: the executor mints/owns `wfr-exec-<short-id>`.
- * 's run id observes the current ad-hoc manager dispatch; the
+ * an earlier revision's run id observes the current ad-hoc manager dispatch; the
  * executor is a new run owner and must not reuse a manager task id as a
  * long-term workflow run id.
  */
@@ -134,7 +134,7 @@ export interface DescriptorValidationErr {
  * Validate a raw descriptor. Beyond the zod shape, rejects: duplicate
  * phase_ids, deps referencing a non-existent phase, self-deps, total
  * agents exceeding `caps.max_agents` (VALIDATION — caps enforcement is
- * , not here), and dependency cycles. Returns the dependency
+ * an earlier revision, not here), and dependency cycles. Returns the dependency
  * execution order on success.
  */
 export function validateWorkflowDescriptor(

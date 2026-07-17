@@ -1,5 +1,5 @@
 /**
- *  — read-only `channel_conversations` ownership inspect surface.
+ * read-only `channel_conversations` ownership inspect surface.
  *
  * `inspectConversationOwnershipImpl(host, input)` is the pure body the
  * `ChannelHubAgent.inspectConversationOwnership` callable delegates to.
@@ -7,10 +7,10 @@
  * can exercise the shape without importing the partyserver /
  * cloudflare:workers chain.
  *
- * Answers 's 369a observability ask: "current workspace agent vs
+ * Answers agentP's 369a observability ask: "current workspace agent vs
  * channel route owner mismatch / unbound" — given a `conversation_id`,
  * return the current binding owner (= the agent_id stored in
- * `channel_conversations.active_profile_id` under  vocab);
+ * `channel_conversations.active_profile_id` under an earlier revision vocab);
  * given an `agent_id`, return the list of conversations currently
  * bound to that agent.
  *
@@ -22,7 +22,7 @@
  * Scope decision: this is operator-facing observability and stays on
  * `/api/inspect/*`, not `/api/workspace`. The workspace polls every
  * 3s and the mismatch signal isn't part of user UX — it's diagnostic.
- * If  / verifier want it on `/api/workspace` instead, the pure
+ * If agentP / verifier want it on `/api/workspace` instead, the pure
  * helper here is shape-stable and easy to re-wire.
  */
 

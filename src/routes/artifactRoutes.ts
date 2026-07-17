@@ -3,7 +3,7 @@ import { json } from "../httpUtil";
 import type { AgentThursdayAgent } from "../server";
 
 /**
- *  — `/api/artifact/*` routes extracted from `server.ts`.
+ * `/api/artifact/*` routes extracted from `server.ts`.
  *
  * Single entry point: `handleApiArtifact(stub, request, url)`.
  * Path-parsing, method routing, error-code → HTTP-status mapping

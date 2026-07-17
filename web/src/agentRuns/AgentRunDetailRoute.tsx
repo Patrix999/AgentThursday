@@ -15,7 +15,7 @@ import { StatusBadge } from "./StatusBadge";
 import { useRuntimeModelLookup } from "../agents/useRuntimeModelLookup";
 
 /**
- *  — detail view at `/agent-runs/:id`.
+ * detail view at `/agent-runs/:id`.
  *
  * Renders run-oriented state: status, workflow_instance_id, the
  * AgentProfile snapshot (model / channel / skillset / persona
@@ -26,7 +26,7 @@ import { useRuntimeModelLookup } from "../agents/useRuntimeModelLookup";
  * `/api/agent-runs/:id/events`. The card explicitly limits the
  * vocabulary to `user-reply`.
  *
- *  does NOT call Cloudflare Workflows describe — there is no
+ * an earlier revision does NOT call Cloudflare Workflows describe — there is no
  * per-step timeline; the "local run timeline" is derived from the
  * row's status alone, labelled honestly.
  */
@@ -148,7 +148,7 @@ export function AgentRunDetailRoute() {
               the next session / run.
             </div>
             <div className="mt-1 text-xs text-slate-600">
-               — the selected skillset defines the runtime dynamic
+              the selected skillset defines the runtime dynamic
               tool palette for the next session/run; the row above shows the
               resolver&apos;s effective ids (selection + loaded, non-disabled
               dependencies).
@@ -281,7 +281,7 @@ function Row(props: { label: string; value: string; mono?: boolean }) {
 }
 
 /**
- *  — mirrors the `/agents/:id` SkillsetRuntimeRow. Renders
+ * mirrors the `/agents/:id` SkillsetRuntimeRow. Renders
  * the resolver's view of which skillset ids will actually contribute
  * callable dynamic tools to the next session/run:
  *   - status === "ok" + effective_ids → emerald list ("loaded: a, b, c").
@@ -324,7 +324,7 @@ function SkillsetRuntimeRow(props: {
 }
 
 /**
- *  — mirrors the `/agents/:id` ModelRuntimeRow. Shows the
+ * mirrors the `/agents/:id` ModelRuntimeRow. Shows the
  * runtime provider + availability for the profile's selected model so
  * the run detail page tells the truth about what the agent actually
  * dispatches to.
@@ -343,7 +343,7 @@ function ModelRuntimeRow(props: {
     value = `${entry.provider} → ${entry.id}`;
     tone = "text-emerald-300";
   } else {
-    //  — POST gate now rejects this state for NEW profiles,
+    // POST gate now rejects this state for NEW profiles,
     // but legacy / pre-flip rows may still carry a not_configured id.
     // getModel() fail-softs to the workers-ai Kimi default in that
     // case (see `_resolveWorkersAITargetWithFallback`), and emits

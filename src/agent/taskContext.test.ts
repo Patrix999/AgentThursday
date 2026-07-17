@@ -1,5 +1,5 @@
 /**
- *  — TaskContext schema + render helper + preflight wiring tests.
+ * TaskContext schema + render helper + preflight wiring tests.
  *
  * Two layers:
  *   1. Pure schema (`TaskContextSchema`) — ADR §5.1 required fields,
@@ -53,7 +53,7 @@ function makeRegistry(
 
 const validContext: TaskContext = {
   id: "ctx-1",
-  title: "Implement ",
+  title: "Implement an earlier revision",
   objective: "Thread task_context through manager dispatch",
   source_agent_id: "manager-1",
   expected_outputs: ["test doc", "completion report"],
@@ -85,7 +85,7 @@ describe("TaskContextSchema — accept", () => {
           digest: "sha256:abc",
         },
       ],
-      non_goals: ["do not modify  path"],
+      non_goals: ["do not modify an earlier revision path"],
       verification_hint: "verify via inspect events",
     };
     const r = TaskContextSchema.safeParse(full);
@@ -155,7 +155,7 @@ describe("renderTaskContextBlock", () => {
   });
 });
 
-describe("renderTaskContextBlockPreview — ", () => {
+describe("renderTaskContextBlockPreview — an earlier revision", () => {
   it("returns the full block unchanged when under the byte cap", () => {
     const out = renderTaskContextBlockPreview(validContext, 2000);
     const full = renderTaskContextBlock(validContext);

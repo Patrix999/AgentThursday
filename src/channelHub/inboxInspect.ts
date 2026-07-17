@@ -1,5 +1,5 @@
 /**
- *  — read-only `channel_inbox` inspect surface.
+ * read-only `channel_inbox` inspect surface.
  *
  * `inspectChannelInboxImpl(agent, input)` is the pure body the
  * `ChannelHubAgent.inspectChannelInbox` callable delegates to. Lives in

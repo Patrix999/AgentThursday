@@ -1,7 +1,7 @@
 /**
  * Evidence envelope runtime.
  *
- * Per `` §1-§5
+ * Per `docs/design/m8-evidence-protocol-inspect-mapping-v0.md` §1-§5
  * the four-ring schema is intent → execution[] → evidence → self_verify
  * with envelope_status ∈ {draft, sealed, failed}.
  *
@@ -43,7 +43,7 @@ export interface ToolCallRecord {
   dispatched_at: string;
   surface?: string;
   agent_reason?: string;
-  //  — short JSON summary of the tool input so envelope inspectors
+  // short JSON summary of the tool input so envelope inspectors
   // can see what the agent actually asked for without rehydrating raw
   // input. Capped (~512 chars) by the producer to avoid blowing up
   // envelope size or leaking large arguments. `input_hash` remains the
@@ -81,11 +81,11 @@ export interface GateLogEvidence {
 }
 
 /**
- *  —  approval decision evidence entry.
+ * M8.5 approval decision evidence entry.
  *
  * Carried inside `EvidenceData.approval_decision` so verifier replay
  * can read the audit trail of an approval (who decided, when, signature
- * reference). Per  ADR §D5, the raw reviewer signature MUST
+ * reference). Per an earlier revision ADR §D5, the raw reviewer signature MUST
  * NEVER appear here — only `signature_hash` (HMAC over the approval
  * payload) or `signature_ref` (external store key). The type forbids a
  * raw signature field by construction so a future card cannot
@@ -149,7 +149,7 @@ export interface CreateDraftInput {
 }
 
 /**
- *  — optional mutation hook so the owning DO can persist a
+ * optional mutation hook so the owning DO can persist a
  * bounded snapshot of the envelope to durable SQL storage. The store
  * stays pure (in-memory map); persistence is the DO's concern. The hook
  * fires after every accepted mutation (createDraft, addExecution when
@@ -160,7 +160,7 @@ export interface CreateDraftInput {
 export interface EnvelopeStoreOptions {
   onMutate?: (env: EvidenceEnvelope) => void;
   /**
-   *  — surface persistence failures the store would otherwise
+   * surface persistence failures the store would otherwise
    * silently swallow inside `notifyMutate`. The DO wires this to a
    * structured `evidence.envelope.persist.error` event so an
    * `onMutate` SQL throw doesn't leave a draft envelope un-persisted
@@ -184,7 +184,7 @@ export class EnvelopeStore {
     try {
       this.onMutate(env);
     } catch (err) {
-      //  — fail-soft on the mutation path, but expose the
+      // fail-soft on the mutation path, but expose the
       // failure via the optional error hook so the DO can log it.
       if (this.onMutateError) {
         try { this.onMutateError(env, err); } catch { /* nested fail-soft */ }
@@ -222,7 +222,7 @@ export class EnvelopeStore {
   }
 
   /**
-   *  — re-hydration path for restoring an envelope from
+   * re-hydration path for restoring an envelope from
    * persistent storage (e.g. `envelope_snapshots` SQL) into the
    * in-memory map after a DO isolate restart / hibernation. The
    * source of truth for `adopt()` is durable storage, so this MUST
@@ -262,13 +262,13 @@ export class EnvelopeStore {
   }
 
   /**
-   *  C — INTENTIONALLY UNWIRED. No production call site promotes
+   * an earlier revision C — INTENTIONALLY UNWIRED. No production call site promotes
    * `repo.write` / `repo.patch` diffs into `evidence.diff`; the bounded
    * diff stays in `execution[].tool_result` (visible to inspect), and the
    * evidence ring is satisfied by gate logs ONLY (see `seal()`'s
    * `requiredCheck.evidence`). Retained for schema/API completeness and as
    * the single seam if a future card decides diffs should count as seal
-   * evidence. If you wire it, you MUST revisit the  B
+   * evidence. If you wire it, you MUST revisit the an earlier revision B
    * `missing_gate_evidence` gate: promoting diffs here would let a
    * gate-less mutation satisfy the evidence ring and silently defeat that
    * gate.
@@ -288,7 +288,7 @@ export class EnvelopeStore {
    * derived from the agent's reply text); evidencedTools is computed
    * from execution[].tool_call.tool_id. fabricated = claimed - evidenced.
    *
-   *  — `opts.readOnlySafe` lets a pure read-only / answer-only
+   * `opts.readOnlySafe` lets a pure read-only / answer-only
    * turn pass even with empty execution + evidence rings. Caller is
    * responsible for proving the turn is read-only safe (no gate intent
    * on prompt, no gate intent on raw model reply, no tools dispatched);
@@ -298,7 +298,7 @@ export class EnvelopeStore {
    * caller without a read-only-safe proof retain the existing strict
    * ring-presence contract.
    *
-   *  — `opts.readIntentObserved` records that the prompt
+   * `opts.readIntentObserved` records that the prompt
    * asked the agent to read a repo file but no read-side tool was
    * dispatched. When set with `execution: "missing"`, the seal emits
    * the dedicated reason string `read_intent_no_execution` instead of
@@ -306,7 +306,7 @@ export class EnvelopeStore {
    * grep on the file-inspection-without-evidence shape. Optional and
    * defaults to false — existing callers retain prior verdict reasons.
    *
-   *  — `opts.mutationIntentObservedUnwrapped` records that the
+   * `opts.mutationIntentObservedUnwrapped` records that the
    * supplier dispatched an unwrapped mutation tool (Think workspace
    * `write` / `delete` / `edit`) during the round, but none of those
    * calls landed in the envelope's execution ring. Setting this:
@@ -317,7 +317,7 @@ export class EnvelopeStore {
    *     `read_intent_no_execution` because the mutation is the
    *     stronger audit signal.
    *
-   *  — `opts.mutationIntentNoExecution` records that the prompt
+   * `opts.mutationIntentNoExecution` records that the prompt
    * itself asked for a write/delete/edit/patch on a repo-shaped path
    * (`detectMutationIntent` fired) AND `totalToolCalls === 0`. The model
    * produced a mutation narrative with zero supplier dispatch. Setting
@@ -327,19 +327,19 @@ export class EnvelopeStore {
    *     a hallucinated "done" reach the user),
    *   - emits the dedicated reason `mutation_intent_no_execution` when
    *     execution is missing. Precedence: `mutation_intent_unwrapped_execution`
-   *     (, supplier actually dispatched something) takes
+   *     (an earlier revision, supplier actually dispatched something) takes
    *     priority because that's a stronger gap; this reason ranks above
    *     `read_intent_no_execution` because mutation intent is the
    *     stronger audit signal than read intent.
    *
-   *  C — `opts.mutationToolsExpected` records that the prompt has
+   * an earlier revision C — `opts.mutationToolsExpected` records that the prompt has
    * mutation intent. At seal time, if execution contains NO mutation tool
    * call (`repo.write` / `repo.patch`), the envelope fails with reason
-   * `missing_mutation_evidence`. This is a stronger gate than :
+   * `missing_mutation_evidence`. This is a stronger gate than an earlier revision:
    * - 295e fires only when execution is entirely empty.
    * - 382 C also fires when execution has read-only tools (e.g. only
    *   `repo.read`/`repo.glob`) but no mutation tool — the subagent
-   *   "looked but never wrote", which the  dogfood revealed as the
+   *   "looked but never wrote", which the M9.1 dogfood revealed as the
    *   dominant failure shape. Precedence: ranks above
    *   `mutation_intent_no_execution` (subsumes the empty case),
    *   below `mutation_intent_unwrapped_execution` (supplier-side leak is
@@ -367,7 +367,7 @@ export class EnvelopeStore {
       opts?.mutationIntentNoExecution === true;
     const mutationToolsExpected = opts?.mutationToolsExpected === true;
     const evidenced = new Set(env.execution.map(e => e.tool_call.tool_id));
-    //  C — mutation tool ids that satisfy `mutationToolsExpected`.
+    // an earlier revision C — mutation tool ids that satisfy `mutationToolsExpected`.
     // Closed list: `repo.write` / `repo.patch` are the first-party mutation
     // surfaces. `git.commit` and similar shell-backed tools are deliberately
     // excluded — the card spec scopes the gate to repo-write evidence, not
@@ -382,12 +382,12 @@ export class EnvelopeStore {
     const requiredCheck = {
       intent: env.intent ? ("present" as const) : ("missing" as const),
       execution: env.execution.length > 0 ? ("present" as const) : ("missing" as const),
-      //  C — the evidence ring is satisfied by gate logs ONLY.
+      // an earlier revision C — the evidence ring is satisfied by gate logs ONLY.
       // `addDiffEvidence` is intentionally unwired (see its definition):
       // repo.write / repo.patch diffs stay in `execution[].tool_result`
       // (visible to inspect) and are NOT promoted into `evidence.diff`, so
       // a mutation that skips gates correctly leaves this ring "missing"
-      // (→  B `missing_gate_evidence`). The always-empty `diff`
+      // (→ an earlier revision B `missing_gate_evidence`). The always-empty `diff`
       // term is dropped here to make the gates-only contract explicit in
       // code rather than implied by dead code.
       evidence:
@@ -397,22 +397,22 @@ export class EnvelopeStore {
       self_verify: "present" as const,
     };
     const consistent = fabricated.length === 0;
-    //  — when the envelope contains gate evidence, the seal
+    // when the envelope contains gate evidence, the seal
     // verdict must reflect whether those gates actually succeeded.
     // Previously the seal contract only validated ring presence and
     // fabrication, so a `gate.build` that hit `tsc: not found` (exit
     // 127, phases=[]) could still produce `verdict=pass`, which broke
-    // the  demo contract: "the build gate failed but the envelope
+    // the M8.3 demo contract: "the build gate failed but the envelope
     // says pass". Canonical signal is `evidence.gate_logs[].exit_code`
     // — that's the seal-time persisted record, not the in-flight
     // execution[].tool_result.output payload.
     const failingGate = (env.evidence.gate_logs ?? []).find(g => g.exit_code !== 0);
-    //  — read-only pass eligibility: prompt + reply both free
+    // read-only pass eligibility: prompt + reply both free
     // of gate intent, zero tools dispatched, zero claimed, no failing
     // gate log. Intent ring must still be present; consistency must
     // still hold. Any one of these failing falls back to the strict
     // path (which will fail on missing rings, as today).
-    //  — mutation intent observed in supplier-signal but
+    // mutation intent observed in supplier-signal but
     // never wrapped into envelope execution disqualifies the
     // read-only-safe short-circuit. A write/delete must never be
     // sealed as `read_only_no_action_required`.
@@ -438,7 +438,7 @@ export class EnvelopeStore {
       requiredCheck.evidence === "missing"
     ) {
       verdict = "fail";
-      //  — supplier dispatched an unwrapped mutation tool
+      // supplier dispatched an unwrapped mutation tool
       // (`write` / `delete` / `edit`) but execution ring is missing.
       // Takes precedence over `missing_mutation_evidence` and
       // `read_intent_no_execution` because supplier actually
@@ -446,9 +446,9 @@ export class EnvelopeStore {
       if (mutationIntentObservedUnwrapped && requiredCheck.execution === "missing") {
         reason = "mutation_intent_unwrapped_execution";
       } else if (mutationToolsExpected && requiredCheck.execution === "missing" && requiredCheck.intent === "present") {
-        //  C — prompt declared mutation intent AND execution
+        // an earlier revision C — prompt declared mutation intent AND execution
         // ring is empty (so trivially no `repo.write` / `repo.patch`
-        // call landed). Subsumes 's
+        // call landed). Subsumes an earlier revision's
         // `mutation_intent_no_execution` reason for this subcase.
         // Note: the "execution present but only read tools" subcase
         // is handled by the dedicated outer branch below — gating here
@@ -457,13 +457,13 @@ export class EnvelopeStore {
         // but its diff evidence is what's missing.
         reason = "missing_mutation_evidence";
       } else if (mutationIntentNoExecution && requiredCheck.execution === "missing" && requiredCheck.intent === "present") {
-        //  — legacy code path for callers that haven't yet
-        // wired the  C `mutationToolsExpected` opt. Preserved
+        // legacy code path for callers that haven't yet
+        // wired the an earlier revision C `mutationToolsExpected` opt. Preserved
         // so older smoke fixtures keep their reason string until
         // migrated.
         reason = "mutation_intent_no_execution";
       } else if (readIntentObserved && requiredCheck.execution === "missing" && requiredCheck.intent === "present") {
-        //  — prompt asked for a repo-file read but no
+        // prompt asked for a repo-file read but no
         // read-side tool was dispatched. Emit a dedicated reason
         // string so this shape is greppable separately from the
         // generic missing-rings fail.
@@ -473,10 +473,10 @@ export class EnvelopeStore {
         requiredCheck.evidence === "missing" &&
         requiredCheck.intent === "present"
       ) {
-        //  B — a real `repo.write` / `repo.patch` landed in the
+        // an earlier revision B — a real `repo.write` / `repo.patch` landed in the
         // execution ring (so this is NOT "looked but never wrote"), yet
         // the evidence ring is empty: no gate_logs. The agent mutated the
-        // worktree but never ran a gate to verify it (the  381 dogfood
+        // worktree but never ran a gate to verify it (the M9.1 381 dogfood
         // shape — narrated "I'll run typecheck" without a real gate call).
         // Emit a dedicated reason so verifiers can distinguish "wrote but
         // didn't verify" from `missing_mutation_evidence` (never wrote) and
@@ -488,9 +488,9 @@ export class EnvelopeStore {
         reason = "envelope missing required ring(s)";
       }
     } else if (mutationToolsExpected && !hasMutationToolInExecution) {
-      //  C — execution ring has tool calls (so missing-rings
+      // an earlier revision C — execution ring has tool calls (so missing-rings
       // didn't fire), but none of them are mutation tools. The subagent
-      // "looked but never wrote" — the  dogfood's dominant failure
+      // "looked but never wrote" — the M9.1 dogfood's dominant failure
       // shape. Hard gate.
       verdict = "fail";
       reason = "missing_mutation_evidence";

@@ -1,5 +1,5 @@
 /**
- *  — React hook around `fetchDebugSurfaceMode()`.
+ * React hook around `fetchDebugSurfaceMode()`.
  *
  * Subscribes a component to the resolved mode. Returns `null` while
  * the first fetch is in flight so the caller can render nothing

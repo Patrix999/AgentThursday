@@ -1,4 +1,4 @@
-//  — barrel re-export. The schemas previously inlined here are
+// barrel re-export. The schemas previously inlined here are
 // now split into per-domain files under `src/schema/*.ts`. All public
 // names remain stable; consumers continue to `import { Foo } from "./schema"`.
 // See `docs/architecture/agent-readable-code-map.md` for the domain map.

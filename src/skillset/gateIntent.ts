@@ -1,5 +1,5 @@
 /**
- *  — gate-intent detector and reply finalization guard.
+ * gate-intent detector and reply finalization guard.
  *
  * When a user prompt clearly requests build/typecheck gate verification,
  * the agent turn must produce corresponding `gate.*` execution evidence,
@@ -29,12 +29,12 @@ export interface GateIntent {
   /** True iff the original detection was generic (any one suffices). */
   generic: boolean;
   /**
-   *  (1b) — true iff at least one matched pattern is a
+   * an earlier revision (1b) — true iff at least one matched pattern is a
    * verification-question (the user is asking the agent to actually
    * RUN the gate), as opposed to a mention-only literal that just
    * happens to appear in the prompt (e.g. a card title containing
    * the phrase `npm run typecheck`, or harness self-description text
-   * containing the substring `跑 gate`).  envelope-claim
+   * containing the substring `跑 gate`). an earlier revision envelope-claim
    * semantics still key off `detected`; only auto-dispatch is gated
    * on this flag.
    */
@@ -48,11 +48,11 @@ export interface GateIntentSatisfaction {
 }
 
 /**
- *  (1b) — per-pattern `autodispatch` flag.
+ * an earlier revision (1b) — per-pattern `autodispatch` flag.
  *
  * `autodispatch: true`  — pattern indicates the user is *asking the
  *                          agent to run the gate* ("build 还能过？",
- *                          "确认 typecheck", "跑 gate").
+ *                          "确认 typecheck", "跑 gate"). an earlier revision
  *                          auto-dispatch should fire.
  *
  * `autodispatch: false` — pattern is a *bare mention* of a gate tool
@@ -66,7 +66,7 @@ export interface GateIntentSatisfaction {
  *                          - prose references like `gate.typecheck` /
  *                            `typecheck gate`.
  *                          Detected, listed in expectedTools, used by
- *                          's seal-time fabrication check —
+ *                          an earlier revision's seal-time fabrication check —
  *                          but no 600s root gate runs unprompted.
  *
  * Aggregated by detectGateIntent via OR: if *any* matched pattern is
@@ -166,11 +166,11 @@ export function renderGateIntentViolation(missing: string[]): string {
 }
 
 /**
- *  — detect explicit "do not call any tools" directives in a
+ * detect explicit "do not call any tools" directives in a
  * user prompt. Used by the pre-finalize gate-intent dispatch guard to
  * decide whether to auto-dispatch the missing gate. Conservative:
  * matches only direct prohibitions (false negatives are safer than
- * false positives, since a false negative still lets  fail
+ * false positives, since a false negative still lets an earlier revision fail
  * the envelope honestly while a false positive would suppress the
  * auto-dispatch on a prompt where the user actually wanted a real
  * gate run).
@@ -193,7 +193,7 @@ export function hasExplicitNoToolDirective(text: string): boolean {
 }
 
 /**
- *  — honest reply body for the no-tool gate-intent negative
+ * honest reply body for the no-tool gate-intent negative
  * path. Used to replace the model's (possibly fabricated) reply body
  * when the user explicitly forbade tool use AND requested gate
  * verification AND no gate was dispatched. The body is plain — Card
@@ -207,20 +207,20 @@ export function renderNoToolGateIntentHonestReply(): string {
 }
 
 /**
- *  — explicit-no-gate-execution directive.
+ * explicit-no-gate-execution directive.
  *
  * Distinct from `hasExplicitNoToolDirective`: this matches prompts that
  * tell the agent *not to run gates* specifically (or not to run
  * build/typecheck) regardless of whether other tools are permitted.
- * The Discord-directed regression evidence from  showed two
+ * The Discord-directed regression evidence from an earlier revision showed two
  * failure shapes:
  *
  *   1. `constraint_confirm` prompt forbade *all* tools + asked to skip
- *      `gate.typecheck` → triggered both  warning and
+ *      `gate.typecheck` → triggered both an earlier revision warning and an earlier revision
  *      body replacement, hijacking the requested one-line answer.
  *
  *   2. `artifact-read-or-blocked` prompt allowed `artifact.read` but
- *      asked to skip `gate.typecheck` →  auto-dispatched the
+ *      asked to skip `gate.typecheck` → an earlier revision auto-dispatched the
  *      gate anyway (which timed out and produced confusing tail text).
  *
  * `hasExplicitNoToolDirective` only handles shape (1). This handles
@@ -230,7 +230,7 @@ export function renderNoToolGateIntentHonestReply(): string {
  * positives, because a missed negation leaves the existing Card
  * 200/207c/207d behavior intact (a real coding task that asks for
  * verification is unaffected). The complementary `replyMakesGatePassClaim`
- * fallback prevents over-fire on /207d even when this misses.
+ * fallback prevents over-fire on an earlier revision even when this misses.
  */
 const NO_GATE_PATTERNS: RegExp[] = [
   // Direct prohibitions in Chinese — "不要 / 别 / 禁止 / 不需要 / 无需 / 不用 跑 / 执行 / 运行 / 调用 (gate|typecheck|build)".
@@ -261,10 +261,10 @@ export function hasExplicitNoGateDirective(text: string): boolean {
 }
 
 /**
- *  — reply-side detector: does the model's reply *claim* a
+ * reply-side detector: does the model's reply *claim* a
  * build/typecheck/gate pass?
  *
- * 's warning and 's body replacement exist to flag a
+ * an earlier revision's warning and an earlier revision's body replacement exist to flag a
  * specific failure: the model fabricates "build gate 通过了" without
  * running the gate. When the model's reply doesn't actually make such
  * a claim (e.g. a one-line `constraint_confirm: PASS` observation),

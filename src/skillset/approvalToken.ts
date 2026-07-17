@@ -1,8 +1,7 @@
 /**
- *  —  approval token helpers.
+ * M8.5 approval token helpers.
  *
- * Per `` and
- * ``,
+ * Per `docs/adr/2026-05-09-m8.5-approval-replay-runtime-wire-up.md` and
  * approval tokens bind one approval decision to one tool dispatch:
  *
  *   binding = (agent_id, tool_id, input_hash, expires_at)
@@ -43,16 +42,16 @@ export interface ApprovalRecord {
   created_at: number;
   decided_at: number | null;
   consumed_at: number | null;
-  //  — id of the HMAC key that produced `token_hash`. Persisted
+  // id of the HMAC key that produced `token_hash`. Persisted
   // so a future rotation can disambiguate which key to verify against.
-  // Nullable for rows written before the column existed ( legacy).
+  // Nullable for rows written before the column existed (an earlier revision legacy).
   key_id: string | null;
 }
 
 /**
  * Inspect-safe row shape. Mirrors `ApprovalRecord` but with `token_hash`
  * removed and bounded preview fields. Inspect surfaces MUST use this
- * shape — see  ADR §D5: raw token / raw signature never cross
+ * shape — see an earlier revision ADR §D5: raw token / raw signature never cross
  * the inspect / outbox / reply / envelope boundary.
  */
 export interface ApprovalInspectRow {
@@ -70,7 +69,7 @@ export interface ApprovalInspectRow {
   created_at: number;
   decided_at: number | null;
   consumed_at: number | null;
-  //  — only the key id is exposed to inspect; the secret material
+  // only the key id is exposed to inspect; the secret material
   // it identifies never appears here. Null for legacy rows (pre-212c).
   key_id: string | null;
 }
@@ -212,7 +211,7 @@ export async function verifyApprovalToken(opts: {
 
 /**
  * HMAC-SHA256 with hex output. `key_id` is the caller's responsibility
- * ( ADR OQ2: HMAC + key_id rotation). MVP path uses a single
+ * (an earlier revision ADR OQ2: HMAC + key_id rotation). MVP path uses a single
  * binding env secret; key_id is recorded on the row so a future rotation
  * card can disambiguate.
  */
@@ -281,10 +280,10 @@ export function redactApprovalRow(row: ApprovalRecord): ApprovalInspectRow {
 }
 
 /**
- *  — hash a reviewer-supplied raw signature for storage.
+ * hash a reviewer-supplied raw signature for storage.
  *
  * The raw signature value never crosses the inspect / outbox / envelope
- * boundary ( ADR §D5); only this hash is persisted. SHA-256 hex
+ * boundary (an earlier revision ADR §D5); only this hash is persisted. SHA-256 hex
  * is the skeleton hash function — when 212e wires real cryptographic
  * signature verify, the hash here is what reviewers prove against.
  */
@@ -293,7 +292,7 @@ export async function hashReviewerSignature(rawSignature: string): Promise<strin
 }
 
 /**
- *  — HMAC key sourcing with rotation handle.
+ * HMAC key sourcing with rotation handle.
  *
  * Prefers the dedicated `AGENT_THURSDAY_APPROVAL_HMAC_KEY`. Falls back to the
  * legacy `AGENT_THURSDAY_SHARED_SECRET` so rows issued before the dedicated key

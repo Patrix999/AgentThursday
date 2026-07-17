@@ -53,7 +53,7 @@ export async function fetchCompactions(): Promise<CompactionsList | null> {
 }
 
 /**
- *  v2  — anchor-aware plan / apply pair. `compactPlan`
+ * M7.7 v2 anchor-aware plan / apply pair. `compactPlan`
  * proposes ID-based ranges built from a fresh snapshot + anchors;
  * `applyCompactPlan` re-runs all pre-flight checks against a fresh
  * snapshot before each `addCompaction`. Both helpers return the
@@ -66,7 +66,7 @@ export function compactPlan(body?: CompactPlanInput) {
 export function applyCompactPlan(
   plan: CompactPlanResult,
   options?: {
-    // /146 — optional opt-in to the semantic advisor scaffold.
+    // optional opt-in to the semantic advisor scaffold.
     // When `semanticAdvisor:true` is sent and no model client is wired
     // server-side, the apply path falls back to the deterministic
     // summary and the response includes
@@ -83,7 +83,7 @@ export function applyCompactPlan(
 }
 
 /**
- *   — UI-driven reset. Wraps `POST /cli/context/reset`.
+ * M7.7v3 UI-driven reset. Wraps `POST /cli/context/reset`.
  * Server emits a `context.reset` audit row with before/after counts and
  * preserves all durable state (memory, checkpoints, workspace, event_log,
  * task metadata, model profile). UI must confirm before calling — this
@@ -94,12 +94,12 @@ export function resetContext(body: { reason?: string }) {
 }
 
 /**
- *   / 149 — `new context`.  promotes the call
+ * M7.7v3 an earlier revision — `new context`. an earlier revision promotes the call
  * from the v1 reset-style fallback into real per-context DO routing:
  * the previous context's transcripts stay on its own DO; the new
  * contextId routes to a fresh DO via the `X-AgentThursday-Context-Id` header.
  *
- *  — server-pinned active model. The optimistic
+ * server-pinned active model. The optimistic
  * `setActiveContextId(...)` is kept so the very next `/api/workspace`
  * poll already targets the new context (no UI flicker), but it is no
  * longer the source of truth: `useWorkspace` will reconcile against
@@ -119,11 +119,11 @@ export async function newContext(body: { reason?: string }) {
 }
 
 /**
- *   — switch the active context to an existing
+ * M7.7v3 switch the active context to an existing
  * context_history row. Server validates the contextId, updates the
  * registry pointer, and emits a `context.switch` audit event.
  *
- *  — same optimistic-but-not-authoritative model as
+ * same optimistic-but-not-authoritative model as
  * `newContext` above. The registry pointer write inside the server
  * handler is the real source of truth; the reconcile loop in
  * `useWorkspace` keeps every surface aligned within one poll.

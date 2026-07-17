@@ -25,7 +25,7 @@
  *      keep using its local SQL path.
  *
  * Wrangler binding shape (documented but **not** added to wrangler.toml
- * in this card; see ``):
+ * in this card; see `docs/design/2026-05-02-m7.8-cloudflare-ai-search-adapter-spike.md`):
  *
  *   ```toml
  *   # Single-instance binding — ties the worker to ONE preconfigured
@@ -69,7 +69,7 @@
  * **Privacy / safety contract preserved**:
  *
  *   - The adapter uploads sanitized archive chunks (text + index_text
- *     produced by  `stripBoilerplate`); no raw `inputPreview` /
+ *     produced by an earlier revision `stripBoilerplate`); no raw `inputPreview` /
  *     `outputPreview` / SOUL / system prompt text crosses the boundary.
  *   - The adapter NEVER reads or returns tool tier-3+ payload fields.
  *   - Snippet windowing on results stays here (server-side); the
@@ -85,7 +85,7 @@ import type {
 } from "./schema";
 
 /**
- *  — common adapter contract. The local SQL path in
+ * common adapter contract. The local SQL path in
  * `AgentThursdayAgent.conversationSearch` already produces this exact shape;
  * the future adapter wiring just hands the same `input` to whichever
  * implementation `chooseConversationSearchAdapter` returns.
@@ -169,7 +169,7 @@ interface AiSearchInstanceLike {
 /**
  * Spike-only. Implements the adapter contract against CF AI Search;
  * `search()` requires a working binding. When the binding is missing
- * (the expected outcome for this card — agentthursday prod doesn't have AI
+ * (the expected outcome for this card — AgentThursday prod doesn't have AI
  * Search provisioned yet), `search()` throws
  * `AdapterUnavailableError` and the caller is expected to fall back
  * to the local SQL adapter.
@@ -290,7 +290,7 @@ export class CloudflareAiSearchConversationSearchAdapter implements Conversation
 }
 
 /**
- *  — capability/blocked report. Returns the adapter the
+ * capability/blocked report. Returns the adapter the
  * worker should use today plus a list of blocked items so callers
  * (and the inspect tab) can show "AI Search ready" vs "fall back
  * to local SQL — these are the missing pieces". Returning `null`

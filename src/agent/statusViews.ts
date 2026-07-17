@@ -1,5 +1,5 @@
 /**
- *  —  status/event views extraction.
+ * M8.9 status/event views extraction.
  *
  * Six read-only status/event view helpers moved verbatim from
  * `AgentThursdayAgent` (`src/server.ts:2191-2316`). No SQL strings, table
@@ -25,7 +25,6 @@
  * call.
  *
  * See:
- *   - ``
  *   - `src/agent/memoryOps.ts` (precedent for `XOpsSqlTag` + narrow host)
  */
 
@@ -92,7 +91,7 @@ export function getEventLogView(host: StatusViewsHost): EventLogRow[] {
     `;
 }
 
-//  — independent query for `task.submitted` events so the
+// independent query for `task.submitted` events so the
 // workspace summary stream can show more than 4 dialog turns. The
 // 20-row `getEventLog()` cap was dropping older `task.submitted`
 // rows when they were buried behind agent.woken / tool.* noise.
@@ -110,7 +109,7 @@ export function getRecentTaskSubmittedEventsView(
     `;
 }
 
-//  — fetch recent `task.reply.finalized` events for
+// fetch recent `task.reply.finalized` events for
 // `buildWorkspaceSnapshot`'s pairing loop. Stays consistent with
 // `getRecentTaskSubmittedEvents` (independent SQL query, 60-row
 // newest-first window) so the user/assistant pairing has equal
@@ -128,7 +127,7 @@ export function getRecentFinalizedReplyEventsView(
 }
 
 /**
- *  — return the timestamp of the latest `context.reset` event,
+ * return the timestamp of the latest `context.reset` event,
  * or 0 if reset has never been recorded on this DO. Used by
  * `buildWorkspaceSnapshot` to filter `summaryStream` to post-reset
  * activity. Does NOT delete event_log; the boundary is informational.
@@ -148,7 +147,7 @@ export function getLastResetAtView(host: StatusViewsHost): number {
 export function getLastTraceView(
   host: StatusViewsHost,
 ): { traceId: string; events: EventLogRow[] } | null {
-  //  — bounded read.
+  // bounded read.
   // Previously this returned every row matching `trace_id`, with full
   // `payload`. A long-running trace can accumulate hundreds of events
   // with large tool payloads, which on the DO isolate has shown up as

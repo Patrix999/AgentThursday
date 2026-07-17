@@ -1,19 +1,19 @@
 /**
- *  — propose-patch artifact policy module (v1).
+ * propose-patch artifact policy module (v1).
  *
  * Pure module. No I/O. Mechanizes the path allowlist / denylist and
- * redaction rules from  ADR §D4.3 + §D7. Used by ChannelHub's
+ * redaction rules from an earlier revision ADR §D4.3 + §D7. Used by ChannelHub's
  * `proposePatchArtifact` callable to fail-closed at creation time.
  *
  * Decisions baked in for v1 (revisit in 219+):
  *
- *   - `src/server.ts` is **denied** in v1.  D4.3 lists it as
+ *   - `src/server.ts` is **denied** in v1. an earlier revision D4.3 lists it as
  *     "allowed (非生产路径)" but does not specify how to enforce that
- *     qualifier mechanically.  spec §4 explicitly authorizes
+ *     qualifier mechanically. an earlier revision spec §4 explicitly authorizes
  *     "降级为 deny" rather than guessing. Reason code:
  *     `server-ts-deny-in-v1`.
  *   - Redaction is a **literal substring** match, not regex with
- *     value-shape constraints. Verifier production smoke (
+ *     value-shape constraints. Verifier production smoke (an earlier revision
  *     §5.6) greps for literal substrings; this module must be at
  *     least as strict as that grep, otherwise a patch can pass
  *     creation and fail verifier smoke. The cost is rejecting patches
@@ -62,7 +62,7 @@ export const PATCH_PATH_ALLOWLIST: ReadonlyArray<string> = [
 
 /**
  * Path denylist. Even if a path matches the allowlist, a denylist hit
- * vetoes it.  D4.3 explicit denials + the v1 `src/server.ts`
+ * vetoes it. an earlier revision D4.3 explicit denials + the v1 `src/server.ts`
  * downgrade.
  */
 export const PATCH_PATH_DENYLIST: ReadonlyArray<{
@@ -81,15 +81,15 @@ export const PATCH_PATH_DENYLIST: ReadonlyArray<{
   { pattern: /^\.github\//, reason: "github-config" },
   { pattern: /^docs\/runbooks\//, reason: "runbooks" },
   { pattern: /^docs\/adr\//, reason: "adr" },
-  { pattern: /^docs\/kanban\/217-/, reason: "-self" },
-  { pattern: /^docs\/kanban\/218-/, reason: "-self" },
+  { pattern: /^docs\/kanban\/217-/, reason: "card-217-self" },
+  { pattern: /^docs\/kanban\/218-/, reason: "card-218-self" },
 ];
 
 /**
  * Redaction substrings. Any literal match (case-insensitive) in
  * `patch_text` or `summary` causes fail-closed.
  *
- * Sourced from  ADR §D7 禁止 list and  verifier
+ * Sourced from an earlier revision ADR §D7 禁止 list and an earlier revision verifier
  * production smoke grep set. The category name is what surfaces in
  * the policy result; the matched substring itself is **never**
  * echoed back (it could be the raw secret).
@@ -240,7 +240,7 @@ export function generatePatchArtifactId(): string {
 
 export const ARTIFACT_ID_RE = /^art_[a-f0-9]{16}$/i;
 
-//  — git SHA1 (full 40-hex). Used by `proposePatchArtifact` to
+// git SHA1 (full 40-hex). Used by `proposePatchArtifact` to
 // validate caller-supplied `base_sha` and by `applyPatchDryRun` for
 // the case-insensitive mismatch comparison against the sandbox-resolved
 // `head_sha`. Anchored to forbid leading/trailing whitespace; case is
@@ -248,7 +248,7 @@ export const ARTIFACT_ID_RE = /^art_[a-f0-9]{16}$/i;
 export const BASE_SHA_RE = /^[a-f0-9]{40}$/i;
 
 /**
- *  — apply tool id. Distinct from the artifact's `tool_id` so the
+ * apply tool id. Distinct from the artifact's `tool_id` so the
  * apply approval binds to a different conceptual capability (apply, not
  * propose). The canonical apply input is intentionally short:
  *
@@ -262,8 +262,8 @@ export const BASE_SHA_RE = /^[a-f0-9]{40}$/i;
  * input_hash and matching the approval row's stored value.
  *
  * Spec §B requires either reusing the artifact's tool_id or defining a
- * new one with explicit canonical input.  chose the latter so
- * apply-vs-propose can be approved separately in + without ambiguity.
+ * new one with explicit canonical input. an earlier revision chose the latter so
+ * apply-vs-propose can be approved separately in M8.7+ without ambiguity.
  */
 export const APPLY_TOOL_ID = "m8.6.apply_patch.v1";
 
@@ -285,12 +285,12 @@ export async function computeApplyInputHash(opts: {
 
 /**
  * Parse a unified-diff to extract declared target paths and hunk count.
- * Used by the apply skeleton (+) as a **preflight** structural
+ * Used by the apply skeleton  as a **preflight** structural
  * gate: every `+++ b/<path>` in the diff must already be in the
  * artifact's `target_paths` allowlist.
  *
- *  tighten: this is a conservative parser, not a `git apply`
- * substitute. `git apply --check` () remains the authoritative
+ * an earlier revision tighten: this is a conservative parser, not a `git apply`
+ * substitute. `git apply --check`  remains the authoritative
  * validator. The parser's job is to reject *obviously* malformed,
  * unsupported, or ambiguous structures before paying the sandbox
  * round-trip — and to surface a categorical `error` for tests / debug

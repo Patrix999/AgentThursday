@@ -6,7 +6,7 @@ import { StartRunForm } from "./StartRunForm";
 import { StatusBadge } from "./StatusBadge";
 
 /**
- *  — list view at `/agent-runs`.
+ * list view at `/agent-runs`.
  *
  * Optional filter via `?profile_id=<id>` (linked from `/agents/:id`).
  * No polling — spec §4 commits to local-row data only; the user can

@@ -1,15 +1,15 @@
 /**
- * channel route policy.  split the active-task case.
+ * channel route policy. an earlier revision split the active-task case.
  *
  * Pure function: takes an inbox row + minimal context and returns a
  * `ChannelRouteDecision`. No SQL, no RPC — keeps the policy testable and
  * makes it easy to swap rules later without touching ChannelHub.
  *
- * P0 policy (per  §A-4 +  §B-2):
+ * P0 policy (per an earlier revision §A-4 + an earlier revision §B-2):
  *   - DM/mention/reply from trusted + agent idle      → process
  *   - DM/mention/reply from trusted + agent BUSY      → busy-skip
  *     (DO NOT consume the row — keep status='received' so a later route
- *      attempt picks it up.  invariant: busy means do not consume
+ *      attempt picks it up. an earlier revision invariant: busy means do not consume
  *      the user's message.)
  *   - addressed but sender role=unknown               → wait (consumes;
  *     we need explicit human clarification before acting)
@@ -18,7 +18,7 @@
  *   - everything else (casual chatter)                → ignore
  *
  * `memoryPolicy` is left at "none" by default — channel messages are NOT
- * memory candidates (review notes §4 +  SOUL prompt). The agent
+ * memory candidates (review notes §4 + an earlier revision SOUL prompt). The agent
  * itself decides to remember after a turn.
  */
 
@@ -72,7 +72,7 @@ export function decideRoute(row: ChannelInboxItem, ctx: RouteContext): ChannelRo
     };
   }
 
-  // 5. Trusted + addressed + agent busy → busy-skip.  §B invariant:
+  // 5. Trusted + addressed + agent busy → busy-skip. an earlier revision §B invariant:
   // do NOT consume the user's message just because the agent is mid-task.
   // The row stays at `received` and the next routePending picks it up when
   // the agent is free.
@@ -93,14 +93,14 @@ export function decideRoute(row: ChannelInboxItem, ctx: RouteContext): ChannelRo
     : "mention";
   return {
     action: "process",
-    reason: `addressed via ${why} from trusted sender; submit as agentthursday task`,
+    reason: `addressed via ${why} from trusted sender; submit as AgentThursday task`,
     taskHint: row.text.slice(0, 80),
     memoryPolicy: "none",
   };
 }
 
 /**
- * Build a safe agentthursday task prompt from a channel inbox row. Includes provider
+ * Build a safe AgentThursday task prompt from a channel inbox row. Includes provider
  * metadata for traceability; explicitly does NOT include raw provider JSON.
  * Card §C-13 / §D-17.
  */
@@ -117,12 +117,12 @@ export function buildTaskPromptFromInbox(row: ChannelInboxItem): string {
     ``,
     row.text,
     ``,
-    `(This message arrived via the channel layer. Respond by addressing the sender; do not speak as the human operator. Do not include secrets in any reply or memory entry.)`,
+    `(This message arrived via the channel layer. Respond by addressing the sender; do not speak as the human the operator. Do not include secrets in any reply or memory entry.)`,
   ].join("\n");
 }
 
 /**
- *   — build the **user-visible** display text for a
+ * build the **user-visible** display text for a
  * channel inbox row. The result is what shows up as the YOU line on
  * the Web/mobile main dialog (`summaryStream`).
  *

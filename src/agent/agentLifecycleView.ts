@@ -1,12 +1,12 @@
 /**
- *  —  agent lifecycle consensus rewrite v2.
+ * M9.0 agent lifecycle consensus rewrite v2.
  *
  * Four-layer resolver that turns
  *
  *   { profile + per-agent manager-task evidence }
  *
  * into the lifecycle view consumed by dashboard, /agents, /api/inspect,
- * and workspace. Replaces 's nine-state model.
+ * and workspace. Replaces an earlier revision's nine-state model.
  *
  * Layers (ADR §2):
  *   1. Lifecycle (persisted)     — initialized | archived | deleted_marker
@@ -51,7 +51,7 @@ export interface ResolveAgentLifecycleInput {
   profile: {
     id: string;
     status: AgentLifecyclePersisted;
-    // New fields from ; optional with defaults for back-compat
+    // New fields from an earlier revision; optional with defaults for back-compat
     // with callers that haven't been updated to the four-layer model yet.
     origin?: AgentOrigin;
     parent_agent_id?: string | null;
@@ -94,7 +94,7 @@ export interface AgentLifecycleView {
   parent_agent_id: string | null;
   parent_task_id: string | null;
 
-  /**  v1: always false. Reserved for future migration plane. */
+  /** M9.0 v1: always false. Reserved for future migration plane. */
   migrating: boolean;
 }
 
@@ -120,8 +120,8 @@ function maxIsoOrNull(a: string | null, b: string | null): string | null {
 }
 
 /**
- *  — central stale thresholds shared with
- * `` §2.2.
+ * central stale thresholds shared with
+ * `docs/adr/2026-05-26-agent-lifecycle-product-contract.md` §2.2.
  *
  * - `STALE_TASK_WINDOW_MS`: an active task in `received`/`in_progress`/
  *   `waiting` longer than this window without a terminal event flags
@@ -155,7 +155,7 @@ function buildBase(
     lastActivityAt = maxIsoOrNull(lastActivityAt, t.last_event_at);
   }
 
-  // Back-compat defaults: old DB rows don't have new  columns.
+  // Back-compat defaults: old DB rows don't have new an earlier revision columns.
   const origin = profile.origin ?? "user_created";
   const accepts_tasks = profile.accepts_tasks ?? true;
   const retention_policy = profile.retention_policy ?? "durable";

@@ -1,7 +1,7 @@
 /**
  * envelopeOps — evidence-envelope authority free functions.
  *
- * Cards 291 → 292 → 294b/c → 295e/g/h → 206a consolidated this module
+ * an earlier revision → 292 → 294b/c → 295e/g/h → 206a consolidated this module
  * as the agent-side authority for envelope store init, active-draft
  * resolution, CRUD, snapshot lifecycle, sweeper constants, read-only
  * orphan classification, and supplier/intent probes that the gated
@@ -20,10 +20,10 @@
  *     `ENVELOPE_SWEEPER_LAZY_THRESHOLD_MS`,
  *     `ENVELOPE_SWEEPER_READ_ONLY_THRESHOLD_MS`,
  *     `ENVELOPE_SNAPSHOT_RETENTION_LIMIT`.
- *   - Snapshot build + cleanup ():
+ *   - Snapshot build + cleanup :
  *     `buildBoundedEnvelopeSnapshotFree`,
  *     `cleanupOldEnvelopeSnapshotsFree`.
- *   - Envelope CRUD ():
+ *   - Envelope CRUD :
  *     `devShellEnvelopeStartFree`, `devShellEnvelopeAddGateFree`,
  *     `devShellEnvelopeAddToolFree`, `devShellEnvelopeSealFree`,
  *     `devShellEnvelopeGetFree`, `devShellEnvelopeListFree`,
@@ -32,12 +32,12 @@
  *   - Reply-marker round-trip:
  *     `buildEnvelopeReplyMarker`, `parseEnvelopeReplyMarker`.
  *   - Read-only orphan classifier + supplier/intent probes used by
- *     the gated sweeper (Cards 206a / 295e/g/h):
+ *     the gated sweeper (an earlier revision/g/h):
  *     `classifyReadOnlySafeOrphan`, `SUPPLIER_MUTATION_TOOL_NAMES`,
  *     `hasOrphanSupplierMutation`, `hasOrphanPromptReadIntent`,
  *     `hasOrphanPromptMutationIntent`.
  *
- * What stays in `server.ts` (intentional —  preflight):
+ * What stays in `server.ts` (intentional — an earlier revision preflight):
  *
  *   - `_finalizeTaskTurn()` + fallback-reply path — lifecycle coupling
  *     with `onStepFinish` / `streamReply`; kept server-owned until a
@@ -45,7 +45,7 @@
  *   - `sweepStaleDraftEnvelopes()` + `envelopeSweeperBackstop()` —
  *     `this.schedule()` resolves the backstop by name, so it must
  *     remain a class member; the sweeper threads `_finalizeTaskTurn`
- *     and stays paired with it ( decision).
+ *     and stays paired with it (an earlier revision decision).
  *   - `_currentEnvelopeId` / `_currentTaskWrappedToolIds` /
  *     `_pinnedWrappedToolIdsByTask` — class fields on `AgentThursdayAgent`;
  *     load-bearing closure identity across the submitTask main chain.
@@ -75,7 +75,7 @@
  *     `{task_id, count, envelope_ids, source}` unchanged.
  *   - Constants are re-aliased as `static readonly` on `AgentThursdayAgent`,
  *     so submitTask / sweeper / retention call-sites stay byte-equal
- *     ( §"不改 submitTask 主链").
+ *     (an earlier revision §"不改 submitTask 主链").
  *   - No schema migration.
  */
 
@@ -104,7 +104,7 @@ export interface EnvelopeStoreHost {
 }
 
 /**
- *  — alarm-backstop delay in seconds. The lazy sweeper
+ * alarm-backstop delay in seconds. The lazy sweeper
  * (triggered from /cli/status) handles the common "verifier polls
  * status and finds the demo hung" case quickly; this alarm catches
  * the silent case where no one polls. 30 min is a comfortable
@@ -113,7 +113,7 @@ export interface EnvelopeStoreHost {
  */
 export const ENVELOPE_SWEEPER_ALARM_DELAY_S = 30 * 60;
 
-// ──  — sweeper gate-aware grace ─────────────────────────────
+// ── sweeper gate-aware grace ─────────────────────────────
 // The 30-min backstop cannot tell a hung stream from a long-running
 // gate chain: 381 attempt #4 (task-e20784d8) was sealed `failed` while
 // gate.build's web_tsc was actively mid-run. If the DO shows a recent
@@ -148,7 +148,7 @@ export function decideSweeperExtension(input: {
 }
 
 /**
- *  — default threshold for the lazy sweeper: ignore drafts
+ * default threshold for the lazy sweeper: ignore drafts
  * younger than this so an in-flight, healthy turn isn't pre-emptively
  * finalized while gates are still running. Threshold ≥ longest
  * expected single-turn duration.
@@ -156,7 +156,7 @@ export function decideSweeperExtension(input: {
 export const ENVELOPE_SWEEPER_LAZY_THRESHOLD_MS = 20 * 60 * 1000;
 
 /**
- *  — short threshold for clearly-read-only orphan drafts.
+ * short threshold for clearly-read-only orphan drafts.
  * A draft qualifies when (1) `execution.length === 0`, (2) no gate
  * logs / diff evidence attached, and (3) `submitTask.prompt.gate_intent_check`
  * for this task was logged with `detected: false`. The 20-min strict
@@ -165,7 +165,7 @@ export const ENVELOPE_SWEEPER_LAZY_THRESHOLD_MS = 20 * 60 * 1000;
 export const ENVELOPE_SWEEPER_READ_ONLY_THRESHOLD_MS = 120 * 1000;
 
 /**
- *  — keep-last-K retention for `envelope_snapshots` terminal
+ * keep-last-K retention for `envelope_snapshots` terminal
  * rows. Draft rows are never pruned by the K-LRU path: a live draft
  * may belong to the current turn; the sweeper closes drafts to
  * terminal, after which the next terminal write can reclaim them.
@@ -174,13 +174,13 @@ export const ENVELOPE_SWEEPER_READ_ONLY_THRESHOLD_MS = 120 * 1000;
 export const ENVELOPE_SNAPSHOT_RETENTION_LIMIT = 500;
 
 /**
- *  — bounded snapshot payload. gate stdout/stderr can easily
+ * bounded snapshot payload. gate stdout/stderr can easily
  * run hundreds of KB on a real `npm run build`; we keep an 8KB head +
  * 8KB tail window with a `truncated:true` marker. The in-memory
  * `EvidenceEnvelope` is unchanged — this transformation applies to
  * the SQL row only.
  *
- *  moved this from `AgentThursdayAgent._buildBoundedEnvelopeSnapshot`
+ * an earlier revision moved this from `AgentThursdayAgent._buildBoundedEnvelopeSnapshot`
  * into a pure module-local free function. Behavior byte-equal: HEAD/
  * TAIL byte windows, truncation marker, gate_logs[*].stdout/stderr
  * targeting, and the `truncated:true` flag.
@@ -219,12 +219,12 @@ export function buildBoundedEnvelopeSnapshotFree(
 }
 
 /**
- *  — keep-last-K cleanup for terminal `envelope_snapshots`.
+ * keep-last-K cleanup for terminal `envelope_snapshots`.
  *
  * Triggered from `onMutate` only when the just-written envelope has
  * reached a terminal status (`sealed` / `failed`). Drafts are never
  * pruned here: they may belong to an in-flight turn. The sweeper
- * () closes orphan drafts to a terminal verdict, after
+ *  closes orphan drafts to a terminal verdict, after
  * which the next terminal write becomes eligible for collection.
  *
  * SQL strategy: pick the `created_at` of the K-th most recent
@@ -242,7 +242,7 @@ export function buildBoundedEnvelopeSnapshotFree(
  * Fail-soft: any SQL error is swallowed. GC must never block the
  * envelope write or the reply pipeline.
  *
- *  moved this from `AgentThursdayAgent._cleanupOldEnvelopeSnapshots`
+ * an earlier revision moved this from `AgentThursdayAgent._cleanupOldEnvelopeSnapshots`
  * into a free function over `sql`. K is the module-local
  * `ENVELOPE_SNAPSHOT_RETENTION_LIMIT`, byte-equal to the prior
  * `AgentThursdayAgent.ENVELOPE_SNAPSHOT_RETENTION_LIMIT` static alias.
@@ -269,7 +269,7 @@ export function cleanupOldEnvelopeSnapshotsFree(sql: EnvelopeOpsSqlTag): void {
 }
 
 /**
- *  — sync envelope-store ensure. Pre-198a this was async
+ * sync envelope-store ensure. Pre-198a this was async
  * because of a dynamic `import()`; the wrapper closures
  * (`getEnvelopeStore` / `getCurrentEnvelopeId`) are sync, so a tool
  * call firing right after a DO isolate restart could see the cache
@@ -281,7 +281,7 @@ export function ensureEnvelopeStoreSyncFree(host: EnvelopeStoreHost): EnvelopeSt
   const cached = host.getEnvelopeStoreCache();
   if (cached) return cached;
   const store = new EnvelopeStoreClass({
-    //  — durable snapshot persistence. Every accepted mutation
+    // durable snapshot persistence. Every accepted mutation
     // persists a bounded JSON payload so /api/inspect/evidence
     // survives DO isolate restarts (in-memory map alone does not).
     onMutate: (env) => {
@@ -296,7 +296,7 @@ export function ensureEnvelopeStoreSyncFree(host: EnvelopeStoreHost): EnvelopeSt
       } catch {
         // fail-soft — persistence failure must not break tool calls.
       }
-      //  — keep-last-K LRU on terminal rows. Triggered only
+      // keep-last-K LRU on terminal rows. Triggered only
       // when this write transitions the envelope to a terminal status,
       // so live drafts are never collected and we don't re-run the SQL
       // on every intermediate mutation.
@@ -304,7 +304,7 @@ export function ensureEnvelopeStoreSyncFree(host: EnvelopeStoreHost): EnvelopeSt
         cleanupOldEnvelopeSnapshotsFree(host.sql);
       }
     },
-    //  — surface persistence failures via event_log. The
+    // surface persistence failures via event_log. The
     // 196b `onMutate` block already catches+swallows any SQL throw so
     // tool execution keeps moving; without this hook we lose the
     // discriminator between "envelope state is wrong because we never
@@ -339,7 +339,7 @@ export async function ensureEnvelopeStoreFree(
 }
 
 /**
- *  — resolve the in-flight draft envelope id for the
+ * resolve the in-flight draft envelope id for the
  * current agent task, consulting (1) in-memory store and (2) the
  * durable `envelope_snapshots` SQL fallback. Used by tool wrappers
  * each time they fire so a DO isolate restart mid-saveMessages
@@ -414,7 +414,7 @@ export function pickNewestDraftIdFree(
 }
 
 /**
- *  — envelope CRUD Host. Extends EnvelopeStoreHost with the
+ * envelope CRUD Host. Extends EnvelopeStoreHost with the
  * two cross-module capabilities envelope CRUD needs:
  *
  *   - `agentId`          — for envelope.createDraft({ agent_id })
@@ -423,7 +423,7 @@ export function pickNewestDraftIdFree(
  *   - `dispatchReadTool` — wraps devShellDispatchFree; called by
  *     `devShellEnvelopeAddToolFree`.
  *
- * Kept additive so  (finalize/sweeper) can layer further
+ * Kept additive so an earlier revision (finalize/sweeper) can layer further
  * capabilities without re-shaping the base store host.
  */
 export interface EnvelopeCrudHost extends EnvelopeStoreHost {
@@ -445,7 +445,7 @@ async function sha256HexFree(payload: string): Promise<string> {
 }
 
 /**
- *  — start a new draft envelope for the current task. Records
+ * start a new draft envelope for the current task. Records
  * the declared intent and emits `evidence.envelope.draft`.
  */
 export async function devShellEnvelopeStartFree(
@@ -458,12 +458,16 @@ export async function devShellEnvelopeStartFree(
     intent_expected_output?: Array<{ type: string; description: string; acceptance_check?: string }>;
     intent_workflow_pattern?: string;
     traceId?: string | null;
+    // 2026-06-27 — the agent's resolved effective skillset (was hardcoded
+    // "software-dev"). Caller passes it; falls back to "software-dev" (the
+    // dev-shell surface is dev work) only if unresolved.
+    skillset_id?: string;
   },
 ): Promise<unknown> {
   const store = await ensureEnvelopeStoreFree(host);
   const env = store.createDraft({
     task_id: input.task_id,
-    skillset_id: "software-dev",
+    skillset_id: input.skillset_id ?? "software-dev",
     agent_id: host.agentId,
     intent: {
       source: input.intent_source,
@@ -482,7 +486,7 @@ export async function devShellEnvelopeStartFree(
 }
 
 /**
- *  — run a gate (typecheck/build/test/dry_run) and append its
+ * run a gate (typecheck/build/test/dry_run) and append its
  * execution + structured gate evidence into the envelope. Emits
  * `evidence.envelope.gate_added`.
  */
@@ -519,7 +523,7 @@ export async function devShellEnvelopeAddGateFree(
 }
 
 /**
- *  — wrap a read-side dev-shell dispatch and record the call
+ * wrap a read-side dev-shell dispatch and record the call
  * into envelope.execution[]. Rejects non-read tools with
  * `tool_id_not_in_read_allowlist`. Emits `evidence.envelope.tool_added`.
  */
@@ -605,8 +609,8 @@ export async function devShellEnvelopeAddToolFree(
 }
 
 /**
- *  — seal an envelope. EnvelopeStore.seal computes the
- * `self_verify.verdict` (incl.  §F2 `fabricated_tools`).
+ * seal an envelope. EnvelopeStore.seal computes the
+ * `self_verify.verdict` (incl. an earlier revision §F2 `fabricated_tools`).
  * Emits `evidence.envelope.sealed` on `sealed` and
  * `evidence.envelope.failed` on `failed`.
  */
@@ -633,7 +637,7 @@ export async function devShellEnvelopeSealFree(
 }
 
 /**
- *  — get an envelope by id with durable snapshot fallback.
+ * get an envelope by id with durable snapshot fallback.
  * Returns live store value first; on miss, reads the
  * `envelope_snapshots` SQL row written by `onMutate`.
  */
@@ -658,7 +662,7 @@ export async function devShellEnvelopeGetFree(
 }
 
 /**
- *  — list envelopes. Memory list unioned with the durable
+ * list envelopes. Memory list unioned with the durable
  * snapshot tail (LIMIT 50, newest first), deduped by `envelope_id`
  * so live drafts win over their snapshots.
  */
@@ -691,9 +695,9 @@ export async function devShellEnvelopeListFree(
 }
 
 /**
- *  — list envelopes filtered by task_id; same live + snapshot
+ * list envelopes filtered by task_id; same live + snapshot
  * union + dedupe shape as devShellEnvelopeListFree. Snapshot scan is
- * bounded by  K=500 retention and the LIMIT 50 ceiling.
+ * bounded by an earlier revision K=500 retention and the LIMIT 50 ceiling.
  */
 export async function devShellEnvelopeListByTaskFree(
   host: EnvelopeCrudHost,
@@ -730,7 +734,7 @@ export async function devShellEnvelopeListByTaskFree(
 }
 
 /**
- *  — return the most recent terminal envelope from snapshots,
+ * return the most recent terminal envelope from snapshots,
  * or null. Snapshots are authoritative for terminal status because
  * `onMutate` persists every transition.
  */
@@ -754,7 +758,7 @@ export function devShellEnvelopeGetLatestTerminalFree(
 }
 
 /**
- *  — final-reply envelope marker helpers.
+ * final-reply envelope marker helpers.
  *
  * Build site: `submitTask` appends `[envelope: <id>]` to the
  * user-visible reply so the verifier / inspect endpoint can fetch the
@@ -768,7 +772,7 @@ export function devShellEnvelopeGetLatestTerminalFree(
  * them here eliminates the silent drift surface that an asymmetric
  * extraction (build OR parse alone) would create.
  *
- * Out of scope (): non-server marker sites in
+ * Out of scope : non-server marker sites in
  * `channelHub.ts`, `replyEmptyFallback.ts`, `inspectRoutes.ts`,
  * `discordDirect.ts`. Those parse the same shape but for fallback /
  * Discord-render / inspect reasons and are not part of the
@@ -794,7 +798,7 @@ export function parseEnvelopeReplyMarker(
 }
 
 /**
- *  —  read-only-safe orphan classification helper.
+ * an earlier revision read-only-safe orphan classification helper.
  *
  * The lazy sweeper (`/cli/status` path) and the alarm backstop
  * (`envelopeSweeperBackstop`) each computed the same boolean from the
@@ -805,7 +809,7 @@ export function parseEnvelopeReplyMarker(
  * be applied twice or risk asymmetric drift between the lazy and
  * alarm paths.
  *
- * Eligibility (mirrors  invariants):
+ * Eligibility (mirrors an earlier revision invariants):
  *   1. `execution[]` empty on the persisted envelope payload.
  *   2. No `evidence.gate_logs[]` and no `evidence.diff[]`.
  *   3. A `submitTask.prompt.gate_intent_check` event for the task was
@@ -813,7 +817,7 @@ export function parseEnvelopeReplyMarker(
  *      eligible — pre-206a tasks fall into the strict 20-min path.
  *
  * Method bodies (`sweepStaleDraftEnvelopes`, `envelopeSweeperBackstop`)
- * stay server-side per  §"非目标" — they are tied to DO
+ * stay server-side per an earlier revision §"非目标" — they are tied to DO
  * scheduler, `_finalizeTaskTurn` idempotency, fallback reply
  * enqueue, and `_ensureEnvelopeStoreSync`. Only this pure
  * classification is portable.
@@ -831,21 +835,21 @@ export function classifyReadOnlySafeOrphan(
     (inMemory?.evidence?.gate_logs?.length ?? 0) === 0 &&
     (inMemory?.evidence?.diff?.length ?? 0) === 0;
   if (!noExecution || !noEvidence) return false;
-  //  — sweeper-side prompt read-intent re-check. The
+  // sweeper-side prompt read-intent re-check. The
   // happy-path submitTask.finally already disqualifies read-intent
-  // prompts from the read-only-safe pass (). But when
+  // prompts from the read-only-safe pass . But when
   // submitTask hangs and the sweeper races ahead, that detection
   // never ran in-process. Re-derive from the `task.submitted` event
   // payload so a read-intent prompt cannot be sealed as PASS just
   // because gate-intent didn't fire and tools didn't dispatch.
   if (hasOrphanPromptReadIntent(sql, taskId)) return false;
-  //  — sweeper-side unwrapped-mutation re-check. Same
+  // sweeper-side unwrapped-mutation re-check. Same
   // failure mode as read-intent above: if a write/delete supplier
   // tool fired but the round never landed in execution, the
   // read-only-safe short-circuit must NOT pass. Re-derive from the
   // persisted `supplier.signal.summary` row(s) for this task.
   if (hasOrphanSupplierMutation(sql, taskId)) return false;
-  //  — sweeper-side prompt mutation-intent re-check. If
+  // sweeper-side prompt mutation-intent re-check. If
   // the original prompt asked for write/delete/edit on a repo path
   // and the sweeper has zero execution + zero supplier mutation
   // dispatch, the read-only-safe pass would seal a fabricated
@@ -874,7 +878,7 @@ export function classifyReadOnlySafeOrphan(
 }
 
 /**
- *  — sweeper-side read-intent detection on the original
+ * sweeper-side read-intent detection on the original
  * prompt. Returns true iff the most recent `task.submitted` event for
  * `taskId` carries a `task` text whose prompt matches `detectReadIntent`.
  * Used by `classifyReadOnlySafeOrphan` to disqualify read-intent
@@ -882,14 +886,14 @@ export function classifyReadOnlySafeOrphan(
  * `_finalizeTaskTurn` to thread `readIntentObserved: true` through to
  * `EvidenceEnvelope.seal` so the strict-ring fail emits the dedicated
  * `read_intent_no_execution` reason — matching the contract that
- * submitTask.finally enforces ().
+ * submitTask.finally enforces .
  *
  * Fail-soft: any SQL / JSON / regex throw returns `false`, which means
  * the sweeper falls back to the conservative strict path (still safe,
  * just doesn't get the dedicated reason).
  */
 /**
- *  — supplier-side mutation tool names the Think
+ * supplier-side mutation tool names the Think
  * `createWorkspaceTools` factory exposes. These are dispatched at
  * the top level of `streamText({tools})` (not inside codemode), and
  * when the agent has no envelope-wrapped mapping for them (compare
@@ -908,7 +912,7 @@ export const SUPPLIER_MUTATION_TOOL_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- *  — sweeper-side detection mirror for unwrapped mutation
+ * sweeper-side detection mirror for unwrapped mutation
  * tool calls. Returns true iff any persisted `supplier.signal.summary`
  * row for `taskId` records a step whose `toolCallNames` includes a
  * Think-workspace mutation tool. Used by `classifyReadOnlySafeOrphan`
@@ -972,8 +976,8 @@ export function hasOrphanPromptReadIntent(
       task?: unknown;
       taskPrompt?: unknown;
     };
-    //  — Detect on BOTH fields and OR the results. `task`
-    // is the human-visible display (, equals what
+    // Detect on BOTH fields and OR the results. `task`
+    // is the human-visible display (an earlier revision, equals what
     // submitTask.finally runs against). `taskPrompt` is the richer
     // framed version (only present when `display !== task`, e.g.
     // Discord channel metadata + verifier framing prefixed to a
@@ -995,7 +999,7 @@ export function hasOrphanPromptReadIntent(
 }
 
 /**
- *  — sweeper-side prompt mutation-intent detection mirror.
+ * sweeper-side prompt mutation-intent detection mirror.
  * Returns true iff the most recent `task.submitted` event for
  * `taskId` carries a prompt that matches `detectMutationIntent`.
  * Used by `classifyReadOnlySafeOrphan` to disqualify mutation-intent

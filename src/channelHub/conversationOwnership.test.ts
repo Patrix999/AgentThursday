@@ -1,5 +1,5 @@
 /**
- *  — `inspectConversationOwnershipImpl` regression tests.
+ * `inspectConversationOwnershipImpl` regression tests.
  *
  * Pure-helper test: stubs the host's `sql` template tag so we can
  * exercise the ownership / mismatch / unbound shape without the
@@ -60,7 +60,7 @@ function makeInboxRow(overrides: Partial<RecentInboxQRow> = {}): RecentInboxQRow
     created_at: 1716700000000,
     status: "handled",
     route_action: "process",
-    route_reason: "addressed via mention from trusted sender; submit as agentthursday task",
+    route_reason: "addressed via mention from trusted sender; submit as AgentThursday task",
     handoff_task_id: "task-mpmh80m8",
     ...overrides,
   };
@@ -85,7 +85,7 @@ function makeHost(plan: Array<ConversationQRow[] | RecentInboxQRow[]>): {
   return { host, calls };
 }
 
-describe(" inspectConversationOwnershipImpl", () => {
+describe("an earlier revision inspectConversationOwnershipImpl", () => {
   it("conversation_id lookup: bound surfaces route_owner_agent_id + is_bound:true", () => {
     const { host } = makeHost([
       [makeConvRow()],

@@ -1,5 +1,5 @@
 /**
- *  — agent dispatch registry.
+ * agent dispatch registry.
  *
  * Provider-neutral table that maps a canonical tool_id (with dots) to:
  *   - the zod input schema the AI SDK should advertise,
@@ -14,7 +14,7 @@
  * canonical `ToolContract.description` so manifest authorship stays
  * the boundary for agent-visible language.
  *
- *  — adapter registration entry point. Handlers added in
+ * adapter registration entry point. Handlers added in
  * `src/skillset/adapters/*` register themselves via
  * `registerDispatchHandler()` at import time. The bootstrap module
  * (`src/skillset/adapters/index.ts`) is side-effect-imported by the
@@ -22,7 +22,7 @@
  * literal reference to any adapter-registered tool_id, so adding a
  * new tool requires zero edits here.
  *
- *  — the REGISTRY starts empty at module load and is
+ * the REGISTRY starts empty at module load and is
  * populated entirely by `registerDispatchHandler()` calls from
  * `src/skillset/adapters/*`. No adapter-registered tool_id is named
  * by literal in this file.
@@ -34,9 +34,9 @@ export interface DispatchHandler<TInput = unknown, TOutput = unknown> {
   tool_id: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   inputSchema: z.ZodSchema<TInput, any, any>;
-  //  — optional `ctx` exposes a narrow per-handler interface
+  // optional `ctx` exposes a narrow per-handler interface
   // for stateful tools (e.g. artifact.write needs DO callable access).
-  // Stateless adapters (localdoc/runtime_summary) ignore the third arg.
+  // Stateless adapters (fyimd/runtime_summary) ignore the third arg.
   execute: (input: TInput, env: unknown, ctx?: unknown) => Promise<TOutput>;
 }
 
@@ -44,7 +44,7 @@ export interface DispatchHandler<TInput = unknown, TOutput = unknown> {
 const REGISTRY = new Map<string, DispatchHandler<any, any>>();
 
 /**
- *  — adapter registration hook. Adapter modules call this at
+ * adapter registration hook. Adapter modules call this at
  * import time; duplicate `tool_id` is a hard error so two adapters
  * never silently fight over the same canonical id.
  */

@@ -6,15 +6,16 @@ import {
 } from "../api/agentProfiles";
 import { AgentsLayout } from "./AgentsLayout";
 import { LifecycleBadge, relativeTime } from "./LifecycleBadge";
+import { OwnerBadge } from "./OwnerBadge";
 import { useRuntimeModelLookup } from "./useRuntimeModelLookup";
 import { GettingStarted } from "../dashboard/GettingStarted";
 
 /**
- *  — list view at `/agents`.
- *  — UI copy reads "cloud agent instances"; data shape unchanged.
+ * list view at `/agents`.
+ * UI copy reads "cloud agent instances"; data shape unchanged.
  * Each row is one cloud agent (a long-lived `AgentThursdayAgent` DO); the
  * underlying API route is still `/api/agent-profiles` (legacy persistence;
- * see ).
+ * see docs/design/2026-05-24-m9.0-agent-centric-correction.md).
  */
 export function AgentsListRoute() {
   const [agents, setAgents] = useState<AgentProfileWithLifecycle[] | null>(null);
@@ -57,7 +58,7 @@ export function AgentsListRoute() {
         </div>
       }
     >
-      {/*  (UX W3, D2-B) — Agents is the landing page; the
+      {/* an earlier revision (UX W3, D2-B) — Agents is the landing page; the
           getting-started checklist rides at the top until configured. */}
       <GettingStarted />
       {error && <div className="text-sm text-rose-400 mb-3">{error}</div>}
@@ -83,9 +84,10 @@ export function AgentsListRoute() {
                 <div className="flex items-baseline gap-2 flex-wrap">
                   <span className="text-sm text-slate-100 font-medium">{p.name}</span>
                   <LifecycleBadge lifecycle={p.lifecycle} persistedFallback={p.status} />
+                  <OwnerBadge ownerUserId={p.owner_user_id} ownerEmail={p.owner_email} />
                   <span className="text-xs text-slate-500 font-mono">{p.id}</span>
                 </div>
-                {/*  — activity row: current task summary + last
+                {/* activity row: current task summary + last
                     activity ago. Quiet empty state for idle / no-activity. */}
                 <div className="mt-1 text-xs text-slate-400">
                   {p.lifecycle?.current_activity_summary ? (

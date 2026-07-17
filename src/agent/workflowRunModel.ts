@@ -1,5 +1,5 @@
 /**
- *  —  observable workflow run model: pure ID derivation +
+ * M9.1 observable workflow run model: pure ID derivation +
  * row → tree assembly for the workflow ledger.
  *
  * This module is intentionally pure (no DO, no env, no SQL) so the
@@ -7,11 +7,11 @@
  * tree shape — is unit-testable without a Durable Object. The registry
  * DO does the SQL reads/writes and calls into here.
  *
- * v1 run identity (see  / migrations.ts):
+ * v1 run identity (see an earlier revision / migrations.ts):
  *   - `run_id = wfr-<parent_task_id>` — the observation identity of ONE
  *     manager dispatch invocation. Stable WITHIN a run (all subagents
  *     under one manager task share `parent_task_id`); NOT a
- *     cross-conversation durable id. 's executor mints/owns its
+ *     cross-conversation durable id. an earlier revision's executor mints/owns its
  *     own run identity. The durable contract is this schema + tree shape
  *     + id semantics, not the derivation formula.
  */
@@ -37,7 +37,7 @@ export function deriveAgentNodeId(runId: string, subagentTaskId: string): string
 
 /**
  * Safe, bounded preview of the USER-FACING dispatch text. Never derive
- * this from a composed system/persona prompt —  §1 forbids
+ * this from a composed system/persona prompt — an earlier revision §1 forbids
  * leaking internal prompt metadata. Whitespace-collapsed and capped.
  */
 export function safePromptPreview(text: string | null | undefined): string | null {

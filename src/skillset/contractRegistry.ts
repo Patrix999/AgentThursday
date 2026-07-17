@@ -1,14 +1,14 @@
 /**
- *  tool contract registry.
+ * M8.1 tool contract registry.
  *
- * Authority:  (176).
+ * Authority: docs/design/m8-tool-contract-tier-policy-v0.md (176).
  *
  * v1 covers the 26 tool_ids referenced by `software-dev` v0 manifest.
  * `research-stub`'s `web.search / web.fetch / pdf.read` are
  * intentionally absent so the loader's V2 check rejects research-stub
  * (per 181a + 182 verification path).
  *
- * Every contract here has `implemented: false` for  — registry
+ * Every contract here has `implemented: false` for M8.1 — registry
  * exists at the contract layer, but no runtime dispatch yet. 184/185/
  * 186 will flip individual tools to `implemented: true` as they ship.
  *
@@ -76,10 +76,10 @@ export interface ToolContract {
   emit_events: EmitEventSpec[];
   required_evidence: RequiredEvidenceField[];
   implemented: boolean;
-  //  — generic optional declaration that this tool needs a
+  // generic optional declaration that this tool needs a
   // specific env binding to reach `callable_tool_ready`. The downgrade
   // pipeline currently keys off `skill.source_ref.env_binding` (per
-  // ), so this field is informational at the contract layer
+  // an earlier revision), so this field is informational at the contract layer
   // — readers can use it to identify the canonical env binding name
   // without parsing a skill manifest. Must be a non-empty string when
   // present; not provider-specific.
@@ -131,7 +131,7 @@ const CONTRACTS: ToolContract[] = [
   // --- T2 read tier ---
   {
     tool_id: "repo.read",
-    description: "Read a single file from the agentthursday / AT repo working tree",
+    description: "Read a single file from the AgentThursday / AT repo working tree",
     dispatch_path: { surface: "do_method", identifier: "WorkspaceDO.repoRead" },
     input_schema: objectSchema(
       { path: stringField, encoding: { type: "string", default: "utf8" } },
@@ -224,7 +224,7 @@ const CONTRACTS: ToolContract[] = [
     implemented: false,
   },
   {
-    //  A — first-party `repo.prepare` tool. Materializes the
+    // an earlier revision A — first-party `repo.prepare` tool. Materializes the
     // sandbox checkout (allowlisted repo only; no token leak; no push)
     // and returns head_sha + branch + worktree_path + git_status so
     // subsequent repo.write / repo.patch / gate.* operate on a known
@@ -485,8 +485,8 @@ const CONTRACTS: ToolContract[] = [
   },
 
   // --- T3 external network callable ---
-  //  migrated `localdoc.convert_text` out of this hand-written
-  // array into `docs/tools/localdoc.convert_text.0.1.0.yaml`. The YAML
+  // an earlier revision migrated `fyimd.convert_text` out of this hand-written
+  // array into `docs/tools/fyimd.convert_text.0.1.0.yaml`. The YAML
   // is unioned in via `GENERATED_TOOL_CONTRACTS` below; the merge
   // throws on duplicate tool_ids so the YAML and TS surfaces never
   // silently diverge.
@@ -586,7 +586,7 @@ const CONTRACTS: ToolContract[] = [
     implemented: false,
   },
 
-  //  — internal T4 test tool. No filesystem / VCS / network
+  // internal T4 test tool. No filesystem / VCS / network
   // side effects: returns the canonical input hash so verifier can
   // confirm what the dispatcher executed against. Exists so the
   // approval-consume gate that all real T4/T5 tools share can be
@@ -670,7 +670,7 @@ for (const c of CONTRACTS) {
   }
   REGISTRY.set(c.tool_id, c);
 }
-//  — merge YAML-sourced contracts on top of the hand-written
+// merge YAML-sourced contracts on top of the hand-written
 // CONTRACTS array. Duplicate ids across sources are a build error so
 // the YAML and TS surfaces never silently diverge.
 for (const c of GENERATED_TOOL_CONTRACTS) {
@@ -684,7 +684,7 @@ export const TOOL_CONTRACTS: ReadonlyMap<string, ToolContract> = REGISTRY;
 
 /**
  * Set of registered tool_ids — used by the loader for V2 validation.
- * 替代  v0 的 STUB_KNOWN_TOOL_IDS hand-list；研究系工具
+ * 替代 M8.1 v0 的 STUB_KNOWN_TOOL_IDS hand-list；研究系工具
  * (web.search / web.fetch / pdf.read) 不在此集，确保 research-stub
  * 在 V2 处仍然 load_rejected。
  */

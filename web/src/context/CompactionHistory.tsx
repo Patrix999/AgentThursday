@@ -8,7 +8,7 @@ import type { StoredCompactionView } from "../../shared/schema";
  * inspect panel reflects new compactions immediately after a Compact
  * action completes.
  *
- *  (2026-05-21) — extracted from ContextPanel.tsx; behavior
+ * an earlier revision (2026-05-21) — extracted from ContextPanel.tsx; behavior
  * unchanged (same event name, same fetch, same render order).
  */
 export function CompactionHistory() {

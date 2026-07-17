@@ -1,5 +1,5 @@
 /**
- *  — message timestamp formatting for the dialog streams.
+ * message timestamp formatting for the dialog streams.
  * Same-day shows HH:MM; a different calendar day prefixes MM-DD.
  * `now` is injectable for deterministic tests.
  */

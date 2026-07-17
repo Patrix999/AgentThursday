@@ -1,7 +1,7 @@
 import { json } from "../httpUtil";
 
 /**
- *  — R4 inspect mutation POST routes extracted from `server.ts`.
+ * R4 inspect mutation POST routes extracted from `server.ts`.
  *
  * Single entry point: `handleInspectMutations(request, url, deps)`.
  *
@@ -62,7 +62,7 @@ export async function handleInspectMutations(
 ): Promise<Response | null> {
   if (request.method !== "POST") return null;
 
-  //  §D — approval request skeleton. Reviewer-grant only;
+  // an earlier revision §D — approval request skeleton. Reviewer-grant only;
   // ChannelHub callable re-validates input as defence-in-depth.
   if (url.pathname === "/api/inspect/approvals/request") {
     const stub = await deps.getChannelHubStub();
@@ -81,7 +81,7 @@ export async function handleInspectMutations(
     return json(result);
   }
 
-  //  — reviewer grant/deny mutation. `approval_not_found` → 404.
+  // reviewer grant/deny mutation. `approval_not_found` → 404.
   if (url.pathname === "/api/inspect/approvals/decide") {
     const stub = await deps.getChannelHubStub();
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
@@ -98,7 +98,7 @@ export async function handleInspectMutations(
     return json(result);
   }
 
-  //  — replay-consumption skeleton. `approval_not_found` → 404.
+  // replay-consumption skeleton. `approval_not_found` → 404.
   // Raw `token` field is forwarded to the DO callable and never logged.
   if (url.pathname === "/api/inspect/approvals/replay-consume") {
     const stub = await deps.getChannelHubStub();
@@ -118,7 +118,7 @@ export async function handleInspectMutations(
     return json(result);
   }
 
-  //  — propose-patch-artifact create. Policy fail → !ok with
+  // propose-patch-artifact create. Policy fail → !ok with
   // `policy_failed` and no row insertion (fail-closed). 400 on any !ok.
   if (url.pathname === "/api/inspect/patch-artifacts/propose") {
     const stub = await deps.getChannelHubStub();
@@ -138,7 +138,7 @@ export async function handleInspectMutations(
     return json(result);
   }
 
-  //  — apply-dry-run (verify_only). `approval_not_found` /
+  // apply-dry-run (verify_only). `approval_not_found` /
   // `artifact_not_found` → 404; else 400. Raw `token` forwarded to DO,
   // never echoed in the response.
   if (url.pathname === "/api/inspect/patch-artifacts/apply-dry-run") {

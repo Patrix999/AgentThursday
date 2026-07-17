@@ -1,10 +1,10 @@
-//  —  persona-weave composition helper.
+// M9.0 persona-weave composition helper.
 //
 // Pure helper that turns an `AgentProfile.persona` string (already
-// persisted by ) into the system-prompt block consumed by the
+// persisted by an earlier revision) into the system-prompt block consumed by the
 // per-profile `AgentThursdayAgent` DO's `configureSession` chain. The block
 // is added as a separate `.withContext("persona", { provider })` slot
-// after the existing `"soul"` block — see  §1 / D-1.
+// after the existing `"soul"` block — see an earlier revision §1 / D-1.
 //
 // Caller integrates by reading the profile from the registry DO
 // (`getAgentByName(env.AgentThursdayAgent, DEMO_INSTANCE).readAgentProfile(this.name)`)

@@ -1,5 +1,5 @@
 /**
- *  — gate-runner structural types extracted from
+ * gate-runner structural types extracted from
  * `gateRunner.ts`.
  *
  * This module holds the interface / discriminated-union shapes that
@@ -10,13 +10,13 @@
  * (this module imports from gateConstants; gateConstants imports
  * nothing from here).
  *
- *  invariant: every shape is byte-equivalent to the
+ * an earlier revision invariant: every shape is byte-equivalent to the
  * pre-split definitions in `gateRunner.ts`. Field names, optionality,
  * doc-comments, and discriminant arms are preserved.
  *
  * The runtime helpers that produce these shapes (`prewarmNodeModules`,
  * `ensureNodeModules`, `runPhasedGate`, `runGate`) stay in
- * `gateRunner.ts` until Cards 266b/266c move them.
+ * `gateRunner.ts` until an earlier revision move them.
  */
 
 import type { DispatchEvent, SandboxExec } from "./devShell";
@@ -137,7 +137,7 @@ export interface GateResult {
   /** 190c: true when the gate command was killed by the shell timeout (exit 124). */
   timed_out?: boolean;
   /**
-   * : scoped typecheck evidence. Present only for
+   * an earlier revision: scoped typecheck evidence. Present only for
    * `gate.typecheck` runs that went through `selectTypecheckPhases`.
    * `scoped: false` means a full / fallback run (no skipping). When
    * `scoped: true`, `skipped` lists the phases the fast path deliberately

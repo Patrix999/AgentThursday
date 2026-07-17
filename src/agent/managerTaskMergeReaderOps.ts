@@ -1,5 +1,5 @@
 /**
- *  — pure reader/status helpers for `manager.task.merged`.
+ * pure reader/status helpers for `manager.task.merged`.
  *
  * No DO, no env, no SQL. The `@callable readManagerTaskMergedEvents`
  * in `src/server.ts` reads raw event_log rows; this module derives
@@ -7,11 +7,11 @@
  *   - GET /api/manager/tasks/:task_id/merge        (full reader)
  *   - GET /api/manager/tasks/:task_id  .merge      (status side field)
  *
- *  keyed `manager.task.merged` rows by `event_log.trace_id =
+ * an earlier revision keyed `manager.task.merged` rows by `event_log.trace_id =
  * parent_task_id` and wrote a structured `ManagerTaskMergedPayload`
  * into `event_log.payload`. The reader uses `event_log.id` as the
  * stable `event_id` so future migration off of `summary_id == task_id`
- * ( §4 v1→v2 bridge) has an addressable surface.
+ * (an earlier revision §4 v1→v2 bridge) has an addressable surface.
  *
  * Fail-soft: malformed legacy payloads must not crash the endpoint.
  * `parseManagerTaskMergedRow` JSON-parses opportunistically and
@@ -55,12 +55,12 @@ export interface MergeReaderResponse {
 }
 
 /**
- *  §3 — bounded `merge` side field for the status endpoint.
+ * an earlier revision §3 — bounded `merge` side field for the status endpoint.
  *
  * When `rows` is empty: returns `{merged: false, merge_count: 0,
  * latest_verdict: null, latest_merged_at: null, subagent_count: 0}`
  * (chosen over `null` so the consumer always sees a stable shape —
- * documented in ``).
+ * documented in `docs/tests/2026-05-26-card372-...`).
  */
 export interface MergeStatusSideField {
   merged: boolean;
@@ -101,7 +101,7 @@ function readSubagentCount(payload: ManagerTaskMergedPayload | null): number {
 function pickLatestRow(rows: readonly ManagerTaskMergedRow[]): ManagerTaskMergedRow | null {
   if (rows.length === 0) return null;
   // Rows arrive sorted ASC (oldest first) from the SQL ORDER BY
-  // created_at ASC. Latest = last element.  §5 requires
+  // created_at ASC. Latest = last element. an earlier revision §5 requires
   // "stable ASC ordering and latest derived from the newest row" —
   // do NOT re-sort here; let the SQL ordering be the source of truth
   // so equal-timestamp rows preserve insertion order.

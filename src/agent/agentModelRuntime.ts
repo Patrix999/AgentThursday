@@ -1,9 +1,9 @@
-//  —  AgentProfile model runtime routing.
+// M9.0 AgentProfile model runtime routing.
 //
 // `MODEL_CONTEXT_REGISTRY` (src/contextWindowRegistry.ts) is
 // context-window metadata only. The presence of a key there does NOT
 // imply that the corresponding provider adapter is wired or that the
-// secret binding exists — see  §Scope §4.
+// secret binding exists — see an earlier revision §Scope §4.
 //
 // This module is the SEPARATE runtime-routing registry: it lists which
 // AgentProfile.model ids can actually be dispatched to inference, and
@@ -37,15 +37,17 @@ export type AgentRuntimeProvider =
   | "anthropic"
   | "deepseek"
   | "openai"
-  | "google";
+  | "google"
+  | "zhipu"
+  | "grok";
 
 /**
- *  — external providers whose runnability is gated by a stored
+ * external providers whose runnability is gated by a stored
  * credential (registry DO `provider_credential`) rather than a static
  * `available` status. workers-ai needs no credential.
  */
 export const CREDENTIAL_GATED_PROVIDERS: ReadonlySet<AgentRuntimeProvider> =
-  new Set(["anthropic", "deepseek"]);
+  new Set(["anthropic", "deepseek", "openai", "google", "zhipu", "grok"]);
 
 export type AgentRuntimeStatus = "available" | "not_configured";
 
@@ -81,7 +83,7 @@ export interface AgentRuntimeModelOption {
 }
 
 const ENTRIES: readonly AgentRuntimeModelEntry[] = [
-  // Workers AI — the only runnable provider in  v1.
+  // Workers AI — the only runnable provider in M9.0 v1.
   {
     id: "kimi-k2.6",
     label: "Kimi K2.6 (Workers AI)",
@@ -89,7 +91,7 @@ const ENTRIES: readonly AgentRuntimeModelEntry[] = [
     runtimeStatus: "available",
     target: "@cf/moonshotai/kimi-k2.6",
   },
-  //  — second runnable Workers AI choice. GLM-4.7-Flash is
+  // second runnable Workers AI choice. GLM-4.7-Flash is
   // documented by Cloudflare as multi-turn tool-calling optimized
   // (131,072 context). Dispatch path is identical to Kimi —
   // workers-ai-provider createWorkersAI({ binding })(target).
@@ -101,7 +103,7 @@ const ENTRIES: readonly AgentRuntimeModelEntry[] = [
     target: "@cf/zai-org/glm-4.7-flash",
   },
 
-  //  — Anthropic Claude, wired for REAL dispatch via
+  // Anthropic Claude, wired for REAL dispatch via
   // `@ai-sdk/anthropic`. `target` is the bare Claude model id; these
   // become runnable only when `ANTHROPIC_API_KEY` is configured
   // (key-gated — see `isRunnableAgentRuntimeModel(modelId, opts)` and
@@ -143,49 +145,13 @@ const ENTRIES: readonly AgentRuntimeModelEntry[] = [
     runtimeStatus: "not_configured",
     target: "claude-haiku-4-5",
   },
-  //  — DeepSeek (wallet-friendly), via @ai-sdk/deepseek.
-  {
-    id: "deepseek-chat",
-    label: "DeepSeek V3 (deepseek-chat)",
-    provider: "deepseek",
-    runtimeStatus: "not_configured",
-    target: "deepseek-chat",
-  },
-  {
-    id: "deepseek-reasoner",
-    label: "DeepSeek R1 (deepseek-reasoner)",
-    provider: "deepseek",
-    runtimeStatus: "not_configured",
-    target: "deepseek-reasoner",
-  },
-  {
-    id: "gpt-4.1",
-    label: "GPT-4.1 (OpenAI)",
-    provider: "openai",
-    runtimeStatus: "not_configured",
-    target: null,
-  },
-  {
-    id: "gpt-4o",
-    label: "GPT-4o (OpenAI)",
-    provider: "openai",
-    runtimeStatus: "not_configured",
-    target: null,
-  },
-  {
-    id: "gemini-2.5-pro",
-    label: "Gemini 2.5 Pro (Google)",
-    provider: "google",
-    runtimeStatus: "not_configured",
-    target: null,
-  },
-  {
-    id: "gemini-2.5-flash",
-    label: "Gemini 2.5 Flash (Google)",
-    provider: "google",
-    runtimeStatus: "not_configured",
-    target: null,
-  },
+  // 2026-06-22 — DeepSeek / OpenAI / Google have NO static entries: their models
+  // reach the picker only via the discover→enable flow, and dispatch via their
+  // @ai-sdk provider for any enabled discovered id (resolveProviderForModel +
+  // the provider adapter in getModel). Keeping `target:null` static entries here
+  // would SHADOW the discovered ids in resolveAgentRuntimeModel (→ not_configured
+  // → workers-ai fallback), so they're removed. workers-ai (kimi/glm) stays
+  // static — it needs no key and is always available.
 ];
 
 const ENTRY_BY_ID: ReadonlyMap<string, AgentRuntimeModelEntry> = new Map(
@@ -195,7 +161,7 @@ const ENTRY_BY_ID: ReadonlyMap<string, AgentRuntimeModelEntry> = new Map(
 // Load-time sanity check: every entry id must exist in
 // MODEL_CONTEXT_REGISTRY. Otherwise downstream context-window helpers
 // fall through to DEFAULT_CONTEXT_PROFILE (128K) silently when this
-// model is selected, which the  lastObservedModel path is
+// model is selected, which the an earlier revision lastObservedModel path is
 // supposed to prevent. Throwing here makes the mismatch fail-fast at
 // module-import time rather than at first inference.
 {
@@ -228,7 +194,7 @@ export function listAgentRuntimeModelOptions(): AgentRuntimeModelOption[] {
 }
 
 /**
- *  — merge live-discovered provider models into the options
+ * merge live-discovered provider models into the options
  * list so the agent-create dropdown isn't a hardcoded set.
  *
  * Rules:
@@ -249,8 +215,16 @@ export function mergeRuntimeModelOptions(
   discovered: Array<{ provider: string; models: string[] }>,
 ): AgentRuntimeModelOption[] {
   const configured = new Set(configuredProviders);
+  // 2026-06-22 — ENABLE-AUTHORITATIVE picker. `discovered` is the user-ENABLED
+  // model set (listDiscoveredModels → enabled_models_json). A credential-gated
+  // static entry (anthropic/deepseek) becomes `available` ONLY when its id is
+  // explicitly enabled — NOT merely because a key exists. This makes the picker
+  // show exactly the models the user enabled (the operator: "enabled 3 but saw 5"); the
+  // static entries just supply nice labels for known ids.
+  const enabledIds = new Set<string>();
+  for (const d of discovered) for (const id of d.models) if (typeof id === "string" && id.length > 0) enabledIds.add(id);
   const out: AgentRuntimeModelOption[] = staticOptions.map((o) =>
-    CREDENTIAL_GATED_PROVIDERS.has(o.provider) && configured.has(o.provider)
+    CREDENTIAL_GATED_PROVIDERS.has(o.provider) && enabledIds.has(o.id)
       ? { ...o, runtimeStatus: "available" }
       : o,
   );
@@ -297,16 +271,16 @@ export function defaultAgentRuntimeModel(): AgentRuntimeModelEntry {
 }
 
 /**
- * /412 — runnability gate for external providers. A provider is
+ * runnability gate for external providers. A provider is
  * "configured" when a credential exists for it (registry DO
  * `provider_credential`, or — back-compat — an env key). Only the SET
  * of configured providers matters here; key values never reach this
  * boundary.
  */
 export interface RuntimeModelEnv {
-  /**  — provider ids that have a usable credential. */
+  /** provider ids that have a usable credential. */
   configuredProviders?: ReadonlySet<AgentRuntimeProvider> | AgentRuntimeProvider[];
-  /**  — deprecated alias; treated as anthropic configured. */
+  /** deprecated alias; treated as anthropic configured. */
   anthropicKeyPresent?: boolean;
 }
 

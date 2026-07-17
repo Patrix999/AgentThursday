@@ -1,10 +1,10 @@
 /**
- *  — adapter for `manager.task_merge`.
+ * adapter for `manager.task_merge`.
  *
  * Thin shim over `managerTaskMerge` in `src/agent/managerOps.ts`. The
  * calling manager's agent_id is read off `ctx.name` (DO instance name
  * === agent_id) and threaded into the orchestrator, which delegates
- * permission enforcement to the
+ * permission enforcement to the an earlier revision
  * `source_agent_id === callingAgentId` boundary in
  * `filterSubagentSummariesForReader`.
  *

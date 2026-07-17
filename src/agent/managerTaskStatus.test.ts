@@ -1,5 +1,5 @@
 /**
- *  — pure status-derivation tests.
+ * pure status-derivation tests.
  *
  * Targets `managerTaskStatus.ts` directly. The helper has no DO/env
  * dependencies; we only assert the derivation logic against synthetic
@@ -120,7 +120,7 @@ describe("deriveManagerTaskStatus", () => {
     assert.equal(r.status, "waiting");
   });
 
-  //  — layered timeout. The soft threshold no longer flips the
+  // layered timeout. The soft threshold no longer flips the
   // primary status to terminal `timed_out`; it raises a `stale_warning`
   // while keeping `in_progress`. Only the HARD ceiling is terminal.
   it("fresh started run (< soft window): in_progress, no stale warning", () => {
@@ -136,7 +136,7 @@ describe("deriveManagerTaskStatus", () => {
     assert.equal(r.stale_warning.stale, false);
   });
 
-  it("past SOFT but under HARD: stays in_progress with stale_warning ()", () => {
+  it("past SOFT but under HARD: stays in_progress with stale_warning ", () => {
     const started = new Date(
       now.getTime() - MANAGER_TASK_TIMEOUT_MS - 60 * 1000,
     ).toISOString();
@@ -148,13 +148,13 @@ describe("deriveManagerTaskStatus", () => {
       now,
     );
     // Primary status is NOT terminal — a long legitimate gate may still
-    // be running ( observed ~21 min).
+    // be running (an earlier revision observed ~21 min).
     assert.equal(r.status, "in_progress");
     assert.equal(r.stale_warning.stale, true);
     assert.ok((r.stale_warning.elapsed_ms ?? 0) > MANAGER_TASK_TIMEOUT_MS);
   });
 
-  it("past HARD ceiling: terminal timed_out with stale_warning ()", () => {
+  it("past HARD ceiling: terminal timed_out with stale_warning ", () => {
     const started = new Date(
       now.getTime() - MANAGER_TASK_HARD_TIMEOUT_MS - 1000,
     ).toISOString();
@@ -256,11 +256,11 @@ describe("deriveManagerTaskStatus", () => {
   });
 });
 
-//  — terminal_conflict evidence surface tests. The `status`
+// terminal_conflict evidence surface tests. The `status`
 // enum is NOT extended; it still reflects the FIRST terminal. The
 // new field exposes later contradicting events so operators don't
 // only see a single side of the truth.
-describe("deriveManagerTaskStatus —  terminal_conflict", () => {
+describe("deriveManagerTaskStatus — an earlier revision terminal_conflict", () => {
   const now = new Date("2026-05-27T12:00:00.000Z");
 
   it("no terminal events → terminal_conflict has_conflict=false", () => {
@@ -306,7 +306,7 @@ describe("deriveManagerTaskStatus —  terminal_conflict", () => {
     assert.equal(r.terminal_conflict.has_conflict, false);
   });
 
-  it("replied followed by merged → NOT conflict ( audit pattern)", () => {
+  it("replied followed by merged → NOT conflict (an earlier revision audit pattern)", () => {
     const r = deriveManagerTaskStatus(
       [
         row(MANAGER_TASK_EVENT_NAMES.received, "2026-05-27T11:59:00.000Z"),
@@ -322,11 +322,11 @@ describe("deriveManagerTaskStatus —  terminal_conflict", () => {
     assert.equal(r.reply, "ok");
     assert.equal(r.envelope_id, "env-x");
     // Replied + merged is the by-design audit-grade pattern; NOT a
-    // conflict.  §4.5 explicitly permits this co-existence.
+    // conflict. an earlier revision §4.5 explicitly permits this co-existence.
     assert.equal(r.terminal_conflict.has_conflict, false);
   });
 
-  it("failed followed by merged → CONFLICT (primary  case)", () => {
+  it("failed followed by merged → CONFLICT (primary an earlier revision case)", () => {
     const r = deriveManagerTaskStatus(
       [
         row(MANAGER_TASK_EVENT_NAMES.received, "2026-05-27T11:59:00.000Z"),

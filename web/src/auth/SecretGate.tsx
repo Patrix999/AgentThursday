@@ -7,7 +7,7 @@ type GateState =
   | { kind: "needs-secret"; reason: "empty" | "wrong"; prefill?: string }
   | { kind: "misconfigured" };
 
-//  §D — read `?token=<secret>` from the current URL without
+// an earlier revision §D — read `?token=<secret>` from the current URL without
 // auto-saving it. The token is surfaced to the SecretPrompt as a
 // prefill so the user still has to confirm submission. After a
 // successful submit the token is removed from the URL via
@@ -48,7 +48,7 @@ export function SecretGate({ children }: { children: React.ReactNode }) {
   async function probe(silent: boolean) {
     const prefill = readUrlToken();
     if (prefill) {
-      //  patch — URL token is an explicit auth handoff and
+      // an earlier revision patch — URL token is an explicit auth handoff and
       // must take precedence over any locally cached secret. Always
       // show the auth page so the user can confirm or correct it.
       setState({ kind: "needs-secret", reason: "empty", prefill });
@@ -117,7 +117,7 @@ export function SecretGate({ children }: { children: React.ReactNode }) {
         prefill={state.prefill ?? ""}
         onSubmit={(s) => {
           setSecret(s);
-          //  §D — strip ?token= from URL only AFTER an explicit
+          // an earlier revision §D — strip ?token= from URL only AFTER an explicit
           // user submit, so the token is never silently persisted.
           clearUrlToken();
           void probe(true);
@@ -138,7 +138,7 @@ function SecretPrompt({
   prefill: string;
   onSubmit: (s: string) => void;
 }) {
-  //  §D — initialise from prefill (URL ?token=) but require an
+  // an earlier revision §D — initialise from prefill (URL ?token=) but require an
   // explicit submit; never auto-save. Users see the prefilled value
   // and either accept or correct it.
   const [value, setValue] = useState(prefill);
@@ -148,7 +148,7 @@ function SecretPrompt({
         className="max-w-sm w-full space-y-3"
         onSubmit={(e) => { e.preventDefault(); if (value) onSubmit(value); }}
       >
-        <div className="text-lg font-semibold">agentthursday workspace</div>
+        <div className="text-lg font-semibold">AgentThursday workspace</div>
         {reason === "wrong" && (
           <div className="text-rose-400 text-sm">Secret rejected by worker (401). Try again.</div>
         )}

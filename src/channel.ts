@@ -8,7 +8,7 @@
 const RAW_REF_MAX = 200;
 const PENDING_CAP_PER_CONVERSATION = 50;
 
-//  — hard caps on inbound text + attachments JSON.
+// hard caps on inbound text + attachments JSON.
 // A pathological webhook (or pasted novel) can otherwise persist a
 // row whose later read trips the DO isolate memory limit. The agent
 // only ever reads the first couple thousand chars when building the
@@ -40,12 +40,21 @@ async function sha256short(input: string): Promise<string> {
  * Same `(guildId, channelId, threadId)` always produces the same id.
  */
 export function conversationIdForDiscordChannel(input: {
-  guildId: string;
+  // 2026-06-26: `guildId` is accepted for caller compatibility but DELIBERATELY
+  // excluded from the id. Discord channel ids are globally-unique snowflakes, so
+  // guildId is redundant (same rationale as `conversationIdForDiscordDmByChannel`).
+  // Including it caused DUPLICATE conversations for one channel: the WebSocket
+  // ingest path carries the real `guild_id` while REST polling omits it
+  // (guildId=null), so the same channel hashed to two different ids across modes —
+  // splitting its history + bindings. Excluding guildId makes the id stable across
+  // ingest modes. NOTE: this re-keys existing channel conversations once, so any
+  // channel→agent binding must be re-set after this ships.
+  guildId?: string | null;
   channelId: string;
   threadId?: string | null;
 }): Promise<string> {
   const t = input.threadId && input.threadId.length > 0 ? input.threadId : "root";
-  return sha256short(`discord:channel:${input.guildId}:${input.channelId}:${t}`);
+  return sha256short(`discord:channel:${input.channelId}:${t}`);
 }
 
 /**
@@ -63,7 +72,7 @@ export function conversationIdForDiscordDm(input: {
 /**
  * Fallback DM id when bot user id is not configured. Discord assigns one
  * stable channel per DM pair so `channelId` alone is canonical. Used by
- *  bridge when `AGENT_THURSDAY_DISCORD_BOT_ID` env var is unset ( §D-19:
+ * an earlier revision bridge when `AGENT_THURSDAY_DISCORD_BOT_ID` env var is unset (an earlier revision §D-19:
  * missing optional bot id should not crash on DM path).
  */
 export function conversationIdForDiscordDmByChannel(input: {
@@ -92,7 +101,7 @@ export function conversationIdForEmailThread(input: {
 /**
  * Truncate caller-supplied raw payload reference / dump to `RAW_REF_MAX`
  * characters so a single hostile webhook can't bloat the inbox row size.
- *  §E-16 explicit: P0 stores compact pointer / first 200 chars only.
+ * an earlier revision §E-16 explicit: P0 stores compact pointer / first 200 chars only.
  */
 export function clampRawRef(raw: string | null | undefined): string | null {
   if (raw === null || raw === undefined || raw === "") return null;

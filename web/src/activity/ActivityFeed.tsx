@@ -10,7 +10,7 @@ const EMPTY_COPY =
 const FEED_CAP = 30;
 
 /**
- * v3 accordion ( v3) — operator redesign:
+ * v3 accordion (an earlier revision v3) — the operator redesign:
  *
  *   - The activity surface is now a right-side independent panel,
  *     not part of the conversation column.
@@ -59,7 +59,7 @@ export function ActivityFeed({ data }: { data: InspectSnapshot | null }) {
         addedIds.add(intent.id);
         // New intent: expand it.
         nextExpanded[intent.id] = true;
-        // operator rule: if a previously-collapsed item of the same type
+        // the operator rule: if a previously-collapsed item of the same type
         // exists, also re-expand it — "fresh" visual same as new.
         // User toggles still win: don't override a manual collapse.
         const prevId = lastByType[intent.type];
@@ -156,7 +156,7 @@ export function ActivityFeed({ data }: { data: InspectSnapshot | null }) {
   );
 }
 
-//  — lifecycle status glyph in the collapsed header so the
+// lifecycle status glyph in the collapsed header so the
 // operator sees running/ok/error without expanding.
 function HeaderStatusGlyph({ intent }: { intent: Intent }) {
   const lc = (intent.component.props as { lifecycle?: { status?: unknown } } | null)?.lifecycle;

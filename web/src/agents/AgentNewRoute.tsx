@@ -16,23 +16,23 @@ import { setActiveAgentPin } from "../auth/secret";
 import { AgentsLayout } from "./AgentsLayout";
 
 /**
- *  — create form at `/agents/new`.
- *  — UI copy reads "Create cloud agent instance"; the form
+ * create form at `/agents/new`.
+ * UI copy reads "Create cloud agent instance"; the form
  * persists a new cloud agent. The backing API route is still
  * `/api/agent-profiles` (legacy persistence; see
- * ).
+ * docs/design/2026-05-24-m9.0-agent-centric-correction.md).
  *
- * Fields per  §3:
+ * Fields per an earlier revision §3:
  *   - name              required, 1-80
  *   - model             single-select from `/api/agent-profiles/options`
  *   - channel           free-form string, required (live channel binding
  *                       is a later card)
- *   - skillset          single-select.  wording: the selected
+ *   - skillset          single-select. an earlier revision wording: the selected
  *                       skillset defines the runtime dynamic tool
  *                       palette for the next session/run (selection +
  *                       loaded, non-disabled dependencies).
  *   - persona           free-form ≤ 2000 chars; read at session-init and
- *                       woven into the agent prompt ( D-2 Option A)
+ *                       woven into the agent prompt (an earlier revision D-2 Option A)
  * On 201 we navigate to `/agents/:id` so refresh-persistence is directly
  * verifiable per the card's acceptance line.
  */
@@ -43,7 +43,7 @@ export function AgentNewRoute() {
 
   const [name, setName] = useState("");
   const [model, setModel] = useState("");
-  //  — channel picker. `channelChoice` is "manager", "custom",
+  // channel picker. `channelChoice` is "manager", "custom",
   // or a conversationId from the recent-conversations list; the old
   // free-text value lives in `customChannel` (kept for local:dev flows).
   const [channelChoice, setChannelChoice] = useState("manager");
@@ -62,7 +62,7 @@ export function AgentNewRoute() {
       .then(r => {
         if (cancelled || r === null) return;
         setOptions(r);
-        //  — default-pick the first runnable model. If nothing
+        // default-pick the first runnable model. If nothing
         // is runnable in this build, leave empty and let the submit
         // gate / server return a helpful error.
         const firstAvailable = r.models.find(m => m.runtimeStatus === "available");
@@ -73,7 +73,7 @@ export function AgentNewRoute() {
         if (cancelled) return;
         setOptionsErr(String(e));
       });
-    //  — picker data: recent conversations + agent names for
+    // picker data: recent conversations + agent names for
     // the "already bound to X" warning. Both fail-soft to empty.
     listRecentConversations()
       .then(rows => { if (!cancelled) setConversations(rows); })
@@ -111,7 +111,7 @@ export function AgentNewRoute() {
     };
     const res = await createAgentProfile(input);
     if (res.ok && res.profile) {
-      //  — when a real conversation was picked, bind it to the
+      // when a real conversation was picked, bind it to the
       // new agent so channel messages actually route here. On failure,
       // stay on the page and say so — the agent exists but is unbound.
       if (selectedConversation !== null) {
@@ -131,7 +131,7 @@ export function AgentNewRoute() {
         }
       }
       setSubmitting(false);
-      //  — land in the workspace console with the new cloud
+      // land in the workspace console with the new cloud
       // agent active. The pin both keeps the user's pick across
       // `useWorkspace` reconcile and writes `agentthursday.contextId` so the
       // next `/api/workspace` poll routes to this agent's DO (Card
@@ -188,7 +188,7 @@ export function AgentNewRoute() {
               onChange={e => setModel(e.target.value)}
               className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-sky-600"
             >
-              {/*  (UX W5) — group by provider so a long mixed
+              {/* an earlier revision (UX W5) — group by provider so a long mixed
                   model list (workers-ai + deepseek + anthropic) reads as
                   buckets instead of a flat dump. */}
               {groupModelsByProvider(options.models).map(group => (
@@ -253,7 +253,7 @@ export function AgentNewRoute() {
 
           <Field
             label="Starting skillset"
-            hint="The selected skillset defines the runtime dynamic tool palette for the next session/run. The agent will only see callable tools from this skillset and its loaded, non-operator-disabled dependencies — unrelated skillsets are filtered out at the agent tool surface ()."
+            hint="The selected skillset defines the runtime dynamic tool palette for the next session/run. The agent will only see callable tools from this skillset and its loaded, non-operator-disabled dependencies — unrelated skillsets are filtered out at the agent tool surface ."
           >
             <select
               required
@@ -272,7 +272,7 @@ export function AgentNewRoute() {
                 {selectedSkillset.description}
               </div>
             )}
-            {/*  (UX W5) — plain-language use case under the
+            {/* an earlier revision (UX W5) — plain-language use case under the
                 developer-facing description. */}
             {SKILLSET_USE_CASES[skillset] && (
               <div className="mt-0.5 text-xs text-sky-300/80">
@@ -285,7 +285,7 @@ export function AgentNewRoute() {
             label="Persona (optional)"
             hint="Free-form notes about how this agent should behave. Read at session-init and woven into the agent prompt; live edits apply to the next session / run."
           >
-            {/*  (UX W5) — starter templates so the persona box
+            {/* an earlier revision (UX W5) — starter templates so the persona box
                 isn't a blank intimidating field. */}
             <div className="mb-1.5 flex flex-wrap gap-1.5">
               {PERSONA_TEMPLATES.map(t => (
@@ -333,19 +333,19 @@ export function AgentNewRoute() {
   );
 }
 
-//  (UX W5) — plain-language skillset use cases (operator-facing).
+// an earlier revision (UX W5) — plain-language skillset use cases (operator-facing).
 const SKILLSET_USE_CASES: Record<string, string> = {
   "software-dev": "让 agent 读源码、改代码、跑测试、产出 patch 工件",
   manager: "让 agent 管理其他云上 agent（建/派活/汇总）",
   "qa-reviewer-basic": "轻量代码评审，不外发、不调度",
-  "directed-validation": "对受控只读端点做定向验证（生产中通常是）",
+  "directed-validation": "对受控只读端点做定向验证（生产中通常是agentD）",
   "runtime-inspector-basic": "按需返回一份非敏感的 skillset 运行时概览",
   "artifact-delivery": "把 patch / 测试文档 / 完成报告写入当前 agent 工作区",
   "external-publishing": "通过外部工具把产出转成可分享的非敏感链接",
   "research-stub": "网络研究 / 引用占位能力包",
 };
 
-//  (UX W5) — persona starter templates.
+// an earlier revision (UX W5) — persona starter templates.
 const PERSONA_TEMPLATES: Array<{ label: string; text: string }> = [
   { label: "严谨代码审查者", text: "你是一位严谨的代码审查者。优先指出正确性 bug 与边界条件，给出可复现的最小例子；对风格问题保持克制。每条结论都要能落到具体文件和行。" },
   { label: "简洁高效执行者", text: "你是一位简洁高效的执行者。先用一句话确认目标，再动手；只做被要求的事，不擅自扩大范围；完成后用要点汇报改了什么、如何验证。" },

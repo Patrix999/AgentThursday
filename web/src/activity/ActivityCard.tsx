@@ -9,19 +9,19 @@ import { WorkflowRunPanel } from "./WorkflowRunPanel";
 type Intent = NonNullable<InspectSnapshot["actionUiIntents"]>[number];
 
 /**
- *  — body-only renderer for an `ActionUiIntent`.
+ * body-only renderer for an `ActionUiIntent`.
  *
  * Pre-247 this component wrapped its own `<article>` with border / bg /
  * shadow + a duplicate header (badge, title, time). That double-wrapped
  * inside ActivityFeed's accordion item border, producing the card-in-
- * card nesting operator called out. 247 removes the inner chrome and the
+ * card nesting the operator called out. 247 removes the inner chrome and the
  * duplicate header — the accordion already supplies all of that.
  *
  * Render contract now: optional summary line, then the per-tool panel
  * picked by `component.name`. No outer box, no second timestamp.
  */
 export function ActivityCard({ intent }: { intent: Intent }) {
-  //  — lifecycle annotation injected by the backend pairing
+  // lifecycle annotation injected by the backend pairing
   // pass: one accordion item per ACTION (dispatch+result), with status.
   const lc = (intent.component.props as { lifecycle?: { status?: unknown; durationMs?: unknown } } | null)?.lifecycle;
   const lcStatus = lc && typeof lc.status === "string" ? lc.status : null;
@@ -60,7 +60,7 @@ function formatDuration(ms: number): string {
 }
 
 /**
- *  — dispatch to the per-component renderer based on the
+ * dispatch to the per-component renderer based on the
  * backend-supplied `component.name`. Each renderer takes a defensive
  * narrowing of `props: unknown` so a malformed/unknown shape degrades
  * gracefully rather than crashing the feed.
@@ -208,7 +208,7 @@ function ComponentBody({ name, props }: { name: string; props: unknown }) {
 }
 
 /**
- *  — compact properties row for generic tool events. Backend
+ * compact properties row for generic tool events. Backend
  * forwards a whitelisted subset of pre-truncated fields: `toolName`,
  * `subEvent`, `taskId`, plus opportunistic `pathPreview` and `sourceId`
  * for path-shaped events like `tool.content_list`. The accordion title

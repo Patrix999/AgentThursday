@@ -4,18 +4,18 @@
  * Pure functions for:
  *   - reading the runtime config gate (`AGENT_THURSDAY_PAUSE_ON_NEEDS_HUMAN`)
  *   - deciding whether the current task should pause based on its
- *     freshly-derived `TaskDegradationSummary` () — task-local
- *     scope only, no global-latest joins (per  verifier patch
+ *     freshly-derived `TaskDegradationSummary`  — task-local
+ *     scope only, no global-latest joins (per an earlier revision verifier patch
  *     invariant)
  *   - rendering the conversational pause message that the agent appends
- *     to the user-facing reply (operator hard requirement: no new buttons,
+ *     to the user-facing reply (the operator hard requirement: no new buttons,
  *     no approval-card UI; resume must be natural-language reply)
  *   - detecting whether a follow-up user message is a natural-language
  *     resume confirmation (`继续` / `proceed` / `resume` / etc.)
  *   - rendering a short reminder when the user sends non-resume text while
  *     the loop is paused
  *
- * v1 invariants (per kanban +  milestone red lines):
+ * v1 invariants (per kanban + M7.5 milestone red lines):
  *   - Only `state === "needs_human"` triggers pause; never `degraded`,
  *     never `blocked`, never `normal`.
  *   - Config must be read at decision time, not cached at module load,
@@ -24,7 +24,7 @@
  *   - No automatic routing changes (no retry / switch / fallback).
  *   - Pause text never includes prompts, raw replies, raw provider
  *     payloads, raw Discord messages, or secrets — only enum/short-id
- *     fields already vetted by Cards 117/119.
+ *     fields already vetted by an earlier revision.
  */
 
 import type { TaskDegradationSummary } from "./degradationSummary";
@@ -82,12 +82,12 @@ export function isResumeIntent(userText: string | null | undefined): boolean {
 
 /**
  * Render the user-visible pause message. Appended to `replyText` after
- * the supplier marker () and truthfulness marker (),
+ * the supplier marker  and truthfulness marker ,
  * so the user sees the full diagnostic stack from broad to specific:
- *   1.  supplier marker (if any)
- *   2.  truthfulness marker (if any)
+ *   1. an earlier revision supplier marker (if any)
+ *   2. an earlier revision truthfulness marker (if any)
  *   3. Original assistant reply
- *   4.  pause message (this one)
+ *   4. an earlier revision pause message (this one)
  *
  * The pause message is structured but conversational — no buttons, no
  * inline JSON; just plain prose so it works identically over Discord,

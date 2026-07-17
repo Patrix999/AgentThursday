@@ -1,18 +1,18 @@
 /**
- *  — pure mapper used by the read-only Skillset UI list view.
+ * pure mapper used by the read-only Skillset UI list view.
  *
  * Takes three independent read-only signals (options, runtime summary,
  * loader detail) and projects them into a single row shape that the UI
  * can render directly. Lives under `src/agent/` so the existing
  * `node:test` runner picks it up — the web tree has no test runner
- * today, and 's `activeAgentResolver` set the precedent.
+ * today, and an earlier revision's `activeAgentResolver` set the precedent.
  *
  * The "selectable for new cloud agents" signal comes from
- * `/api/agent-profiles/options` (). Anything in `options` is
+ * `/api/agent-profiles/options` . Anything in `options` is
  * offered in the create-agent flow; anything outside `options` is not
  * selectable, even if the loader has it. The runtime summary is what
  * decides loaded / disabled / rejected — operator-disabled state
- * () is reflected here, not just loader status.
+ *  is reflected here, not just loader status.
  */
 
 export type SkillsetRowStatus =

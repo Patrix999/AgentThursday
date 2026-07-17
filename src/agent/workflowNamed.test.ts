@@ -1,5 +1,5 @@
 /**
- *  — named workflow helper tests.
+ * named workflow helper tests.
  */
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
@@ -109,7 +109,7 @@ describe("summarizeDescriptorRow", () => {
   });
 });
 
-describe("substitutePhaseResults ()", () => {
+describe("substitutePhaseResults ", () => {
   const replies = new Map([
     ["p3-merge", ["MERGED MANUAL TEXT"]],
     ["p1", ["ch1", "ch2"]],

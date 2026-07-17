@@ -1,7 +1,7 @@
 /**
- *  — pure reader/status helpers for `manager.task.completed`.
+ * pure reader/status helpers for `manager.task.completed`.
  *
- * Mirrors 's merge reader pattern. No DO, no env, no SQL. The
+ * Mirrors an earlier revision's merge reader pattern. No DO, no env, no SQL. The
  * `@callable readManagerTaskCompletedEvents` in `src/server.ts` reads
  * raw event_log rows; this module derives the bounded `completion`
  * side field consumed by GET /api/manager/tasks/:task_id.
@@ -14,7 +14,7 @@
  *
  * Empty-rows case returns a "completed: false" placeholder rather
  * than `null` so the consumer always sees a stable shape (same
- * precedent as  `merge` side field).
+ * precedent as an earlier revision `merge` side field).
  */
 import type {
   CompletionVerdict,
@@ -82,7 +82,7 @@ function pickLatestRow(
   // Rows arrive ASC (oldest first) from the SQL ORDER BY created_at
   // ASC. Latest = last element. Do NOT re-sort here so equal-
   // timestamp rows preserve insertion order (same invariant as
-  // `deriveMergeSideField` —  §5).
+  // `deriveMergeSideField` — an earlier revision §5).
   return rows[rows.length - 1] ?? null;
 }
 

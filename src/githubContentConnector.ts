@@ -2,7 +2,7 @@
  * GitHub connector v1 (read + list).
  *
  * Pure module: no Workers DO imports. Imported by `ContentHubAgent` (DO),
- * by the  smoke (Node runtime), and by `server.ts` API routes.
+ * by the an earlier revision smoke (Node runtime), and by `server.ts` API routes.
  *
  * Strategy (ADR §6 revision-pinned):
  *   1. Resolve user ref (branch/tag/sha) → concrete commit SHA via
@@ -29,7 +29,15 @@ import type {
 const GITHUB_API_BASE = "https://api.github.com";
 const GITHUB_RAW_BASE = "https://raw.githubusercontent.com";
 
-export const DEFAULT_READ_MAX_BYTES = 256 * 1024;
+// 2026-06-27 — raised 256KB → 1MB (the operator: "改个截断阈值"). A 256KB default
+// silently truncated large source files mid-review (e.g. server.ts is 394KB →
+// only ~5674 of 8370 lines returned, `truncated:true`), so a single content_read
+// missed the back half. 1MB (== the existing HARD cap) reads server.ts and
+// essentially every source file whole. Tradeoff: a 1MB read is ~250K tokens of
+// context, so this lifts the worst-case payload for EVERY content_read, not just
+// code review — acceptable per the explicit ask. Files >1MB still truncate and
+// need chunked reads.
+export const DEFAULT_READ_MAX_BYTES = 1024 * 1024;
 export const HARD_READ_MAX_BYTES = 1024 * 1024;
 
 export class GithubContentError extends Error {
@@ -44,7 +52,7 @@ export class GithubContentError extends Error {
       | "list-failed"
       | "not-a-directory"
       | "no-body"
-      //  — search-specific failures.
+      // search-specific failures.
       | "quota-exhausted"
       | "code-search-failed",
     public readonly status: number | null,
@@ -61,7 +69,7 @@ export type GithubRepo = {
   defaultRef: string;
 };
 
-//  hardcodes the source-id → repo mapping. + moves this to
+// an earlier revision hardcodes the source-id → repo mapping. an earlier revision+ moves this to
 // per-source metadata (`source.providerConfig`) once OAuth providers land.
 const SOURCE_REPO_MAP: Readonly<Record<string, GithubRepo>> = {
   "agentthursday-github": { owner: "your-org", repo: "AgentThursday", defaultRef: "main" },
@@ -73,7 +81,7 @@ export function getRepoForSource(sourceId: string): GithubRepo | null {
 
 // ─── Path policy ─────────────────────────────────────────────────────────────
 // Enforces deny-list (precedence) + allow-list before any network call. ADR
-// §11 +  §scope: denied/unsafe paths must be rejected without
+// §11 + an earlier revision §scope: denied/unsafe paths must be rejected without
 // touching the GitHub API, so the network is never used to enumerate
 // secrets or hidden config.
 
@@ -111,6 +119,12 @@ export function checkPath(source: ContentSource, rawPath: string): PathPolicyRes
   }
 
   const allowed = source.allowedPaths ?? [];
+  // BYO GitHub (2026-06-26): a `scope:"personal"` source is the user's OWN repo —
+  // an empty allow-list means "all paths readable except deniedPaths" (the user
+  // owns the whole thing). Any OTHER scope with an empty allow-list stays
+  // fail-closed (deny-all below) — a misconfigured project/fixture source must
+  // never silently expose everything. deniedPaths is already enforced above.
+  if (allowed.length === 0 && source.scope === "personal") return { ok: true, normalized };
   for (const a of allowed) {
     if (a.endsWith("/")) {
       const stripped = a.slice(0, -1);
@@ -123,7 +137,7 @@ export function checkPath(source: ContentSource, rawPath: string): PathPolicyRes
 }
 
 // ─── Secret redaction ───────────────────────────────────────────────────────
-// ADR §11.6 +  §7: high-confidence patterns only. PEM private key
+// ADR §11.6 + an earlier revision §7: high-confidence patterns only. PEM private key
 // blocks refuse the entire file content (kind="pem-block"). Other patterns
 // replace inline and return offsets of the placeholder in the rebuilt text.
 
@@ -161,7 +175,7 @@ export function redactSecrets(content: string): {
     p.re.lastIndex = 0;
     if (p.re.test(content)) {
       return {
-        content: "[REDACTED:pem-private-key — file refused per  ADR §11]",
+        content: "[REDACTED:pem-private-key — file refused per M7.4 ADR §11]",
         redactions: [{ offset: 0, length: content.length, kind: "pem-block" }],
         refusedWholeFile: true,
       };
@@ -234,15 +248,32 @@ export async function resolveRefToSha(repo: GithubRepo, ref: string, token: stri
   return r.data.sha;
 }
 
-/** Fetch file content via raw URL, capped at maxBytes. */
+/**
+ * Fetch a WINDOW of file content: bytes [offset, offset+maxBytes). Returns the
+ * window plus the TRUE total file size (so callers can tell the model how much
+ * remains). 2026-06-29 — added `offset` pagination so an agent can page a large
+ * file in ~100KB windows instead of loading 368KB at once (which OOM'd the DO
+ * isolate). Memory peak ≈ one window: the Range path fetches only the window;
+ * the stream-skip fallback discards skipped/overflow bytes instead of buffering.
+ */
 export async function fetchRawFile(
   repo: GithubRepo,
   sha: string,
   path: string,
   token: string,
   maxBytes: number,
-): Promise<{ content: string; size: number; truncated: boolean; truncatedBytes?: number }> {
+  offset: number = 0,
+): Promise<{ content: string; size: number; offset: number; bytesReturned: number; truncated: boolean; truncatedBytes?: number }> {
   const url = `${GITHUB_RAW_BASE}/${repo.owner}/${repo.repo}/${sha}/${path}`;
+  const start = Math.max(0, Math.floor(offset));
+  const decode = (b: Uint8Array) => new TextDecoder("utf-8", { fatal: false, ignoreBOM: false }).decode(b);
+  // raw.githubusercontent.com's Range support is unreliable (CDN/compression →
+  // partial 206s with no usable Content-Range), so we DON'T use Range. Instead
+  // stream the whole response but keep ONLY the window [start, start+maxBytes)
+  // in memory — every other chunk is discarded as it arrives. Reading to EOF
+  // yields the true total byte count (robust to compression; the body reader is
+  // decompressed). Peak memory ≈ one window even for a multi-hundred-KB file,
+  // which is the whole point (a full 368KB read OOM'd the DO isolate).
   const res = await fetch(url, {
     headers: {
       "Authorization": `Bearer ${token}`,
@@ -256,44 +287,37 @@ export async function fetchRawFile(
 
   const reader = res.body?.getReader();
   if (!reader) throw new GithubContentError("no-body", res.status, "no response body");
-
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  let truncated = false;
+  const windowEnd = start + maxBytes;
+  const win: Uint8Array[] = [];
+  let abs = 0;          // absolute byte position in the (decompressed) stream
+  let collected = 0;    // bytes kept for the window
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     if (!value) continue;
-    chunks.push(value);
-    total += value.byteLength;
-    if (total >= maxBytes) {
-      truncated = true;
-      try { await reader.cancel(); } catch { /* ignore */ }
-      break;
+    const chunkStart = abs;
+    abs += value.byteLength;
+    // Keep only the overlap of this chunk with [start, windowEnd); discard rest.
+    const lo = Math.max(chunkStart, start);
+    const hi = Math.min(abs, windowEnd);
+    if (hi > lo) {
+      win.push(value.subarray(lo - chunkStart, hi - chunkStart));
+      collected += hi - lo;
     }
+    // Keep reading to EOF to learn the true total, but never retain non-window bytes.
   }
-
-  // Concatenate into a single Uint8Array sized at min(total, maxBytes).
-  const target = Math.min(total, maxBytes);
-  const merged = new Uint8Array(target);
-  let cursor = 0;
-  for (const c of chunks) {
-    if (cursor >= target) break;
-    const remaining = target - cursor;
-    const take = Math.min(c.byteLength, remaining);
-    merged.set(c.subarray(0, take), cursor);
-    cursor += take;
-  }
-  // `fatal: false` so partial-utf8 (truncation cut a multi-byte char) yields
-  // a replacement char rather than throwing. The agent already knows the
-  // content was truncated via the `truncated` flag. Workers types require
-  // both fields on the options bag.
-  const content = new TextDecoder("utf-8", { fatal: false, ignoreBOM: false }).decode(merged);
+  const total = abs; // true file size (full stream consumed)
+  const merged = new Uint8Array(collected);
+  let cur = 0;
+  for (const c of win) { merged.set(c, cur); cur += c.byteLength; }
+  const hasMore = start + collected < total;
   return {
-    content,
+    content: decode(merged),
     size: total,
-    truncated,
-    truncatedBytes: truncated ? merged.length : undefined,
+    offset: start,
+    bytesReturned: collected,
+    truncated: hasMore,
+    ...(hasMore ? { truncatedBytes: start + collected } : {}),
   };
 }
 
@@ -324,7 +348,7 @@ export async function fetchContentsList(
     if (r.status === 403) throw new GithubContentError("forbidden-or-rate-limited", 403, "GitHub forbidden / rate-limited");
     throw new GithubContentError("list-failed", r.status, `list failed (${r.status})`);
   }
-  // GitHub returns array for directories, object for single files.
+  // GitHub returns array for directories, object for single files. an earlier revision
   // list is for directories only — fail loudly if a file path is passed.
   if (!Array.isArray(r.data)) {
     throw new GithubContentError("not-a-directory", null, `path ${cleanPath} is a file, not a directory`);
@@ -343,7 +367,7 @@ export async function fetchContentsList(
     });
 }
 
-// ───  — GitHub Code Search ─────────────────────────────────────────
+// ─── GitHub Code Search ─────────────────────────────────────────
 
 type GhCodeSearchItem = {
   path: string;

@@ -10,11 +10,12 @@ import { DegradationBanner } from "./DegradationBanner";
 import { useChannelSnapshot } from "../hooks/useChannelSnapshot";
 import { WorkspaceFileManager } from "../workspace/WorkspaceFileManager";
 import { MemoryPanel } from "../memory/MemoryPanel";
+import { MemoryLayersPanel } from "../memory/MemoryLayersPanel";
 import { ContextPanel } from "../context/ContextPanel";
 import { ArchivePanel } from "./ArchivePanel";
 import { MemoryCandidatesPanel } from "./MemoryCandidatesPanel";
 
-type Tab = "ladder" | "trace" | "tools" | "channel" | "workspace" | "memory" | "candidates" | "context" | "archive" | "debug";
+type Tab = "ladder" | "trace" | "tools" | "channel" | "workspace" | "layers" | "memory" | "candidates" | "context" | "archive" | "debug";
 
 const TAB_LIST: ReadonlyArray<{ id: Tab; label: string }> = [
   { id: "ladder", label: "Ladder" },
@@ -22,6 +23,7 @@ const TAB_LIST: ReadonlyArray<{ id: Tab; label: string }> = [
   { id: "tools", label: "Tools" },
   { id: "channel", label: "Channel" },
   { id: "workspace", label: "Workspace" },
+  { id: "layers", label: "Memory Layers" },
   { id: "memory", label: "Memory" },
   { id: "candidates", label: "Candidates" },
   { id: "context", label: "Context" },
@@ -41,16 +43,16 @@ type Props = {
 
 /**
  * Tab structure shared by InspectDrawer (desktop) and InspectRoute (mobile).
- *  added the Channel tab. ChannelHub state is fetched lazily — only
+ * an earlier revision added the Channel tab. ChannelHub state is fetched lazily — only
  * when the Channel tab is active — same pattern as `useInspect(open)`.
  * RecoverActions sits below the tabs so it's always reachable.
  */
 const VALID_HASH_TABS: ReadonlySet<Tab> = new Set([
-  "ladder", "trace", "tools", "channel", "workspace", "memory", "context", "archive", "debug",
+  "ladder", "trace", "tools", "channel", "workspace", "layers", "memory", "context", "archive", "debug",
 ]);
 
 function readHashTab(): Tab | null {
-  //  — light deep-link from mobile context chip (and any
+  // light deep-link from mobile context chip (and any
   // other entry that wants to land on a specific inspect tab).
   // Reads `window.location.hash` once on mount; ignores invalid or
   // missing hashes. SSR-safe via `typeof window` guard.
@@ -77,9 +79,9 @@ export function InspectContent({ data, loading, error }: Props) {
   return (
     <div className="flex flex-col h-full">
       {data && <DegradationBanner diagnostics={data.degradationDiagnostics} />}
-      {/*  — desktop keeps the horizontal tab strip; mobile
+      {/* desktop keeps the horizontal tab strip; mobile
           gets a menu button + bottom sheet. Both variants drive the
-          same `tab` state, and the URL hash deep-link from
+          same `tab` state, and the URL hash deep-link from an earlier revision
           continues to seed the initial tab regardless of viewport. */}
       <div className="hidden lg:block">
         <Tabs current={tab} onChange={setTab} />
@@ -102,6 +104,7 @@ export function InspectContent({ data, loading, error }: Props) {
           <ChannelTimeline data={channel.data} loading={channel.loading} error={channel.error} />
         )}
         {tab === "workspace" && <WorkspaceFileManager />}
+        {tab === "layers" && <MemoryLayersPanel />}
         {tab === "memory" && <MemoryPanel />}
         {tab === "candidates" && <MemoryCandidatesPanel />}
         {tab === "context" && <ContextPanel />}
@@ -115,11 +118,11 @@ export function InspectContent({ data, loading, error }: Props) {
 }
 
 function Tabs({ current, onChange }: { current: Tab; onChange: (t: Tab) => void }) {
-  // /147b — `min-w-0 overflow-x-auto no-scrollbar` keeps the
+  // `min-w-0 overflow-x-auto no-scrollbar` keeps the
   // desktop strip from pushing the page wider; per-button
   // `flex-shrink-0 whitespace-nowrap` keeps labels intact.
   //
-  //  §C — translate vertical mouse wheel to horizontal scroll
+  // an earlier revision §C — translate vertical mouse wheel to horizontal scroll
   // when the strip has horizontal overflow and the user's wheel input
   // is dominantly vertical (`|deltaY| > |deltaX|`). Trackpad horizontal
   // gestures (deltaX dominant) keep their native behavior. Only consume
@@ -164,17 +167,17 @@ function Tabs({ current, onChange }: { current: Tab; onChange: (t: Tab) => void 
 }
 
 /**
- *  — mobile inspect navigation.
+ * mobile inspect navigation.
  *
  * Replaces the desktop horizontal tab strip on `<lg` viewports with a
  * single menu button that opens a bottom sheet listing all inspect
- * sections. operator said the desktop tabbar didn't feel mobile-native;
+ * sections. the operator said the desktop tabbar didn't feel mobile-native;
  * this surface is built around tap-to-open + tap-to-select, with a
  * tap-anywhere-on-backdrop or a Close button to dismiss. No swipe
  * gestures are added in v1 — tap is the primary mobile primitive and
  * adding gesture handling would expand scope.
  *
- * Hash deep-link from  still drives the initial tab; the
+ * Hash deep-link from an earlier revision still drives the initial tab; the
  * sheet selection updates the same `tab` state so the hash stays in
  * sync via the parent's existing `replaceState` effect.
  */

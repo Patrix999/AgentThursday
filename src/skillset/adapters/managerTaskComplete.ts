@@ -1,5 +1,5 @@
 /**
- *  — adapter for `manager.task_complete`.
+ * adapter for `manager.task_complete`.
  *
  * Thin shim over `managerTaskComplete` in `src/agent/managerOps.ts`.
  * The calling manager's agent_id is read off `ctx.name` (DO instance

@@ -1,16 +1,16 @@
 /**
- *  — Worker-portable patch audit primitives.
+ * Worker-portable patch audit primitives.
  *
  * Pure JavaScript (no `node:` imports) so the `patch.validate`
  * adapter can run the 243-class hunk-count audit inside the
  * Cloudflare Worker / DO before reaching the sandbox. The Node-only
- * engine in `scripts/sandbox/devPatchSandbox.ts` re-uses the same
+ * engine in `scripts/sandbox/agentdPatchSandbox.ts` re-uses the same
  * parsers / regexes / types.
  *
  * Shared with the Worker-side sandbox-routed engine
  * (`src/skillset/sandbox/patchValidateEngine.ts`) so both code paths
  * report `PatchValidationResult` with identical field semantics. The
- * field set matches `dev_patch_sandbox_policy.evidence_payload_fields`
+ * field set matches `agentd_patch_sandbox_policy.evidence_payload_fields`
  * in `docs/skillsets/software-dev.0.1.0.yaml` — adding a field there
  * means adding it here.
  */

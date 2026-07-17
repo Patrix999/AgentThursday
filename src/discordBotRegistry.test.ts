@@ -1,5 +1,5 @@
 /**
- *  — BYO Discord bot helpers.
+ * BYO Discord bot helpers.
  */
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
@@ -11,7 +11,7 @@ import {
   botForChannel,
 } from "./discordBotRegistry";
 
-describe("discordBotRegistry ()", () => {
+describe("discordBotRegistry ", () => {
   it("tokenHint masks all but the last 4", () => {
     assert.equal(tokenHint("MTIzNDU2Nzg5.abcd"), "••••abcd");
     assert.equal(tokenHint("ab"), "••••");
@@ -19,8 +19,8 @@ describe("discordBotRegistry ()", () => {
 
   it("parseChannelList accepts numeric snowflakes, dedupes, rejects junk", () => {
     assert.deepEqual(
-      parseChannelList(["100000000000000005", " 123456789012 ", "100000000000000005"]),
-      ["100000000000000005", "123456789012"],
+      parseChannelList(["100000000000000006", " 123456789012 ", "100000000000000006"]),
+      ["100000000000000006", "123456789012"],
     );
     assert.equal(parseChannelList(["not-a-snowflake"]), null);
     assert.equal(parseChannelList("123"), null);

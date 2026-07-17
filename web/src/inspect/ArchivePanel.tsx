@@ -9,9 +9,9 @@
  * Sections:
  *   1. Totals strip — chunk total / context count / flush total /
  *      flush failed total / retrieval total.
- *   2. Recent flushes —  archive triggers (context.new /
+ *   2. Recent flushes — an earlier revision archive triggers (context.new /
  *      context.reset). Failure rows surface error excerpts.
- *   3. Recent retrievals —  conversation_search audit, with
+ *   3. Recent retrievals — an earlier revision conversation_search audit, with
  *      capped query preview + returned ref count.
  *   4. Counts by context — per-context chunk totals, sorted by latest
  *      archive time. Lets the operator see which contexts have data.

@@ -1,10 +1,10 @@
 /**
- * 175 schema TypeScript types — minimum surface for  loader.
- * Authority:
+ * 175 schema TypeScript types — minimum surface for M8.1 loader.
+ * Authority: docs/design/m8-skillset-manifest-schema-v0.md
  *
  * Detail-level fields (input_contract / output_contract / per-tier
  * approval overrides etc.) are typed as `unknown` here and validated
- * at load time by 183 contract registry;  skeleton only enforces
+ * at load time by 183 contract registry; M8.1 skeleton only enforces
  * the structural skeleton needed for V1/V3/V4/V5 invariants.
  */
 
@@ -20,7 +20,7 @@ export interface ApprovalSpec {
   token_lifetime_seconds?: number;
 }
 
-//  / 236 — provider-neutral generic extension fields.
+// an earlier revision — provider-neutral generic extension fields.
 // Each is intentionally optional: existing manifests (software-dev /
 // research-stub) carry none of these today, and the loader / inspect
 // surface must not require them. `capability_class` is a closed

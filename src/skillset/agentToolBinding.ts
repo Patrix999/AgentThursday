@@ -55,14 +55,14 @@ export interface AgentToolBindingContext {
    */
   onRecordSkipped?: (info: { envelopeId: string | null; toolId: string; reason: string }) => void;
   /**
-   *  B — invoked when `repo.prepare` succeeds. Flips the
+   * an earlier revision B — invoked when `repo.prepare` succeeds. Flips the
    * agent's "prepared" flag so the write dispatcher
    * (`devShellWriteDispatchFree`) lets repo.write / repo.patch /
    * repo.delete through instead of returning `no_prepared_worktree`.
    */
   markRepoPrepared?: (info: { worktree_path: string; head_sha: string }) => void;
   /**
-   *  B — agent-side write dispatch entry point. Wraps the DO's
+   * an earlier revision B — agent-side write dispatch entry point. Wraps the DO's
    * `devShellWriteDispatch` callable so the wrappers below can route
    * repo.write / repo.patch through the same pipeline as the admin
    * `/api/dev-shell` route, including the `no_prepared_worktree` gate,
@@ -72,7 +72,7 @@ export interface AgentToolBindingContext {
    * `WriteDispatchResult` shape: ok / tool_id / output / error /
    * duration_ms / backend / diff). The wrapper records execution into
    * the current envelope via `recordReadExecution` (write-side gate
-   * checks land in `evidenceEnvelope.seal()` via  C).
+   * checks land in `evidenceEnvelope.seal()` via an earlier revision C).
    */
   dispatchWriteTool?: (input: {
     tool_id: string;
@@ -82,7 +82,7 @@ export interface AgentToolBindingContext {
   }) => Promise<unknown>;
 }
 
-const M8_1 = "[ Developer Shell]";
+const M8_1 = "[M8.1 Developer Shell]";
 
 const READ_INPUT_SUMMARY_CAP = 512;
 const READ_OUTPUT_SUMMARY_CAP = 256;
@@ -175,7 +175,7 @@ async function recordReadExecution(
 }
 
 /**
- *  — narrow recording context. Lets `recordGateExecution`
+ * narrow recording context. Lets `recordGateExecution`
  * be called from sites that don't construct a full
  * `AgentToolBindingContext` (e.g. the pre-finalize positive
  * gate-intent dispatch guard in server.ts). `AgentToolBindingContext`
@@ -267,7 +267,7 @@ export async function recordGateExecution(
 export function buildAgentSafeReadTools(ctx: AgentToolBindingContext) {
   return {
     repo_read: tool({
-      description: `${M8_1} Read a single file from the agentthursday / AT repo working tree. Path is subject to the global denylist (.env*, .git/, secrets/). Use this instead of content_read when you need the agent's actual workspace state.`,
+      description: `${M8_1} Read a single file from the AgentThursday / AT repo working tree. Path is subject to the global denylist (.env*, .git/, secrets/). Use this instead of content_read when you need the agent's actual workspace state.`,
       inputSchema: z.object({
         path: z.string().describe("relative path inside the repo (e.g. 'src/server.ts')"),
       }),
@@ -286,7 +286,7 @@ export function buildAgentSafeReadTools(ctx: AgentToolBindingContext) {
       },
     }),
     repo_prepare: tool({
-      description: `${M8_1} : Prepare the controlled repo worktree before writing. Idempotent — call once at the start of any task that may use repo.write / repo.patch (the write dispatcher rejects mutations until a successful prepare has fired). Returns head_sha, branch, worktree_path, and git status. The repo / ref are allowlisted; no token is exposed, no push is performed.`,
+      description: `${M8_1} an earlier revision: Prepare the controlled repo worktree before writing. Idempotent — call once at the start of any task that may use repo.write / repo.patch (the write dispatcher rejects mutations until a successful prepare has fired). Returns head_sha, branch, worktree_path, and git status. The repo / ref are allowlisted; no token is exposed, no push is performed.`,
       inputSchema: z.object({
         repo_id: z.string().optional().describe("repo id (informational; checkout source is server-allowlisted)"),
         branch: z.string().optional().describe("branch or ref (informational; checkout currently materializes the server-configured default ref)"),
@@ -316,7 +316,7 @@ export function buildAgentSafeReadTools(ctx: AgentToolBindingContext) {
       },
     }),
     repo_write: tool({
-      description: `${M8_1} : Write (replace) a file in the prepared repo worktree. Requires repo.prepare to have fired first; otherwise returns no_prepared_worktree. Path is constrained by the software-dev manifest allow/deny lists. Use repo.patch for single-line edits; use repo.write when the entire file should be replaced. : after your LAST write/patch in a task you MUST actually call gate.typecheck (then gate.build) before finishing — saying in your reply that you ran them is NOT enough; without a real gate tool call the envelope seals failed with reason missing_gate_evidence. If a gate genuinely cannot run, state the concrete blocker in your reply.`,
+      description: `${M8_1} an earlier revision: Write (replace) a file in the prepared repo worktree. Requires repo.prepare to have fired first; otherwise returns no_prepared_worktree. Path is constrained by the software-dev manifest allow/deny lists. Use repo.patch for single-line edits; use repo.write when the entire file should be replaced. an earlier revision: after your LAST write/patch in a task you MUST actually call gate.typecheck (then gate.build) before finishing — saying in your reply that you ran them is NOT enough; without a real gate tool call the envelope seals failed with reason missing_gate_evidence. If a gate genuinely cannot run, state the concrete blocker in your reply.`,
       inputSchema: z.object({
         path: z.string().describe("relative path inside the repo"),
         content: z.string().describe("full new file content (256KB cap)"),
@@ -353,7 +353,7 @@ export function buildAgentSafeReadTools(ctx: AgentToolBindingContext) {
       },
     }),
     repo_patch: tool({
-      description: `${M8_1} : Apply a string-replacement patch to a single file in the prepared repo worktree. Requires repo.prepare to have fired first; otherwise returns no_prepared_worktree. \`old_string\` must occur exactly once in the file; the entire match is replaced by \`new_string\`. Prefer this over repo.write for small edits. : after your LAST write/patch in a task you MUST actually call gate.typecheck (then gate.build) before finishing — saying in your reply that you ran them is NOT enough; without a real gate tool call the envelope seals failed with reason missing_gate_evidence. If a gate genuinely cannot run, state the concrete blocker in your reply.`,
+      description: `${M8_1} an earlier revision: Apply a string-replacement patch to a single file in the prepared repo worktree. Requires repo.prepare to have fired first; otherwise returns no_prepared_worktree. \`old_string\` must occur exactly once in the file; the entire match is replaced by \`new_string\`. Prefer this over repo.write for small edits. an earlier revision: after your LAST write/patch in a task you MUST actually call gate.typecheck (then gate.build) before finishing — saying in your reply that you ran them is NOT enough; without a real gate tool call the envelope seals failed with reason missing_gate_evidence. If a gate genuinely cannot run, state the concrete blocker in your reply.`,
       inputSchema: z.object({
         path: z.string().describe("relative path inside the repo"),
         old_string: z.string().describe("exact text to find (must occur exactly once)"),
@@ -461,7 +461,7 @@ export function buildAgentSafeReadTools(ctx: AgentToolBindingContext) {
       },
     }),
     gate_typecheck: tool({
-      description: `${M8_1} Run 'npm run typecheck' in the agent sandbox; returns exit code + stdout/stderr + per-phase breakdown (root / tui / scripts). Only this fixed command is allowed; arbitrary targets are rejected. **Use this tool whenever the user asks to verify typecheck, the typecheck gate, or 'npm run typecheck' — call the tool, do not narrate a plan like "I'll run typecheck" / "我去跑 typecheck".** Merely saying you will run it without dispatching this tool is a violation ( will fail the envelope). Exception: if the user explicitly forbids tool use ("不要调用任何工具" / "don't call any tools"), do not call this tool and do not fabricate a result; plainly say you cannot verify without running it.`,
+      description: `${M8_1} Run 'npm run typecheck' in the agent sandbox; returns exit code + stdout/stderr + per-phase breakdown (root / tui / scripts). Only this fixed command is allowed; arbitrary targets are rejected. **Use this tool whenever the user asks to verify typecheck, the typecheck gate, or 'npm run typecheck' — call the tool, do not narrate a plan like "I'll run typecheck" / "我去跑 typecheck".** Merely saying you will run it without dispatching this tool is a violation (an earlier revision will fail the envelope). Exception: if the user explicitly forbids tool use ("不要调用任何工具" / "don't call any tools"), do not call this tool and do not fabricate a result; plainly say you cannot verify without running it.`,
       inputSchema: z.object({}),
       execute: async () => {
         const repoBaseDir = await ctx.ensureRepoBaseDir?.();
@@ -475,7 +475,7 @@ export function buildAgentSafeReadTools(ctx: AgentToolBindingContext) {
       },
     }),
     gate_build: tool({
-      description: `${M8_1} Run 'npm run build:web' (production web build) in the agent sandbox; returns exit code + stdout/stderr + per-phase breakdown (web_tsc / web_vite). Only this fixed command is allowed. **Use this tool whenever the user asks to verify build, the build gate, 'gate.build', or whether build still passes — call the tool, do not narrate a plan like "我去跑 gate" / "我直接跑 gate" / "I'll go run the gate".** Merely saying you will run it without dispatching this tool is a violation ( will fail the envelope). Exception: if the user explicitly forbids tool use ("不要调用任何工具" / "don't call any tools"), do not call this tool and do not fabricate a result; plainly say you cannot verify without running it.`,
+      description: `${M8_1} Run 'npm run build:web' (production web build) in the agent sandbox; returns exit code + stdout/stderr + per-phase breakdown (web_tsc / web_vite). Only this fixed command is allowed. **Use this tool whenever the user asks to verify build, the build gate, 'gate.build', or whether build still passes — call the tool, do not narrate a plan like "我去跑 gate" / "我直接跑 gate" / "I'll go run the gate".** Merely saying you will run it without dispatching this tool is a violation (an earlier revision will fail the envelope). Exception: if the user explicitly forbids tool use ("不要调用任何工具" / "don't call any tools"), do not call this tool and do not fabricate a result; plainly say you cannot verify without running it.`,
       inputSchema: z.object({}),
       execute: async () => {
         const repoBaseDir = await ctx.ensureRepoBaseDir?.();

@@ -1,6 +1,6 @@
 /**
- *  —  Step 6 compactionOps pure/read surfaces extraction.
- *  —  Step 6 compactionOps apply surfaces extraction.
+ * M8.9 Step 6 compactionOps pure/read surfaces extraction.
+ * M8.9 Step 6 compactionOps apply surfaces extraction.
  *
  * Compaction-related helpers pulled verbatim from `AgentThursdayAgent`
  * (`src/server.ts`). No call shapes, return shapes, event names,
@@ -8,9 +8,9 @@
  * the calls moved.
  *
  * Host shapes:
- *   - `CompactionReadHost` (): `getMessages` / `getCompactions`
+ *   - `CompactionReadHost` : `getMessages` / `getCompactions`
  *     / `logEvent`.
- *   - `CompactionWriteHost extends CompactionReadHost` ()
+ *   - `CompactionWriteHost extends CompactionReadHost` 
  *     adds:
  *       - `addCompaction(summary, fromMessageId, toMessageId)` —
  *         wraps `session.addCompaction(...)` and returns the stored
@@ -20,7 +20,7 @@
  *         that `compactContext` reports as `modelVisibleAfter`.
  *
  * Per Step 5 preflight §6: reset/new/switch/hygiene mutations remain
- * on `AgentThursdayAgent` (). SQL schema / storage shape / env
+ * on `AgentThursdayAgent` . SQL schema / storage shape / env
  * bindings unchanged. The semantic advisor client provider still
  * returns `null` — no model client wired in this card.
  */
@@ -209,7 +209,7 @@ export function preflightCompactRangeFree(
       detail: `from=${range.fromMessageId} to=${range.toMessageId}`,
     };
   }
-  //  — only HARD-tier anchors (explicit / first-k / long
+  // only HARD-tier anchors (explicit / first-k / long
   // user briefing) block compaction. Medium anchors flow through and
   // are lifted into the summary at apply time.
   const hardAnchorIds = new Set<string>();
@@ -272,7 +272,7 @@ export function countSyntheticInVisibleFree(host: CompactionReadHost): number {
   return n;
 }
 
-//  — semantic advisor client provider. Returns null in this
+// semantic advisor client provider. Returns null in this
 // scaffold so the orchestrator always falls back to the deterministic
 // summary; a future card can override this to wire a model client
 // (e.g. Workers AI / Anthropic SDK) without touching applyCompactPlan.
@@ -280,8 +280,8 @@ export function getSemanticAdvisorClientFree(): SemanticAdvisorClient | null {
   return null;
 }
 
-//  — sanitized source slice handed to the advisor. Reuses the
-//  snapshot which already strips system/SOUL/reasoning/tool
+// sanitized source slice handed to the advisor. Reuses the
+// an earlier revision snapshot which already strips system/SOUL/reasoning/tool
 // payloads down to text + tool *names*. The advisor sees the same
 // surface a human reading the inspect tab would see — never raw
 // payloads. System and synthetic-compaction messages are skipped.
@@ -318,7 +318,7 @@ export function buildAdvisorSanitizedSourceFree(
   return out;
 }
 
-//  — `compactContext` mutation surface. Behavior-preserving
+// `compactContext` mutation surface. Behavior-preserving
 // move of `AgentThursdayAgent.compactContext` (`src/server.ts` pre-285 lines
 // ~5244–5346). Event names, payload shapes, error text, and the
 // `session.getHistory().length` → null fallback all match the
@@ -424,7 +424,7 @@ export function compactContextFree(
   };
 }
 
-//  — `applyCompactPlan` mutation surface. Behavior-preserving
+// `applyCompactPlan` mutation surface. Behavior-preserving
 // move of `AgentThursdayAgent.applyCompactPlan` (`src/server.ts` pre-285
 // lines ~5390–5588). Event names/payloads, rejection reasons, the
 // strict-greater dead-record detector (`compactionsDelta >
@@ -467,7 +467,7 @@ export async function applyCompactPlanFree(
     }
     seenInPlan.add(range.rangeId);
 
-    // Fresh pre-flight on every step —  spike showed prior
+    // Fresh pre-flight on every step — an earlier revision spike showed prior
     // compactions can swallow message IDs. We use the same lastN
     // strategy the plan was built with so the validation window
     // matches the planner's view.
@@ -485,7 +485,7 @@ export async function applyCompactPlanFree(
       continue;
     }
 
-    // Build deterministic -style summary using the underlying
+    // Build deterministic style summary using the underlying
     // raw `getMessages()` (sanitization is applied inside
     // buildCompactSummary). The summary text never includes tool
     // payloads or reasoning.
@@ -502,7 +502,7 @@ export async function applyCompactPlanFree(
       host.logEvent("context.compact.plan_rejected", { planId: plan.planId, ...rejection });
       continue;
     }
-    //  — recompute medium-tier preserved points from the
+    // recompute medium-tier preserved points from the
     // FRESH snapshot+anchors (not the original plan) so the summary
     // reflects what is actually being compacted right now. The
     // `range.summaryPreservedAnchors` from the plan is informational
@@ -520,7 +520,7 @@ export async function applyCompactPlanFree(
       preservedPoints,
     });
 
-    //  — optional semantic advisor. The orchestrator is
+    // optional semantic advisor. The orchestrator is
     // fallback-safe: a null client (current default), timeout, error,
     // or validator failure all route to the deterministic summary
     // text without blocking compaction. The audit row is emitted

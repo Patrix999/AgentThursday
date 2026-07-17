@@ -1,5 +1,5 @@
 /**
- *  —  Channel/Console agent live binding.
+ * M9.0 Channel/Console agent live binding.
  *
  * Pure resolver: given a conversation's binding (if any) plus pre-fetched
  * agent validation, decide where an inbox row should route.
@@ -7,22 +7,22 @@
  * Pulled out of `ChannelHubAgent.routePending` for two reasons:
  *   1. testability — no DO / sql / RPC dependencies;
  *   2. so the per-row decision can be reasoned about as a single switch,
- *      not buried in the loop.  batch-level
+ *      not buried in the loop. an earlier revision batch-level
  *      `readiness ↔ submit must share a route` invariant still holds, but
  *      now per-row: the caller picks one resolved target per row and uses
  *      it for both readiness and submit.
  *
  * Side effects belong to the caller:
  *   - binding lookup (`channel_conversations.active_profile_id` — legacy
- *     column name, stores the bound agent_id; see  design note)
+ *     column name, stores the bound agent_id; see an earlier revision design note)
  *   - agent RPC (`registryStub.readAgentProfile(agentId)` — legacy
  *     callable name on the registry DO, returns the agent row)
  *   - canonical active context resolution (`getActiveContextId()`)
  *
  * The caller hands all three in pre-resolved; this function only decides.
  *
- *  — agent-centric naming. Output kind is `agent_binding`
- * (was `profile_binding` in ). The reason strings for invalid
+ * agent-centric naming. Output kind is `agent_binding`
+ * (was `profile_binding` in an earlier revision). The reason strings for invalid
  * bindings are now `"invalid_binding:agent:<agentId>:<cause>"` so
  * verifier logs / inspect rows are self-describing.
  */
@@ -39,7 +39,7 @@ export type ChannelRouteKind =
  * - `conversationBinding.activeAgentId` is the raw `channel_conversations`
  *   value — `null` (or empty string after trimming) means unbound. The
  *   physical column is still named `active_profile_id` for storage
- *   compatibility ( §compat); the caller maps column → field.
+ *   compatibility (an earlier revision §compat); the caller maps column → field.
  * - `agentValidation` is the result of looking up the bound agent on
  *   the registry DO. Caller must populate it when `activeAgentId` is set;
  *   `null` is treated as "validation_unavailable" so the row fails safe
@@ -79,7 +79,7 @@ export type ResolveChannelAgentRouteResult =
  * Decide route for one inbox row.
  *
  * Invariants enforced here:
- *   - Unbound conversation → active-context fallback (preserves
+ *   - Unbound conversation → active-context fallback (preserves an earlier revision
  *     behavior for every conversation that hasn't opted in).
  *   - Bound conversation with an `initialized` agent → per-agent DO
  *     by `agent_id`. The DO name is the agent id itself, matching
@@ -92,7 +92,7 @@ export type ResolveChannelAgentRouteResult =
  *     active context — that would silently route to the wrong agent,
  *     defeating the binding contract.
  *
- * /368f — status semantics (ADR ``):
+ * status semantics (ADR `docs/adr/2026-05-26-agent-lifecycle-product-contract.md`):
  *   - `initialized`     : active agent (may be Paused via `accepts_tasks=false`;
  *                         that is the binding UI's concern, not the router);
  *   - `archived`        : soft-deleted; routing must refuse;

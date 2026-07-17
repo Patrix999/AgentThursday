@@ -1,5 +1,5 @@
 /**
- *  — adapter for `admin.smoke` dynamic tool.
+ * adapter for `admin.smoke` dynamic tool.
  *
  * Stateless adapter: synthesizes an in-process Request, runs the
  * composition-root's `requireSecret` umbrella, then delegates to
@@ -18,8 +18,8 @@
  *   - missing_secret_binding   — env.AGENT_THURSDAY_SHARED_SECRET unset (503 from requireSecret)
  *   - auth_failed              — requireSecret returned 401 (should not happen — we inject)
  *   - missing_sandbox_binding  — env.Sandbox unset / not a DurableObjectNamespace
- *   - missing_agent_binding    — env.AgentThursdayAgent unset ( cliStubProbe cases)
- *   - stub_call_failed         — DO stub method threw ( cliStubProbe cases)
+ *   - missing_agent_binding    — env.AgentThursdayAgent unset (an earlier revision cliStubProbe cases)
+ *   - stub_call_failed         — DO stub method threw (an earlier revision cliStubProbe cases)
  *   - route_misconfigured      — handleSandboxExecRoutes returned null
  *
  * Hard boundaries:
@@ -30,14 +30,14 @@
  *   - no extension to new endpoints without editing CASE_ALLOWLIST
  *     AND docs/tools/admin.smoke.0.1.0.yaml's case_id enum.
  *
- *  —  Step 5 aggregate validation surface gap. Step 6
- * (Cards 281–286) extracted context/archive/compaction surfaces from
+ * M8.9 Step 5 aggregate validation surface gap. Step 6
+ * (an earlier revision–286) extracted context/archive/compaction surfaces from
  * `AgentThursdayAgent` into free functions on `src/agent/{archiveOps,
  * compactionOps,contextOps}.ts`. The byte-equivalent extraction needs
  * end-to-end validation, but the original `admin.smoke` v1 closed
  * enum (`sandbox-exec-printf`, `remember-ack-empty-fallback`) didn't
- * cover any of those surfaces, so directed-validation () had no
- * way to assert the Step 6 chain preserves behavior.  adds
+ * cover any of those surfaces, so directed-validation (agentD) had no
+ * way to assert the Step 6 chain preserves behavior. an earlier revision adds
  * four `kind: "cliStubProbe"` cases that exercise read-only / no-op
  * surfaces of the Step 6 free functions via real `AgentThursdayAgent` DO
  * stub calls. Mutation-bearing surfaces (resetContext, newContext,
@@ -79,7 +79,7 @@ import type { ArchiveInspectSummary } from "../../schema/archive";
 // scripts/tsconfig program graph (scripts/tsconfig.json deliberately
 // scopes types to `node` and does not load `@cloudflare/workers-types`,
 // which server.ts's `this.env` access requires). Keeping this stub
-// surface narrow also matches the  Host-pattern discipline.
+// surface narrow also matches the an earlier revision Host-pattern discipline.
 interface AgentThursdayAgentStubSurface {
   getActiveContextId(): Promise<ActiveContext>;
   inspectContext(input?: { lastN?: number }): Promise<ContextInspectResult>;
@@ -92,7 +92,7 @@ interface AgentThursdayAgentStubSurface {
     recentLimit?: number;
     perContextLimit?: number;
   }): Promise<ArchiveInspectSummary>;
-  //  — added for `cli-status-dashboard-shape-smoke`. Read-only
+  // added for `cli-status-dashboard-shape-smoke`. Read-only
   // RPC @callable on `AgentThursdayAgent`; same surface the /cli/status route
   // composes. Returns a `DashboardCore` shape (DO-side; route layer
   // appends the outbox section via `buildDashboardSectionFree`).
@@ -104,9 +104,9 @@ type GetAgentByNameNarrow = (
   name: string,
 ) => Promise<AgentThursdayAgentStubSurface>;
 
-//  — narrow cast for ChannelHub stub resolution used by
+// narrow cast for ChannelHub stub resolution used by
 // `cli-status-dashboard-shape-smoke`. Avoids `import type {
-// ChannelHubAgent } from "../../channelHub"` ( documented that
+// ChannelHubAgent } from "../../channelHub"` (an earlier revision documented that
 // such an import poisons tsc's view of `this.env` inside
 // `channelHub.ts`). `ChannelHubOutboxStub` exposes only the two
 // outbox-read methods `buildDashboardSectionFree` consumes; production
@@ -122,9 +122,9 @@ const OUTPUT_CAP_BYTES = 1024;
 const REDACTION_PLACEHOLDER = "[REDACTED]";
 const TEXT_ENCODER = new TextEncoder();
 
-//  fixed inputs — deterministic predicate exercise; the
+// an earlier revision fixed inputs — deterministic predicate exercise; the
 // agent only picks `case_id`, the literals come from the allowlist
-// like 's HTTP body inputs.
+// like an earlier revision's HTTP body inputs.
 const REMEMBER_ACK_FIXTURE_INPUT = "" as const;
 const REMEMBER_ACK_FIXTURE_ACK = "已记下：今天天气晴朗" as const;
 
@@ -152,13 +152,13 @@ type AllowlistedCase =
     }
   | {
       kind: "fn";
-      //  — in-process helper invocation, no Request synthesis.
+      // in-process helper invocation, no Request synthesis.
       // The adapter supplies fixture inputs; closed shape means we never
       // accept agent-provided text (no injection / no secret).
       helper: "applyRememberAckFallback";
     }
   | {
-      //  — narrow AgentThursdayAgent DO stub invocation. Each probe id
+      // narrow AgentThursdayAgent DO stub invocation. Each probe id
       // pins a specific stub method + read-only / no-op argument shape;
       // no model input is forwarded to the stub. Returns a structural
       // summary (counts, top-level keys, kind flags) — never raw
@@ -167,7 +167,7 @@ type AllowlistedCase =
       probe: CliStubProbeId;
     }
   | {
-      //  — `/cli/status` dashboard-section composition probe.
+      // `/cli/status` dashboard-section composition probe.
       // Synthesizes a `GET /cli/status` Request through `requireSecret`
       // (adapter-side secret mediation), then composes the dashboard
       // section in-process by calling `stub.getDashboardCore()` followed
@@ -185,8 +185,8 @@ const CASE_ALLOWLIST: Record<CaseId, AllowlistedCase> = {
     path: "/api/sandbox/exec",
     method: "POST",
     body: {
-      command: "printf -e2e",
-      sandbox_id: "agentthursday--smoke",
+      command: "printf card268-e2e",
+      sandbox_id: "agentthursday-card268-smoke",
       timeout_seconds: 10,
     },
   },
@@ -265,7 +265,7 @@ interface RememberAckOkOutput {
   };
 }
 
-//  — `cliStubProbe` outputs. One discriminated branch per
+// `cliStubProbe` outputs. One discriminated branch per
 // probe case_id. Each carries a structural summary (counts / boolean
 // flags / top-level keys) and an `evidence.free_fn_path_exercised`
 // list naming the Step 6 free functions whose DO delegate was invoked.
@@ -349,7 +349,7 @@ interface ArchiveInspectOkOutput {
   };
 }
 
-//  — closed shape for `cli-status-dashboard-shape-smoke`. All
+// closed shape for `cli-status-dashboard-shape-smoke`. All
 // fields are derived from `DashboardSection`. No raw outbox row, no
 // patch-apply payload, no envelope_id leak — only presence booleans,
 // closed-enum `*_kind` discriminators, drift-flag whitelist names, and
@@ -452,7 +452,7 @@ function capUtf8String(value: string, maxBytes: number): string {
   return out;
 }
 
-//  — conservative compactPlan inputs. Designed to NEVER produce
+// conservative compactPlan inputs. Designed to NEVER produce
 // surprising state: even on a high-pressure context, these inputs
 // almost always yield zero ranges + populated rejected[] reasons,
 // because `keepRecent: 200` preserves the trailing 200 messages and
@@ -486,7 +486,7 @@ async function getCanonicalActiveStubForProbe(
   // Mirror `getCanonicalActiveContextDoName` semantics without
   // requiring a real Request: ask the registry for the active
   // pointer, then build a stub against that DO name. If the registry
-  // itself is the canonical active (default in  deployments),
+  // itself is the canonical active (default in M8.9 deployments),
   // both stubs target the same DO.
   const registry = await getRegistryStub(env);
   let name = DEMO_INSTANCE;
@@ -543,7 +543,7 @@ async function runCliStubProbe(
   if (probe === "context-lifecycle-noop-smoke") {
     const registry = await getRegistryStub(env);
     const active: ActiveContext = await registry.getActiveContextId();
-    //  safety: hand the registry its own current active id so
+    // an earlier revision safety: hand the registry its own current active id so
     // `switchContext` hits the no-op branch (`previousContextId ===
     // newContextId`). No-op branch is non-destructive by construction
     // — it emits a `context.switch` event with `kind: "noop"` and
@@ -564,7 +564,7 @@ async function runCliStubProbe(
     }
     const result: SwitchContextResult = await registry.switchContext({
       contextId: active.contextId,
-      reason: "-noop-smoke",
+      reason: "card287-noop-smoke",
     });
     const noop =
       typeof result.previousContextId === "string"
@@ -649,14 +649,14 @@ async function runCliStubProbe(
   throw new Error(`runCliStubProbe: unhandled probe '${String(_exhaustive)}'`);
 }
 
-//  — narrow ChannelHub resolver via the documented narrow cast.
+// narrow ChannelHub resolver via the documented narrow cast.
 const resolveChannelHub = getAgentByName as unknown as GetChannelHubStubNarrow;
 
 /**
- *  — `cli-status-dashboard-shape-smoke`.
+ * `cli-status-dashboard-shape-smoke`.
  *
  * Exercises the dashboard composition slice of `/cli/status` so a
- * directed-validation agent () can confirm the production
+ * directed-validation agent (agentD) can confirm the production
  * `/cli/status.dashboard` shape without seeing `AGENT_THURSDAY_SHARED_SECRET`
  * and without gaining general curl/shell access.
  *
@@ -671,7 +671,7 @@ const resolveChannelHub = getAgentByName as unknown as GetChannelHubStubNarrow;
  *     fires-and-forgets, nor the other six stub calls the route
  *     composes (`getCliSession`, `getDeveloperLoopReview`,
  *     `getApprovalPolicy`, `getPendingToolApproval`, `getDebugTrace`,
- *     `getUsageStats`). operator /  chose this scope so the probe is
+ *     `getUsageStats`). the operator / agentP chose this scope so the probe is
  *     read-only and non-mutating; if a future revision needs full
  *     route equivalence, open a follow-up card.
  *
@@ -811,8 +811,8 @@ registerDispatchHandler<Input, Output>({
     const spec = CASE_ALLOWLIST[caseId];
 
     if (spec.kind === "fn") {
-      //  — deterministic helper-driven validation. No env
-      // bindings, no HTTP synthesis. Predicate exercise of .
+      // deterministic helper-driven validation. No env
+      // bindings, no HTTP synthesis. Predicate exercise of an earlier revision.
       const result = applyRememberAckFallback({
         replyText: REMEMBER_ACK_FIXTURE_INPUT,
         rememberAck: REMEMBER_ACK_FIXTURE_ACK,
@@ -833,7 +833,7 @@ registerDispatchHandler<Input, Output>({
     }
 
     if (spec.kind === "cliStubProbe") {
-      //  — Step 5 aggregate validation surfaces. Each probe
+      // Step 5 aggregate validation surfaces. Each probe
       // pins a single read-only / no-op stub method on `AgentThursdayAgent`
       // (registry instance, DEMO_INSTANCE) and returns a structural
       // summary. No raw message text, no archive payloads, no
@@ -866,7 +866,7 @@ registerDispatchHandler<Input, Output>({
     }
 
     if (spec.kind === "cliStatusProbe") {
-      //  — dashboard-section composition probe (see
+      // dashboard-section composition probe (see
       // `runCliStatusProbe` honest-labeling docstring for the route
       // equivalence boundary).
       return await runCliStatusProbe(env);

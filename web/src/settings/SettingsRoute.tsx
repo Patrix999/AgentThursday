@@ -1,9 +1,10 @@
 import { PageHeader } from "../nav/PageHeader";
 import { ProviderKeysPanel } from "../shared/ProviderKeysPanel";
 import { DiscordBotsPanel } from "../shared/DiscordBotsPanel";
+import { ApprovalsPanel } from "../shared/ApprovalsPanel";
 
 /**
- *  (UX renovation W1) — configuration home. Provider keys and
+ * an earlier revision (UX renovation W1) — configuration home. Provider keys and
  * Discord bots previously lived on the Models / Agents pages; the
  * user journey wants one place to "plug things in". Models goes back
  * to being a pure catalog, Agents a pure roster.
@@ -18,6 +19,7 @@ export default function SettingsRoute() {
           selectable when creating an agent; a connected Discord bot serves its
           channels on the next polling sweep.
         </p>
+        <ApprovalsPanel />
         <ProviderKeysPanel />
         <DiscordBotsPanel />
       </main>

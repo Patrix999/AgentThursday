@@ -5,8 +5,8 @@ import { useComposerActions } from "../hooks/useComposerActions";
 type Props = { snapshot: WorkspaceSnapshot | null };
 
 /**
- * Desktop composer (). Mobile users get `MobileComposer` via
- * `ThumbReachLayout` ().
+ * Desktop composer . Mobile users get `MobileComposer` via
+ * `ThumbReachLayout` .
  */
 export function Composer({ snapshot }: Props) {
   const [text, setText] = useState("");

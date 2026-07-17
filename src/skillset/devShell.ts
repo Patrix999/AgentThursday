@@ -1,5 +1,5 @@
 /**
- *   + 184a — Developer Shell read + git inspect dispatcher.
+ * M8.1 an earlier revision + 184a — Developer Shell read + git inspect dispatcher.
  *
  * Read-only surface only:
  *   - repo.read / repo.glob / repo.grep    (workspace SDK backend)
@@ -67,7 +67,7 @@ export interface DispatchContext {
   traceId?: string | null;
   /**
    * Optional workspace backend. When omitted, repo.* tools fall back
-   * to the  v1 stub return shape (used in unit tests).
+   * to the M8.1 v1 stub return shape (used in unit tests).
    */
   workspace?: WorkspaceReadBackend;
   /**
@@ -103,7 +103,7 @@ export interface DispatchResult {
   duration_ms: number;
   contract: { tier: number; emit_events: string[]; required_evidence: string[] };
   /**
-   *  B — `sandbox` means the read ran against the prepared
+   * an earlier revision B — `sandbox` means the read ran against the prepared
    * sandbox worktree (ctx.repoBaseDir + ctx.sandboxExec). `source_read`
    * means a workspace fallback to the GitHub-source backend
    * (ctx.workspace) — file content reflects the external source, not
@@ -112,7 +112,7 @@ export interface DispatchResult {
    */
   backend: "sandbox" | "source_read" | "stub";
   /**
-   *  B — worktree path the dispatch ran against (when
+   * an earlier revision B — worktree path the dispatch ran against (when
    * `backend === "sandbox"`), or null when the dispatcher fell back
    * to source_read / stub.
    */
@@ -128,7 +128,7 @@ const GIT_LOG_DEFAULT_MAX = 20;
 const SAFE_REF = /^[A-Za-z0-9_./-]{1,200}$/;
 const SAFE_RELATIVE_PATH = /^[A-Za-z0-9_./-]{1,400}$/;
 
-//  — path / glob hardening for sandbox-backed reads.
+// path / glob hardening for sandbox-backed reads.
 //
 // SAFE_RELATIVE_PATH allows dots and slashes, which is fine for
 // individual character validation but does NOT prevent `..` segments
@@ -263,7 +263,7 @@ async function realRepoGlobSandbox(
   return { paths: filtered, pattern, truncated: filtered.length >= GLOB_DEFAULT_LIMIT };
 }
 
-//  — grep `--include` glob portability. The sandbox container's
+// grep `--include` glob portability. The sandbox container's
 // grep (busybox/musl fnmatch, pathname semantics) does not let `*` cross
 // `/`, so `--include='**/*.tsx'` matches nothing in subdirectories even
 // though GNU grep on a dev box accepts it. Models naturally write
@@ -454,7 +454,7 @@ async function realGitShow(exec: SandboxExec, ref: string, baseDir?: string) {
   return { content: r.stdout, exit_code: r.exit_code, stderr: r.stderr };
 }
 
-//  A — repo.prepare. Resolves the prepared worktree path via
+// an earlier revision A — repo.prepare. Resolves the prepared worktree path via
 // `ctx.ensureRepoBaseDir` (which threads through AgentThursdayAgent's
 // singleton-promise checkout) and runs three git commands inside it
 // to report head_sha, branch, and porcelain status. No clone / no
@@ -484,7 +484,7 @@ async function realRepoPrepare(
   };
 }
 
-// ── Stub fallbacks ( v0; preserved for unit tests) ──────────────
+// ── Stub fallbacks (M8.1 v0; preserved for unit tests) ──────────────
 
 function stubReadFile(path: string) {
   return { content: `# stub for ${path}`, size_bytes: 0, truncated: false };
@@ -648,7 +648,7 @@ export async function dispatchReadTool(
         break;
       }
       case "repo.prepare": {
-        //  A — requires both a resolved sandbox checkout dir
+        // an earlier revision A — requires both a resolved sandbox checkout dir
         // and the sandboxExec to run git inside it. ensureRepoBaseDir
         // is expected to have been called by the binding layer; if the
         // checkout failed we surface no_prepared_worktree so the agent

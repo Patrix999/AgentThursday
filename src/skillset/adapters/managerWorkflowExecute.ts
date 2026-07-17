@@ -1,6 +1,6 @@
 /**
- *  — adapter for `manager.workflow_execute`. Agent-side entry
- * to the  orchestration-as-code executor: validates the
+ * adapter for `manager.workflow_execute`. Agent-side entry
+ * to the an earlier revision orchestration-as-code executor: validates the
  * declarative descriptor with the same validator the HTTP execute
  * endpoint uses and starts the durable Cloudflare Workflow. Validation
  * failures return `{ok:false, errors[]}` so the agent can fix the

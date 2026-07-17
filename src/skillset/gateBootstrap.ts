@@ -1,5 +1,5 @@
 /**
- *  — gate-runner bootstrap / prewarm helpers extracted from
+ * gate-runner bootstrap / prewarm helpers extracted from
  * `gateRunner.ts`.
  *
  * This module owns the dependency-bootstrap path: probing for marker
@@ -9,10 +9,10 @@
  * `runGate()` (in `gateRunner.ts`) is the only caller in production —
  * it invokes `prewarmNodeModules()` and `ensureNodeModules()` per
  * subdir before delegating to the phase runner. A focused smoke
- * (`scripts/-bootstrap-smoke.ts`) drives `ensureNodeModules`
+ * (`scripts/card266b-bootstrap-smoke.ts`) drives `ensureNodeModules`
  * directly through a fake `SandboxExec`.
  *
- *  invariant: every shell snippet, marker check, event
+ * an earlier revision invariant: every shell snippet, marker check, event
  * payload, timeout value, and result shape is byte-equivalent to the
  * pre-split definitions in `gateRunner.ts`. The orphan
  * `ensureNodeModules` doc-block (originally sitting between

@@ -1,7 +1,7 @@
 /**
- *  — minimal manager merge UI panel.
+ * minimal manager merge UI panel.
  *
- * Reads `GET /api/manager/tasks/:task_id/merge` () and renders
+ * Reads `GET /api/manager/tasks/:task_id/merge`  and renders
  * one of: idle / loading / error / not_found / no_merge / merged.
  * All state logic lives in the pure helper at
  * `src/agent/managerMergePanelState.ts`; this component only renders.

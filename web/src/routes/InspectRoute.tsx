@@ -9,9 +9,9 @@ import { PageHeader } from "../nav/PageHeader";
 /**
  * Mobile-primary inspect surface. Always polling while the route is mounted
  * (the user navigated here intentionally). Desktop users normally use the
- * drawer ( surface decision); this route is also reachable from desktop.
+ * drawer (M7.1 surface decision); this route is also reachable from desktop.
  *
- *  — when `AGENT_THURSDAY_DEBUG_SURFACE_MODE === "disable"` we show a
+ * when `AGENT_THURSDAY_DEBUG_SURFACE_MODE === "disable"` we show a
  * minimal "disabled by deployment config" notice instead of mounting
  * the full inspect tree. Critical: we must NOT call `useInspect(true)`
  * in that branch — the hook starts the `/api/inspect` polling loop on

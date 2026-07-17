@@ -1,7 +1,7 @@
-//  — per-submit manager turn context propagated via
+// per-submit manager turn context propagated via
 // AsyncLocalStorage instead of Durable-Object instance fields.
 //
-//  (now closed-FAIL) stored the in-flight outer
+// an earlier revision (now closed-FAIL) stored the in-flight outer
 // `manager_task_id` (and friends) on three mutable DO fields:
 // `_currentManagerTaskId / _currentManagerTaskSource /
 // _currentManagerTaskConversationId`. `submitManagerTask()` set them,
@@ -31,7 +31,7 @@
 // `agentCtx.getCurrentManagerContext()`, which now reads from the
 // store; an absent store (text-only `submitTask`, or
 // `manager.agent_message` invoked outside a manager turn) returns
-// `null` — same shape as .
+// `null` — same shape as an earlier revision.
 
 // `@types/node` is intentionally NOT in the main tsconfig types list
 // (only `@cloudflare/workers-types`), so a direct `import { ... } from

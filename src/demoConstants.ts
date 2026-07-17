@@ -11,7 +11,7 @@ import type {
 } from "./types";
 
 /**
- *  v2 — constants and pure builders shared by `src/server.ts`
+ * an earlier revision v2 — constants and pure builders shared by `src/server.ts`
  * and `src/routes/*`.
  *
  * Why this module exists: `src/server.ts` is the Cloudflare Worker
@@ -28,6 +28,22 @@ import type {
  */
 
 export const DEMO_INSTANCE = "agentthursday-dev-fresh-108a-1";
+
+// A1 Phase 2: the operator's OWN DO (the registry/operator split
+// target). Fixed name, canonical `agent-<uuid>` shape so Phase 3 can re-key
+// the operator's agent_profile row to it and route operator turns here like
+// any per-agent DO. The constant IS the pointer — no DB indirection.
+export const OPERATOR_INSTANCE = "agent-operator-0000-4000-8000-000000000001";
+
+// A1 Phase 3: "is this DO an operator surface?" — the predicate
+// behind the operator soul/owner/identity fallbacks and the persona-skip.
+// The DEMO_INSTANCE half is the D3 residue (the operator 2026-07-02: registry identity
+// unchanged in 451c): after the routing cutover no operator turns land on the
+// registry, and A2/A3 retire this half when the registry's residual
+// conversational surface goes away.
+export function isOperatorSurfaceName(name: string): boolean {
+  return name === DEMO_INSTANCE || name === OPERATOR_INSTANCE;
+}
 
 export const DOGFOOD_TASK = "如何使用新构建的 agent 开发当前项目？";
 

@@ -14,8 +14,8 @@ type RecentConversation = NonNullable<ChannelSnapshot["recentConversations"]>[nu
  *   1. counts row (inbox / outbox / approvals / conversations / identities)
  *   2. recent timeline — interleaved inbox / outbox / approval entries by time
  *
- * Designed for inspect surface only ( lazy hook). Default `/` user
- * layer never mounts this; the leak guard blacklist ( +
+ * Designed for inspect surface only (an earlier revision lazy hook). Default `/` user
+ * layer never mounts this; the leak guard blacklist (an earlier revision + an earlier revision
  * extension) ensures no stray `providerMessageId/payloadHash` appears there.
  */
 export function ChannelTimeline({ data, loading, error }: Props) {
@@ -33,10 +33,10 @@ export function ChannelTimeline({ data, loading, error }: Props) {
 }
 
 /**
- *  — per-conversation agent binding management.
- *  — agent-centric copy. The row says "Bound to agent X", not
+ * per-conversation agent binding management.
+ * agent-centric copy. The row says "Bound to agent X", not
  * "profile X"; the column under the hood is still `active_profile_id`
- * for storage compat (see ).
+ * for storage compat (see docs/design/2026-05-24-m9.0-agent-centric-correction.md).
  *
  * Renders one row per recently-seen conversation with a selector +
  * Save / Clear actions. Honest copy:
@@ -109,7 +109,7 @@ function BindingRow({
   agents: AgentProfileWithLifecycle[];
   agentsLoading: boolean;
 }) {
-  //  — snapshot may carry `activeAgentId` (new) or only
+  // snapshot may carry `activeAgentId` (new) or only
   // `activeProfileId` (legacy); prefer the new field, fall back to the
   // legacy alias. Same value either way.
   const initial = conversation.activeAgentId ?? conversation.activeProfileId ?? null;

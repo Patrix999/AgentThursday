@@ -1,5 +1,5 @@
 /**
- *  —  lifecycle consensus rewrite tests.
+ * M9.0 lifecycle consensus rewrite tests.
  *
  * Covers ADR v2 §2–§3: four-layer model (lifecycle, runtime health,
  * policy flags, origin), stale triggers, and stale recovery.
@@ -314,12 +314,12 @@ describe("resolveAgentLifecycle — migrating", () => {
   });
 });
 
-// ──  — back-compat defaults, recovery, invalid enum, dispatch_priority ──
+// ── back-compat defaults, recovery, invalid enum, dispatch_priority ──
 
-describe("resolveAgentLifecycle — back-compat defaults ()", () => {
+describe("resolveAgentLifecycle — back-compat defaults ", () => {
   it("profile missing lifecycle v2 fields → safe defaults", () => {
     // Simulate older caller / DB row that hasn't been upgraded to
-    //  fields. Only `id/status/updated_at` are required.
+    // an earlier revision fields. Only `id/status/updated_at` are required.
     const v = resolveAgentLifecycle({
       profile: {
         id: "agent-old",
@@ -338,7 +338,7 @@ describe("resolveAgentLifecycle — back-compat defaults ()", () => {
   });
 });
 
-describe("resolveAgentLifecycle — stale recovery ()", () => {
+describe("resolveAgentLifecycle — stale recovery ", () => {
   it("stale → healthy on next clean resolve (signals dropped)", () => {
     // 1st pass: poll failure + drift → stale
     const stale = resolveAgentLifecycle({
@@ -384,7 +384,7 @@ describe("resolveAgentLifecycle — stale recovery ()", () => {
   });
 });
 
-describe("resolveAgentLifecycle — invalid persisted enum ()", () => {
+describe("resolveAgentLifecycle — invalid persisted enum ", () => {
   it("unknown persisted status falls through the non-initialized branch with derived=null", () => {
     // Defensive: if some upstream path leaked a non-canonical status
     // value (e.g. mid-migration row that escaped `rowToProfile`'s
@@ -405,7 +405,7 @@ describe("resolveAgentLifecycle — invalid persisted enum ()", () => {
   });
 });
 
-describe("resolveAgentLifecycle — dispatch_priority ()", () => {
+describe("resolveAgentLifecycle — dispatch_priority ", () => {
   it("hardcoded to 0 in v1 regardless of inputs", () => {
     // ADR §2.3 lists dispatch_priority as a policy flag but v1 does
     // not yet thread it through the resolver inputs. Pin the value

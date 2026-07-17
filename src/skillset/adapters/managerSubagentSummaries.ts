@@ -1,12 +1,12 @@
 /**
- *  — adapter for `manager.subagent_summaries`.
+ * adapter for `manager.subagent_summaries`.
  *
  * Thin shim over `managerSubagentSummaries` in `src/agent/managerOps.ts`.
  * The calling manager's agent_id is read off `ctx.name` (the DO
  * instance name === agent_id for per-agent AgentThursdayAgent DOs) and threaded
  * into the orchestrator which enforces the
  * `source_agent_id === callingAgentId` permission boundary
- * (ADR §6.3 /  §4).
+ * (ADR §6.3 / an earlier revision §4).
  */
 import { z } from "zod";
 

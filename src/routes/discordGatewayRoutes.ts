@@ -3,7 +3,7 @@ import { json } from "../httpUtil";
 import type { DiscordGatewayAgent } from "../discordGatewayAgent";
 
 /**
- *  — `/api/discord-gateway/*` HTTP route handling extracted
+ * `/api/discord-gateway/*` HTTP route handling extracted
  * from `server.ts`.
  *
  * Single entry point: `handleDiscordGateway(request, url, deps)`.
@@ -23,9 +23,9 @@ import type { DiscordGatewayAgent } from "../discordGatewayAgent";
  *
  * Routes:
  *
- *   /api/discord-gateway/start  POST   start
- *   /api/discord-gateway/stop   POST   stop
- *   /api/discord-gateway/status GET    status
+ *   /api/discord-gateway/start  POST  an earlier revision start
+ *   /api/discord-gateway/stop   POST  an earlier revision stop
+ *   /api/discord-gateway/status GET   an earlier revision status
  */
 
 type DiscordGatewayStub = Awaited<ReturnType<typeof getAgentByName<Env, DiscordGatewayAgent>>>;

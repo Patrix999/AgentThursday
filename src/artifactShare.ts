@@ -1,11 +1,11 @@
 /**
- *  — workspace artifact share API v1 pure helpers.
+ * workspace artifact share API v1 pure helpers.
  *
  * Pure validators / scanners used by both the route handlers in
  * `src/server.ts` and the DO-side write/read methods on AgentThursdayAgent.
  *
  * Follows the 245c contract at
- * ``
+ * `docs/design/2026-05-13-m8.8-generic-artifact-delivery-contract.md`
  * (§4 artifact types, §8 envelope v1, §9.1–9.3 path / secret / size).
  *
  * Scope constraints (245d card body):
@@ -100,7 +100,7 @@ export type ValidationError =
 const CARD_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const FILENAME_RE = /^[A-Za-z0-9._-]+$/;
 const FILENAME_MAX = 128;
-const SOURCE_AGENT_ALLOWED = new Set(["", "", "", "verifier"]);
+const SOURCE_AGENT_ALLOWED = new Set(["agentD", "agentC", "agentP", "verifier"]);
 
 // 245c §9.1 denylist — names that must never appear as a card id
 // or filename segment, even if they pass the character allowlist.

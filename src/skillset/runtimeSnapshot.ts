@@ -1,14 +1,14 @@
 /**
- * /c — agent runtime skillset snapshot.
+ * an earlier revision/c — agent runtime skillset snapshot.
  *
- *  established `docs/skillsets/*.yaml` → generated
- * manifests → loader as the build-time pipeline.  added the
+ * an earlier revision established `docs/skillsets/*.yaml` → generated
+ * manifests → loader as the build-time pipeline. an earlier revision added the
  * runtime control plane on top: the agent caches the loader output as
  * a `SkillsetRuntimeSnapshot` and the dynamic tool mapper consumes
  * that same cached snapshot, so the agent's `getTools()` surface and
  * the inspect surface are guaranteed not to diverge between rebuilds.
  *
- *  adds operator-side disable/enable: `BuildSnapshotArgs`
+ * an earlier revision adds operator-side disable/enable: `BuildSnapshotArgs`
  * accepts a `disabledSkillsetIds` set; manifests in that set are
  * moved from `skillset_ids.loaded` to `skillset_ids.disabled`, and
  * their tool bindings are filtered out of `agent_tools` + `tool_ids`.
@@ -60,15 +60,15 @@ export interface SkillsetRuntimeSnapshot {
   schema_version: string;
   source_shas: Record<string, string>;
   /**
-   * : `loaded` + `rejected` partitioned by loader.
-   * : operator-disabled ids are split out of `loaded` into
+   * an earlier revision: `loaded` + `rejected` partitioned by loader.
+   * an earlier revision: operator-disabled ids are split out of `loaded` into
    * `disabled` so the agent surface can hide them without losing the
    * loader-accepted distinction. `loaded ∪ disabled ∪ rejected` covers
    * every embedded manifest.
    */
   skillset_ids: { loaded: string[]; disabled: string[]; rejected: string[] };
   /**
-   * : rich disable records (with `reason` + `disabled_at`)
+   * an earlier revision: rich disable records (with `reason` + `disabled_at`)
    * kept alongside the id partition. Order matches `skillset_ids.disabled`.
    */
   disabled: DisabledSkillsetEntry[];
@@ -93,7 +93,7 @@ export interface BuildSnapshotArgs {
   /** Test override; falls back to deployed `EMBEDDED_MANIFESTS`. */
   embedded?: ReadonlyArray<EmbeddedManifest>;
   /**
-   *  — operator-disabled skillset ids. Manifests whose id is
+   * operator-disabled skillset ids. Manifests whose id is
    * in this map are moved out of `skillset_ids.loaded` into
    * `skillset_ids.disabled`, and any tool bindings sourced from them
    * are filtered out of `agent_tools` + `tool_ids`. Unknown ids are

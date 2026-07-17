@@ -1,22 +1,22 @@
 /**
- *  — adapter for `manager.agent_message`. Forwards a single
+ * adapter for `manager.agent_message`. Forwards a single
  * user-style message to a specific agent's per-agent DO and AWAITS
  * the agent loop. Pre-checks the registry for `target_not_found`
- * (/355 invariant: no implicit DO instantiation). Long loops
+ * (an earlier revision invariant: no implicit DO instantiation). Long loops
  * that exceed the ~90s CF DO RPC envelope surface as
  * `agent_loop_timeout` — the task is injected regardless, so the
  * manager should not treat timeout as undelivered.
  *
- *  — when the calling manager DO has a `submitManagerTask`
+ * when the calling manager DO has a `submitManagerTask`
  * round in flight, default `task_context.parent_task_id` and
  * `task_context.source_agent_id` from the manager's current outer
  * task context. Manager-supplied non-empty values are preserved.
  *
- *  — `parent_task_id` is REQUIRED on the merged context.
+ * `parent_task_id` is REQUIRED on the merged context.
  * `TaskContextSchema` keeps `parent_task_id` `nullable().optional()`
- * to support pure read paths ( reader, audit replay), but at
+ * to support pure read paths (an earlier revision reader, audit replay), but at
  * the dispatch boundary a subagent MUST inherit a parent so the
- * summary-aggregation ( push) keyed by `parent_task_id` is
+ * summary-aggregation (an earlier revision push) keyed by `parent_task_id` is
  * not silently broken. Outside a manager turn, the adapter rejects
  * with `invalid_input` instead of forwarding a parent-less context.
  *
@@ -34,14 +34,15 @@ import { z } from "zod";
 import { registerDispatchHandler } from "../dispatchRegistry";
 import {
   managerSendAgentMessage,
+  resolveAgentOwnerIdentity,
   type ManagerAgentMessageInput,
   type ManagerEnv,
 } from "../../agent/managerOps";
 import { TaskContextSchema } from "../../agent/taskContext";
 import { resolveDispatchTaskContext } from "../../agent/managerTaskContextFallback";
-import { tryGetManagerCtx } from "./managerCtx";
+import { tryGetManagerCtx, tryGetOwnAgentId } from "./managerCtx";
 
-//  — relaxed task_context for the adapter input boundary.
+// relaxed task_context for the adapter input boundary.
 // `source_agent_id` is `.optional()` here so the manager LLM can omit
 // it; the adapter fills it from `agentCtx.getCurrentManagerContext()`
 // and then strict-revalidates against `TaskContextSchema`.
@@ -54,10 +55,10 @@ const inputSchema = z.object({
   text: z.string().min(1),
   conversation_id: z.string().optional(),
   source: z.string().optional(),
-  //  — optional structured TaskContext (ADR §5). Manager LLM
+  // optional structured TaskContext (ADR §5). Manager LLM
   // populates this when dispatching to a subagent; the subagent first
   // turn receives it as a `<task-context>` block.
-  //  — accepts the relaxed shape; adapter re-validates strict.
+  // accepts the relaxed shape; adapter re-validates strict.
   task_context: TaskContextInputSchema.optional(),
 });
 
@@ -70,12 +71,34 @@ registerDispatchHandler<Input, Output>({
   execute: async (input, envUnknown, ctx) => {
     const env = (envUnknown ?? {}) as ManagerEnv;
 
-    //  + 376 — resolve the dispatch-boundary task_context:
+    // agent-initiated dispatch inherits the DISPATCHING agent's
+    // owner. Resolve the dispatcher from its OWN DO id (`this.name` via ctx —
+    // always available, no in-flight-manager-round dependency), then its owner
+    // identity, and pass it so `managerSendAgentMessage`'s ownership check
+    //  lets a scoped agent reach ONLY its own tenant's agents.
+    // FAIL CLOSED: if the dispatcher's owner can't be resolved, do NOT dispatch
+    // (never fall back to admin — that is the cross-tenant hole this card closes).
+    const dispatcherId = tryGetOwnAgentId(ctx);
+    const dispatcherIdentity =
+      dispatcherId !== null ? await resolveAgentOwnerIdentity(env, dispatcherId) : null;
+    if (dispatcherIdentity === null) {
+      return {
+        ok: false,
+        status: "failed",
+        agent_id: input.agent_id,
+        error: {
+          code: "internal",
+          message: "cannot resolve the dispatching agent's owner; dispatch refused",
+        },
+      };
+    }
+
+    // an earlier revision + 376 — resolve the dispatch-boundary task_context:
     //   - manager turn → fill missing parent_task_id / source_agent_id
     //     from the calling manager's current outer task context;
     //   - strict-validate against `TaskContextSchema`;
     //   - reject parent-less dispatches with `invalid_input` so
-    //     summary aggregation () is never silently broken.
+    //     summary aggregation  is never silently broken.
     const managerCtx = tryGetManagerCtx(ctx);
     const current =
       managerCtx !== null ? managerCtx.getCurrentManagerContext() : null;
@@ -102,6 +125,6 @@ registerDispatchHandler<Input, Output>({
         : {}),
     };
 
-    return managerSendAgentMessage(env, orchestratorInput);
+    return managerSendAgentMessage(env, orchestratorInput, dispatcherIdentity);
   },
 });

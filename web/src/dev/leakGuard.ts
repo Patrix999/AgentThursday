@@ -1,16 +1,16 @@
 /**
- *   §E-15 — dev-time DOM leak scanner.
+ * M7.1 an earlier revision §E-15 — dev-time DOM leak scanner.
  *
  * Scans `document.body.innerText` on the user-layer routes (`/`) for inspect
  * blacklist strings. If any match, console.warn with the offending substring
  * and the URL. Runs only when `import.meta.env.DEV` so production bundle is
  * unaffected.
  *
- * The intent is preventive: a + author who accidentally renders
+ * The intent is preventive: a an earlier revision+ author who accidentally renders
  * `event_payload` to a card surface gets a noisy console warning during dev.
  */
 
-//  inspect-layer terms +  channel-inspect terms. The user-layer
+// an earlier revision inspect-layer terms + an earlier revision channel-inspect terms. The user-layer
 // `/` route should never render these; if a future panel accidentally drops
 // `providerMessageId` or `payloadHash` into a card text node, this guard will
 // noisily warn during dev.
@@ -19,7 +19,7 @@ const BLACKLIST = [
   "tool_call_id",
   "recentToolEvents",
   "debugTrace",
-  // Channel inspect-only field names ()
+  // Channel inspect-only field names 
   "providerMessageId",
   "provider_message_id",
   "payloadHash",

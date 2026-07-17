@@ -1,5 +1,5 @@
 /**
- *  —  manager skillset core. Pure orchestration over the
+ * M9.0 manager skillset core. Pure orchestration over the
  * registry-DO stub (and per-agent stubs for `sendAgentMessage`).
  * Both the HTTP route layer (`src/routes/managerRoutes.ts`) and the
  * dispatch adapters (`src/skillset/adapters/manager*.ts` via
@@ -9,7 +9,7 @@
  * Architecture:
  *   - Stub resolution is centralized: `resolveRegistryStub(env)` and
  *     `resolvePerAgentStub(env, agent_id)`. The agent_message path
- *     never falls back to a global active agent (/355
+ *     never falls back to a global active agent (an earlier revision
  *     agent-centric routing invariant).
  *   - Validation calls into `agentProfileValidation.ts` (shared with
  *     `/api/agent-profiles`) and `customSkillsetValidation.ts`.
@@ -81,8 +81,13 @@ import {
   type ManagerTaskCompletedPayload,
 } from "./managerTaskCompleteOps";
 import type { AgentProfile } from "../schema/agent";
+import type { ContextInspectResult } from "../schema/context";
 import type { SkillsetManifest } from "../skillset/types";
 import { looksLikeAgentId } from "./managerAgentIdShape";
+import { type RequestIdentity, resolveRequestIdentity, scopeOwnerIdFor, ownerUserIdFor, ADMIN_USER_ID } from "./requestIdentity";
+import { checkDispatchOwnership } from "./dispatchOwnership";
+// shared local→UTC conversion with the base schedule tools.
+import { localFieldsToUtc } from "./tools/scheduleTools";
 
 // ── Closed event-name enum ───────────────────────────────────────────
 // Verifier grep target. Names are stable; payload shapes are documented
@@ -94,7 +99,7 @@ export const MANAGER_EVENT_NAMES = {
   agentUpdated: "manager.agent.updated",
   skillsetCreated: "manager.skillset.created",
   skillsetUpdated: "manager.skillset.updated",
-  //  — per-agent refresh fan-out after a custom skillset's
+  // per-agent refresh fan-out after a custom skillset's
   // manifest content was updated (not the agent's `skillset` id).
   // Distinct from 357a's `manager.agent.skillset.refreshed` so
   // audit/trace can attribute the refresh to a content PATCH vs an
@@ -105,7 +110,7 @@ export const MANAGER_EVENT_NAMES = {
   skillsetContentRefreshFailed: SKILLSET_CONTENT_REFRESH_FAILED_EVENT,
   agentMessageSent: "manager.agent.message.sent",
   agentMessageFailed: "manager.agent.message.failed",
-  //  — async manager task lifecycle bracket events. Keyed by
+  // async manager task lifecycle bracket events. Keyed by
   // `task_id` via `event_log.trace_id` so /api/manager/tasks/:task_id
   // can derive status without a new SQL table.
   taskReceived: MANAGER_TASK_EVENT_NAMES.received,
@@ -113,18 +118,18 @@ export const MANAGER_EVENT_NAMES = {
   taskWaiting: MANAGER_TASK_EVENT_NAMES.waiting,
   taskReplied: MANAGER_TASK_EVENT_NAMES.replied,
   taskFailed: MANAGER_TASK_EVENT_NAMES.failed,
-  //  — subagent → manager summary PUSH event. Recorded on
+  // subagent → manager summary PUSH event. Recorded on
   // the registry DO event_log via `pushSubagentArtifactSummary`
   // keyed by `parent_task_id` (event_log.trace_id). Read back via
   // `manager.subagent_summaries` adapter with the calling manager's
   // agent_id enforcing the permission boundary (ADR §6.3).
   subagentSummary: SUBAGENT_SUMMARY_EVENT_NAME,
-  //  — audit-grade manager merge event. Recorded via
+  // audit-grade manager merge event. Recorded via
   // `recordManagerTaskMerged` on the registry DO; keyed by
   // `event_log.trace_id = parent_task_id` so it sits in the same
   // task-keyed stream as received/started/waiting/replied/failed.
   taskMerged: MANAGER_TASK_MERGED_EVENT_NAME,
-  //  — manager completion report event. Pure report/archive
+  // manager completion report event. Pure report/archive
   // evidence; coexists with `replied` and does NOT change lifecycle
   // terminal derivation. Recorded via `recordManagerTaskCompleted`
   // on the registry DO; keyed by `event_log.trace_id = parent_task_id`.
@@ -138,8 +143,50 @@ export const MANAGER_EVENT_NAMES = {
 // Narrow interfaces capture only the @callable methods we need.
 
 interface RegistryStubSurface {
-  listAgentProfiles(opts: { includeArchived?: boolean }): Promise<AgentProfile[]>;
-  readAgentProfile(id: string): Promise<AgentProfile | null>;
+  // multi-tenancy: an optional `identity` scopes these registry
+  // reads/writes to one user (matches the @callable signatures from an earlier revision).
+  // Omitted ⇒ admin (unchanged behaviour for internal/system callers).
+  listAgentProfiles(opts: { includeArchived?: boolean }, identity?: RequestIdentity): Promise<AgentProfile[]>;
+  readAgentProfile(id: string, identity?: RequestIdentity): Promise<AgentProfile | null>;
+  // turn share links.
+  createTurnShare(
+    input: { agent_id: string; agent_name?: string | null; title: string; content_md: string },
+    identity?: RequestIdentity,
+  ): Promise<{ ok: true; share_id: string } | { ok: false; error: string }>;
+  readTurnShare(input: { share_id: string }): Promise<{
+    share_id: string;
+    agent_name: string | null;
+    title: string;
+    content_md: string;
+    created_at: string;
+  } | null>;
+  // owner-scoped share management.
+  listTurnShares(identity?: RequestIdentity): Promise<{
+    share_id: string;
+    agent_name: string | null;
+    title: string;
+    created_at: string;
+  }[]>;
+  deleteTurnShare(input: { share_id: string }, identity?: RequestIdentity): Promise<{ ok: boolean }>;
+  // owner-scoped scheduled tasks (see ManagerRoutePreflightSurface).
+  createScheduledTaskRow(input: {
+    id: string;
+    ownerUserId: string;
+    agentId: string;
+    spec: Record<string, unknown>;
+    nowIso: string;
+  }): Promise<{ ok: true; row: ScheduledTaskWireRow } | { ok: false; code: string; message: string }>;
+  listScheduledTaskRows(opts: { agentId?: string; scopeOwnerId?: string }): Promise<ScheduledTaskWireRow[]>;
+  updateScheduledTaskRow(input: {
+    id: string;
+    scopeOwnerId?: string;
+    nowIso: string;
+    changes: Record<string, unknown>;
+  }): Promise<{ ok: true; row: ScheduledTaskWireRow } | { ok: false; code: string; message: string }>;
+  deleteScheduledTaskRow(input: { id: string; scopeOwnerId?: string }): Promise<{ deleted: boolean }>;
+  listScheduledTaskRowsWithRuns(opts: { agentId?: string; scopeOwnerId?: string; runLimit?: number }): Promise<
+    (ScheduledTaskWireRow & { recent_runs: ScheduledTaskRunWireRow[] })[]
+  >;
   createAgentProfile(input: {
     id: string;
     name: string;
@@ -150,7 +197,8 @@ interface RegistryStubSurface {
     status: AgentProfile["status"];
     createdAt: string;
     updatedAt: string;
-  }): Promise<
+      parentAgentId?: string | null;
+  }, identity?: RequestIdentity): Promise<
     | { ok: true; profile: AgentProfile }
     | { ok: false; error: { code: "name_conflict" | "internal"; message: string } }
   >;
@@ -162,7 +210,7 @@ interface RegistryStubSurface {
     persona?: string;
     status?: AgentProfile["status"];
     updatedAt: string;
-  }): Promise<
+  }, identity?: RequestIdentity): Promise<
     | { ok: true; profile: AgentProfile }
     | {
         ok: false;
@@ -172,8 +220,8 @@ interface RegistryStubSurface {
         };
       }
   >;
-  listCustomSkillsets(): Promise<CustomSkillsetWireRecord[]>;
-  readCustomSkillset(id: string): Promise<CustomSkillsetWireRecord | null>;
+  listCustomSkillsets(scopeOwnerId?: string): Promise<CustomSkillsetWireRecord[]>;
+  readCustomSkillset(id: string, scopeOwnerId?: string): Promise<CustomSkillsetWireRecord | null>;
   createCustomSkillset(input: {
     id: string;
     name: string;
@@ -183,6 +231,7 @@ interface RegistryStubSurface {
     manifest: SkillsetManifest;
     createdAt: string;
     updatedAt: string;
+    ownerUserId: string;
   }): Promise<CreateCustomSkillsetWireResult>;
   updateCustomSkillset(input: {
     id: string;
@@ -192,9 +241,12 @@ interface RegistryStubSurface {
     sourceYaml?: string;
     manifest?: SkillsetManifest;
     updatedAt: string;
-  }): Promise<UpdateCustomSkillsetWireResult>;
+  }, scopeOwnerId?: string): Promise<UpdateCustomSkillsetWireResult>;
+  deleteCustomSkillset(input: { id: string }, scopeOwnerId?: string): Promise<
+    { ok: true; id: string } | { ok: false; error: { code: string; message: string } }
+  >;
   recordManagerEvent(type: string, payload: unknown): Promise<void> | void;
-  //  — task-keyed event recorder. Mirrors recordManagerEvent
+  // task-keyed event recorder. Mirrors recordManagerEvent
   // but threads `taskId` into `event_log.trace_id` so subsequent
   // readManagerTaskEvents can scope by task_id without a join.
   recordManagerTaskEvent(
@@ -202,7 +254,7 @@ interface RegistryStubSurface {
     payload: unknown,
     taskId: string,
   ): Promise<void> | void;
-  //  — record one manager→subagent dispatch into the workflow
+  // record one manager→subagent dispatch into the workflow
   // ledger (run/phase/agent). Fail-soft on the DO side; record-only.
   recordWorkflowDispatch(input: {
     parent_task_id: string;
@@ -210,33 +262,64 @@ interface RegistryStubSurface {
     subagent_agent_id: string | null;
     subagent_task_id: string;
     prompt_preview: string | null;
+    // Multi-tenancy — the dispatching agent's resolved owner (admin sentinel
+    // for the operator path). Stamped on the run row for owner-scoped reads.
+    owner_user_id?: string | null;
   }): Promise<void> | void;
-  //  — read the  workflow run ledger tree (run →
+  // read the an earlier revision workflow run ledger tree (run →
   // phases → agents) by run_id. Null for unknown run_id.
-  readWorkflowRun(input: { run_id: string }): Promise<unknown | null>;
-  //  — named workflow descriptor store (persistence only;
+  // Multi-tenancy — `scopeOwnerId` (undefined = admin/unfiltered) scopes the
+  // read so a user only sees runs it owns.
+  readWorkflowRun(input: { run_id: string }, scopeOwnerId?: string): Promise<unknown | null>;
+  // the latest workflow run for an agent (by root_agent_id),
+  // owner-scoped, as a run→phases→agents tree. Powers the user-app flowchart.
+  readLatestAgentWorkflowRun(input: { agent_id: string }, scopeOwnerId?: string): Promise<unknown | null>;
+  // 2026-06-19 — workspace file share (replaces fyimd). Owner-scoped reads
+  // (undefined = admin/unfiltered); the user-facing routes pass the caller's
+  // scope so a user only sees its own owner's shared files.
+  listSharedFiles(scopeOwnerId?: string): Promise<unknown[]>;
+  readSharedFile(input: { file_id: string }, scopeOwnerId?: string): Promise<{
+    file_id: string;
+    filename: string;
+    mime: string;
+    size_bytes: number;
+    content: string;
+    note: string | null;
+    source_agent_id: string;
+    source_agent_name: string | null;
+    owner_user_id: string;
+    sha256: string;
+    created_at: string;
+  } | null>;
+  // named workflow descriptor store (persistence only;
   // validation happens in managerOps before these calls).
+  // Multi-tenancy — `owner_user_id` stamps the row + guards cross-tenant
+  // name clobber; reads take `scopeOwnerId` (undefined = admin/unfiltered).
   saveWorkflowDescriptor(input: {
     name: string;
     descriptor_json: string;
     created_by_agent_id: string | null;
-  }): Promise<{ ok: boolean; name: string; version: number }>;
+    owner_user_id: string;
+  }): Promise<{ ok: boolean; name: string; version: number; error?: "name_taken" }>;
   readWorkflowDescriptor(input: {
     name: string;
-  }): Promise<import("./workflowNamed").WorkflowDescriptorRow | null>;
-  listWorkflowDescriptors(): Promise<
+  }, scopeOwnerId?: string): Promise<import("./workflowNamed").WorkflowDescriptorRow | null>;
+  listWorkflowDescriptors(scopeOwnerId?: string): Promise<
     import("./workflowNamed").WorkflowDescriptorRow[]
   >;
-  //  — provider ids that have a stored credential (no secrets).
-  listConfiguredProviders(): Promise<string[]>;
-  //  — resolve which configured provider lists a (dynamic)
+  // provider ids that have a stored credential (no secrets).
+  // identity scopes to the caller's own configured providers
+  // (admin/undefined → global, unchanged).
+  listConfiguredProviders(identity?: RequestIdentity): Promise<string[]>;
+  // resolve which configured provider lists a (dynamic)
   // model id, from the cached discovery results. Null when none.
-  resolveProviderForModel(input: { model: string }): Promise<{ provider: string } | null>;
-  //  — returns ascending-by-created_at rows for a given task_id.
+  // scoped to the caller's own providers when identity is given.
+  resolveProviderForModel(input: { model: string }, identity?: RequestIdentity): Promise<{ provider: string } | null>;
+  // returns ascending-by-created_at rows for a given task_id.
   // Empty array for unknown task_id (NOT an error) so the status route
   // can return `status:"unknown"` + `events:[]` per ADR §4.3.
   readManagerTaskEvents(taskId: string): Promise<ManagerTaskEventRow[]>;
-  //  — PUSH v1 subagent summary aggregation. Emitted from the
+  // PUSH v1 subagent summary aggregation. Emitted from the
   // subagent's `task.reply.finalized` path; keyed by `parent_task_id`
   // (event_log.trace_id). Names locked to `manager.subagent.summary`
   // at the DO @callable.
@@ -244,13 +327,13 @@ interface RegistryStubSurface {
     parentTaskId: string,
     summary: SubagentSummary,
   ): Promise<void> | void;
-  //  — read raw rows for the orchestrator to permission-filter.
+  // read raw rows for the orchestrator to permission-filter.
   // Returns rows ordered by created_at DESC; bounded inside the DO at
   // 200 rows so a hot parent never explodes the response.
   readSubagentSummaries(opts: {
     parent_task_id?: string;
   }): Promise<SubagentSummaryRow[]>;
-  //  — audit-grade manager merge event. Writes
+  // audit-grade manager merge event. Writes
   // `manager.task.merged` with `event_log.trace_id = parentTaskId`
   // so the merge sits in the same task-keyed stream as
   // received/started/waiting/replied/failed.
@@ -258,14 +341,14 @@ interface RegistryStubSurface {
     parentTaskId: string,
     payload: ManagerTaskMergedPayload,
   ): Promise<void> | void;
-  //  — read `manager.task.merged` rows keyed by
+  // read `manager.task.merged` rows keyed by
   // parent_task_id. Rows ORDER BY created_at ASC; payload is null on
   // JSON parse failure (fail-soft). Empty array for unknown
   // parent_task_id (NOT an error).
   readManagerTaskMergedEvents(
     parentTaskId: string,
   ): Promise<Array<{ event_id: number; created_at: string; payload: ManagerTaskMergedPayload | null }>>;
-  //  — record `manager.task.completed` row. Writes to the
+  // record `manager.task.completed` row. Writes to the
   // registry DO event_log with `event_type=manager.task.completed`
   // and `trace_id=parent_task_id`. Event name is locked at the
   // @callable layer so external callers cannot forge a different
@@ -274,7 +357,7 @@ interface RegistryStubSurface {
     parentTaskId: string,
     payload: ManagerTaskCompletedPayload,
   ): Promise<void> | void;
-  //  — read `manager.task.completed` rows keyed by
+  // read `manager.task.completed` rows keyed by
   // parent_task_id. Rows ORDER BY created_at ASC; payload is null on
   // JSON parse failure (fail-soft). Empty array for unknown
   // parent_task_id (NOT an error).
@@ -294,7 +377,23 @@ interface PerAgentStubSurface {
     replyText: string;
     envelopeId: string | null;
   }>;
-  //  — per-agent custom-skillset loader sync fan-out.
+  // Recent user/assistant dialog turns from the per-agent DO session history
+  // (the conversation-restore source). Owner-check happens in the route before
+  // this is RPC'd, so the method itself stays unscoped.
+  getDialogTurns(limit: number): Promise<{ userText: string; assistantText: string | null; startedAt: number | null; usage: { in: number; out: number; cached: number | null; model: string | null } | null }[]>;
+  // live partial text of the in-flight turn (null = idle). Owner
+  // check happens in the route, same as getDialogTurns.
+  getLivePartial(): Promise<{ text: string; updatedAt: number } | null>;
+  // Sanitized context-window inspect (no SOUL / system prompt / tool payloads —
+  // system-role messages are filtered in `buildContextInspect`). Owner-check
+  // happens in the route before this is RPC'd, so the method stays unscoped.
+  // Powers the user-app context viewer + title-bar token usage.
+  inspectContext(input?: { lastN?: number }): Promise<ContextInspectResult>;
+  // This agent's recent default-feed `actionUiIntents` (dispatch / browser /
+  // file / repo / execution), already filtered + capped server-side. Fanned
+  // out by `getUserActivity` for the cross-agent user-app activity feed.
+  getActivityIntents(input?: { limit?: number }): Promise<{ id: string; type: string; title: string; sourceEventAt: number; life?: ActivityLifecycle }[]>;
+  // per-agent custom-skillset loader sync fan-out.
   // Awaited after `managerUpdateAgent` changes the agent's
   // `skillset` so the next `getTools()` call narrows to the new
   // closure without waiting for the natural session-init refresh.
@@ -304,7 +403,7 @@ interface PerAgentStubSurface {
     effective_skillset_ids: string[] | null;
     fallback_reason: string | null;
   }>;
-  //  — terminal-event-durable manager turn entrypoint.
+  // terminal-event-durable manager turn entrypoint.
   // Wraps `submitTask` and records `manager.task.replied` /
   // `manager.task.failed` from inside the DO so the persistence
   // write outlives the calling worker isolate (HTTP-triggered
@@ -316,7 +415,7 @@ interface PerAgentStubSurface {
       displayText?: string;
       source?: string;
       conversationId?: string;
-      //  — structured TaskContext for the subagent first turn.
+      // structured TaskContext for the subagent first turn.
       taskContext?: TaskContext;
     },
   ): Promise<{
@@ -336,11 +435,11 @@ const resolvePerAgent = getAgentByName as unknown as GetAgentByNameNarrowPerAgen
 
 export interface ManagerEnv {
   AgentThursdayAgent: unknown;
-  //  — Anthropic key presence gates external-model creation.
+  // Anthropic key presence gates external-model creation.
   ANTHROPIC_API_KEY?: string;
 }
 
-//  — key-presence check (never returns the value).
+// key-presence check (never returns the value).
 export function hasAnthropicKey(env: { ANTHROPIC_API_KEY?: string }): boolean {
   return typeof env.ANTHROPIC_API_KEY === "string" && env.ANTHROPIC_API_KEY.length > 0;
 }
@@ -349,23 +448,369 @@ async function resolveRegistryStub(env: ManagerEnv): Promise<RegistryStubSurface
   return resolveRegistry(env.AgentThursdayAgent, DEMO_INSTANCE);
 }
 
-//  — narrow exported surface for the route layer's
+/**
+ * resolve an agent's OWNER identity for agent-initiated dispatch.
+ *
+ * Reads the agent's own profile (admin read by exact id) and maps its
+ * `owner_user_id`  to a `RequestIdentity`. The dispatcher then uses
+ * THIS identity for the target-ownership check, so an agent-initiated dispatch
+ * inherits its owner — a scoped agent can only dispatch within its own tenant.
+ *
+ * Returns `null` when the profile can't be resolved (RPC error / unknown id);
+ * callers MUST fail closed (no dispatch), never fall back to admin — that would
+ * be the fail-open hole this card exists to close.
+ */
+export async function resolveAgentOwnerIdentity(
+  env: ManagerEnv,
+  agentId: string,
+): Promise<RequestIdentity | null> {
+  try {
+    const registry = await resolveRegistryStub(env);
+    const profile = await registry.readAgentProfile(agentId);
+    if (profile === null) return null;
+    const owner = (profile as { owner_user_id?: string }).owner_user_id;
+    return resolveRequestIdentity(typeof owner === "string" ? owner : null);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 2026-06-29 — resolve an agent's configured model, for the "subagent defaults to
+ * its manager's model" rule in `manager.agent_create` (the operator: 默认使用跟 manager 同源
+ * 的模型). Reads the dispatching agent's profile via the registry. Returns null when
+ * the profile/model can't be resolved — the adapter then fails closed (refuses the
+ * create) rather than silently picking a possibly-wrong default.
+ */
+export async function resolveAgentModel(
+  env: ManagerEnv,
+  agentId: string,
+): Promise<string | null> {
+  try {
+    const registry = await resolveRegistryStub(env);
+    const profile = await registry.readAgentProfile(agentId);
+    const model = profile === null ? null : (profile as { model?: unknown }).model;
+    return typeof model === "string" && model.length > 0 ? model : null;
+  } catch {
+    return null;
+  }
+}
+
+
+// narrow exported surface for the route layer's
 // pre-validation (target_not_found + recordManagerTaskEvent for the
 // initial `received` bracket). We do not export the full
 // RegistryStubSurface to keep the route blast-radius small.
 export interface ManagerRoutePreflightSurface {
-  readAgentProfile(id: string): Promise<AgentProfile | null>;
+  // optional identity scopes the target lookup to the caller.
+  readAgentProfile(id: string, identity?: RequestIdentity): Promise<AgentProfile | null>;
   recordManagerTaskEvent(
     type: string,
     payload: unknown,
     taskId: string,
   ): Promise<void> | void;
+  // turn share links (create owner-stamped, read by link).
+  createTurnShare(
+    input: { agent_id: string; agent_name?: string | null; title: string; content_md: string },
+    identity?: RequestIdentity,
+  ): Promise<{ ok: true; share_id: string } | { ok: false; error: string }>;
+  readTurnShare(input: { share_id: string }): Promise<{
+    share_id: string;
+    agent_name: string | null;
+    title: string;
+    content_md: string;
+    created_at: string;
+  } | null>;
+  // owner-scoped share management.
+  listTurnShares(identity?: RequestIdentity): Promise<{
+    share_id: string;
+    agent_name: string | null;
+    title: string;
+    created_at: string;
+  }[]>;
+  deleteTurnShare(input: { share_id: string }, identity?: RequestIdentity): Promise<{ ok: boolean }>;
+  // owner-scoped scheduled tasks (registry-DO table). Wire types
+  // structurally match scheduledTaskOps.ts; kept inline so this module stays
+  // importable by the node test runner without the ops import.
+  createScheduledTaskRow(input: {
+    id: string;
+    ownerUserId: string;
+    agentId: string;
+    spec: Record<string, unknown>;
+    nowIso: string;
+  }): Promise<{ ok: true; row: ScheduledTaskWireRow } | { ok: false; code: string; message: string }>;
+  listScheduledTaskRows(opts: { agentId?: string; scopeOwnerId?: string }): Promise<ScheduledTaskWireRow[]>;
+  updateScheduledTaskRow(input: {
+    id: string;
+    scopeOwnerId?: string;
+    nowIso: string;
+    changes: Record<string, unknown>;
+  }): Promise<{ ok: true; row: ScheduledTaskWireRow } | { ok: false; code: string; message: string }>;
+  deleteScheduledTaskRow(input: { id: string; scopeOwnerId?: string }): Promise<{ deleted: boolean }>;
+  // schedules page read (owner cross-agent + run history).
+  listScheduledTaskRowsWithRuns(opts: { agentId?: string; scopeOwnerId?: string; runLimit?: number }): Promise<
+    (ScheduledTaskWireRow & { recent_runs: ScheduledTaskRunWireRow[] })[]
+  >;
+}
+
+/** wire shape of a scheduled_task_run history row. */
+export interface ScheduledTaskRunWireRow {
+  task_id: string;
+  schedule_id: string;
+  agent_id: string;
+  status: string;
+  detail: string | null;
+  started_at: string;
+  settled_at: string | null;
+}
+
+/** wire shape of a scheduled_task row as routes consume it. */
+export interface ScheduledTaskWireRow {
+  id: string;
+  owner_user_id: string;
+  agent_id: string;
+  schedule_kind: string;
+  interval_s: number | null;
+  at_hour: number | null;
+  at_minute: number | null;
+  at_weekday: number | null;
+  prompt: string;
+  enabled: number;
+  next_run_at: string;
+  last_run_at: string | null;
+  last_task_id: string | null;
+  last_status: string | null;
+  consecutive_failures: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export async function resolveRegistryStubForRoute(
   env: ManagerEnv,
 ): Promise<ManagerRoutePreflightSurface> {
   return resolveRegistryStub(env);
+}
+
+/**
+ * Owner-scoped conversation restore: returns the agent's recent dialog turns,
+ * but ONLY if the caller owns the agent. The owner check runs through
+ * `readAgentProfile(id, identity)` (426b — null for a scoped caller who
+ * doesn't own it, exactly like a nonexistent agent, so no existence leak);
+ * only then do we RPC the per-agent DO's `getDialogTurns`. `ok:false` = not
+ * found / not owned (route maps to 404).
+ */
+/**
+ * owner-scoped live partial text of the agent's in-flight turn.
+ * Same owner-gate shape as getAgentDialog (404 when not owned = nonexistent).
+ * Null partial = idle (no turn streaming right now).
+ */
+export async function getAgentLivePartial(
+  env: ManagerEnv,
+  agentId: string,
+  identity: RequestIdentity | undefined,
+): Promise<{ ok: true; partial: { text: string; updatedAt: number } | null } | { ok: false }> {
+  const registry = await resolveRegistryStub(env);
+  const profile = await registry.readAgentProfile(agentId, identity);
+  if (profile === null) return { ok: false };
+  const perAgent = await resolvePerAgent(env.AgentThursdayAgent, agentId);
+  const partial = await perAgent.getLivePartial();
+  return { ok: true, partial };
+}
+
+export async function getAgentDialog(
+  env: ManagerEnv,
+  agentId: string,
+  identity: RequestIdentity | undefined,
+  limit: number,
+): Promise<{ ok: true; turns: { userText: string; assistantText: string | null; startedAt: number | null; usage: { in: number; out: number; cached: number | null; model: string | null } | null }[] } | { ok: false }> {
+  const registry = await resolveRegistryStub(env);
+  const profile = await registry.readAgentProfile(agentId, identity);
+  if (profile === null) return { ok: false };
+  const perAgent = await resolvePerAgent(env.AgentThursdayAgent, agentId);
+  const turns = await perAgent.getDialogTurns(limit);
+  return { ok: true, turns };
+}
+
+/**
+ * owner-scoped LATEST workflow run for an agent, as a run→phases→
+ * agents tree (or null). Powers the user-app workflow flowchart shown below the
+ * activity feed when the session involves a declared workflow. Same owner-gate
+ * shape as `getAgentDialog` (the caller must own the agent → 404 otherwise) AND
+ * the run read itself is owner-scoped (defense in depth). The ledger lives on
+ * the registry DO, so this reads through the registry stub.
+ */
+export async function getAgentWorkflowRun(
+  env: ManagerEnv,
+  agentId: string,
+  identity: RequestIdentity | undefined,
+): Promise<{ ok: true; run: unknown | null } | { ok: false }> {
+  const registry = await resolveRegistryStub(env);
+  const profile = await registry.readAgentProfile(agentId, identity);
+  if (profile === null) return { ok: false };
+  const run = await registry.readLatestAgentWorkflowRun({ agent_id: agentId }, scopeOwnerIdFor(identity));
+  return { ok: true, run };
+}
+
+/**
+ * 2026-06-19 — workspace file share (replaces fyimd). Owner-scoped list of the
+ * caller's shared-file pool (metadata only). A scoped user sees only its own
+ * owner's files; admin (operator console) sees all.
+ */
+export async function managerListSharedFiles(
+  env: ManagerEnv,
+  identity: RequestIdentity | undefined,
+): Promise<unknown[]> {
+  const registry = await resolveRegistryStub(env);
+  return registry.listSharedFiles(scopeOwnerIdFor(identity));
+}
+
+/**
+ * Owner-scoped single shared-file read (with body). Returns null when the file
+ * doesn't exist OR isn't owned by the caller (no existence leak). Powers the
+ * agent-pasted share link the owner user clicks.
+ */
+export async function managerReadSharedFile(
+  env: ManagerEnv,
+  fileId: string,
+  identity: RequestIdentity | undefined,
+): Promise<{ filename: string; mime: string; content: string; size_bytes: number } | null> {
+  const registry = await resolveRegistryStub(env);
+  const row = await registry.readSharedFile({ file_id: fileId }, scopeOwnerIdFor(identity));
+  if (row === null) return null;
+  return { filename: row.filename, mime: row.mime, content: row.content, size_bytes: row.size_bytes };
+}
+
+/**
+ * Owner-scoped context-window inspect: returns the agent's sanitized context
+ * view (visible messages + token usage + budget), but ONLY if the caller owns
+ * the agent. Same owner-check shape as `getAgentDialog` (404 when not owned,
+ * indistinguishable from nonexistent — no existence leak). The inspect payload
+ * is sanitized server-side (`buildContextInspect` drops system-role messages;
+ * `sanitizeMessage` drops reasoning + tool input/output), so the SOUL / system
+ * prompt the operator hard-required protected is never exposed. `ok:false` → route 404.
+ */
+export async function getAgentContext(
+  env: ManagerEnv,
+  agentId: string,
+  identity: RequestIdentity | undefined,
+  lastN: number,
+): Promise<{ ok: true; context: ContextInspectResult } | { ok: false }> {
+  const registry = await resolveRegistryStub(env);
+  const profile = await registry.readAgentProfile(agentId, identity);
+  if (profile === null) return { ok: false };
+  const perAgent = await resolvePerAgent(env.AgentThursdayAgent, agentId);
+  const context = await perAgent.inspectContext({ lastN });
+  return { ok: true, context };
+}
+
+export interface ActivityLifecycle {
+  family: string;
+  phase: string;
+  status: string | null;
+  agentId: string | null;
+  agentName: string | null;
+}
+
+export interface ActivityFeedItem {
+  id: string;
+  type: string;
+  title: string;
+  created_at: number;
+  // structured identity+phase for manager lifecycle intents, so
+  // the feed can coalesce a subagent's create/dispatch events into one card.
+  life?: ActivityLifecycle;
+}
+
+/**
+ * Owner-scoped PER-AGENT activity feed (the operator 2026-06-17 — "why is every agent's
+ * activity the same?"). The activity panel lives in an agent's workspace, so it
+ * shows THAT agent's recent default-feed `actionUiIntents` (console parity — the
+ * console's ActivityFeed renders the active context's intents). A subagent's
+ * own browser/file work shows in ITS workspace, not the dispatching manager's.
+ * Same owner-check shape as `getAgentContext` (404 when not owned). `ok:false`
+ * → route 404.
+ */
+export async function getAgentActivity(
+  env: ManagerEnv,
+  agentId: string,
+  identity: RequestIdentity | undefined,
+  limit: number,
+): Promise<{ ok: true; activity: ActivityFeedItem[] } | { ok: false }> {
+  const registry = await resolveRegistryStub(env);
+  const profile = await registry.readAgentProfile(agentId, identity);
+  if (profile === null) return { ok: false };
+  const perAgent = await resolvePerAgent(env.AgentThursdayAgent, agentId);
+  const intents = await perAgent.getActivityIntents({ limit });
+  return {
+    ok: true,
+    activity: intents.map((it) => ({
+      id: it.id,
+      type: it.type,
+      title: it.title,
+      created_at: it.sourceEventAt,
+      ...(it.life ? { life: it.life } : {}),
+    })),
+  };
+}
+
+export interface UserActivityItem {
+  agent_id: string;
+  agent_name: string | null;
+  id: string;
+  type: string;
+  title: string;
+  created_at: number;
+}
+
+/**
+ * Owner-scoped cross-agent activity feed (the operator 2026-06-17 — console parity).
+ *
+ * The user-app Activity panel must show the SAME kinds of events the console
+ * surfaces — dispatch + browser + file/repo + execution — across the user's
+ * agents. Critically, a subagent's browser/file work lives in the SUBAGENT's
+ * DO, not the dispatching manager's, so this MUST aggregate across agents, not
+ * read one. We list the caller's own agents (`listAgentProfiles(identity)` —
+ * scoped users see only theirs; never another tenant's), cap to the most-
+ * recently-updated `maxAgents` to bound the fan-out, RPC each DO's
+ * `getActivityIntents` (already default-feed-filtered), then merge newest-first
+ * and cap. Per-agent RPC failure degrades to `[]` (fail-soft, never break the
+ * whole feed).
+ */
+export async function getUserActivity(
+  env: ManagerEnv,
+  identity: RequestIdentity | undefined,
+  opts: { limit?: number; perAgent?: number; maxAgents?: number },
+): Promise<UserActivityItem[]> {
+  const limit = Math.min(Math.max(opts.limit ?? 20, 1), 50);
+  const perAgentCap = Math.min(Math.max(opts.perAgent ?? 12, 1), 30);
+  const maxAgents = Math.min(Math.max(opts.maxAgents ?? 8, 1), 20);
+  const registry = await resolveRegistryStub(env);
+  const profiles = await registry.listAgentProfiles({ includeArchived: false }, identity);
+  const agents = [...profiles]
+    .sort((a, b) => String(b.updated_at ?? "").localeCompare(String(a.updated_at ?? "")))
+    .slice(0, maxAgents);
+  const perAgentResults = await Promise.all(
+    agents.map(async (a) => {
+      try {
+        const stub = await resolvePerAgent(env.AgentThursdayAgent, a.id);
+        const intents = await stub.getActivityIntents({ limit: perAgentCap });
+        return intents.map((it) => ({
+          agent_id: a.id,
+          agent_name: a.name,
+          id: it.id,
+          type: it.type,
+          title: it.title,
+          created_at: it.sourceEventAt,
+        }));
+      } catch {
+        return [] as UserActivityItem[];
+      }
+    }),
+  );
+  return perAgentResults
+    .flat()
+    .sort((x, y) => y.created_at - x.created_at)
+    .slice(0, limit);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -395,11 +840,12 @@ export interface ManagerListAgentsOk {
 export async function managerListAgents(
   env: ManagerEnv,
   input: ManagerListAgentsInput = {},
+  identity?: RequestIdentity,
 ): Promise<ManagerListAgentsOk> {
   const stub = await resolveRegistryStub(env);
   const rows = await stub.listAgentProfiles({
     includeArchived: input.include_archived === true,
-  });
+  }, identity);
   const agents = rows.map(annotateAgent);
   return { ok: true, agents, count: agents.length };
 }
@@ -413,6 +859,8 @@ export type ManagerAgentCreateInput = {
   persona?: string;
   channel?: string;
   status?: AgentProfile["status"];
+  // the creating AGENT's id (agent-initiated creates only).
+  parentAgentId?: string | null;
 };
 
 export type ManagerAgentCreateError =
@@ -428,6 +876,7 @@ export type ManagerAgentCreateResult =
 export async function managerCreateAgent(
   env: ManagerEnv,
   input: ManagerAgentCreateInput,
+  identity?: RequestIdentity,
 ): Promise<ManagerAgentCreateResult> {
   if (
     typeof input.name !== "string" ||
@@ -452,27 +901,28 @@ export async function managerCreateAgent(
     };
   }
   const stub = await resolveRegistryStub(env);
-  //  — external models are runnable only with a stored credential.
+  // external models are runnable only with a stored credential.
   let configuredProviders: string[] = [];
   try {
-    configuredProviders = await stub.listConfiguredProviders();
+    configuredProviders = await stub.listConfiguredProviders(identity);
   } catch { /* fail-soft: empty → external models rejected */ }
   if (hasAnthropicKey(env) && !configuredProviders.includes("anthropic")) {
     configuredProviders = [...configuredProviders, "anthropic"];
   }
-  //  — accept a dynamically-discovered model (one a configured
+  // accept a dynamically-discovered model (one a configured
   // provider's list-models returned, cached) even if it's not in the
   // static runtime registry. Resolved up front so the validator still
   // enforces the skillset rules.
   let dynamicModelOk = false;
   try {
-    const dyn = await stub.resolveProviderForModel({ model: input.model });
+    const dyn = await stub.resolveProviderForModel({ model: input.model }, identity);
     dynamicModelOk = dyn !== null && configuredProviders.includes(dyn.provider);
   } catch { /* fail-soft */ }
   const validation = await validateAgentProfileInput(
     { model: input.model, skillset: input.skillset },
     stub,
     { configuredProviders, dynamicModelOk },
+    scopeOwnerIdFor(identity),
   );
   if (!validation.ok) {
     return { ok: false, error: validation.error };
@@ -493,7 +943,8 @@ export async function managerCreateAgent(
     status,
     createdAt: now,
     updatedAt: now,
-  });
+    parentAgentId: input.parentAgentId ?? null,
+  }, identity);
   if (!result.ok) {
     return { ok: false, error: result.error };
   }
@@ -535,6 +986,7 @@ export type ManagerAgentUpdateResult =
 export async function managerUpdateAgent(
   env: ManagerEnv,
   input: ManagerAgentUpdateInput,
+  identity?: RequestIdentity,
 ): Promise<ManagerAgentUpdateResult> {
   if (typeof input.agent_id !== "string" || input.agent_id.length === 0) {
     return {
@@ -549,14 +1001,14 @@ export async function managerUpdateAgent(
     };
   }
   const stub = await resolveRegistryStub(env);
-  //  — capture prior skillset BEFORE the update so we can
+  // capture prior skillset BEFORE the update so we can
   // decide whether to fan out the per-agent refresh RPC. The
   // existing validation block already reads `current` when
   // model/skillset are present; we hoist it so the skillset path
   // sees a non-null value regardless.
   let priorSkillset: string | null = null;
   if (input.model !== undefined || input.skillset !== undefined) {
-    const current = await stub.readAgentProfile(input.agent_id);
+    const current = await stub.readAgentProfile(input.agent_id, identity);
     if (current === null) {
       return {
         ok: false,
@@ -564,7 +1016,7 @@ export async function managerUpdateAgent(
       };
     }
     priorSkillset = current.skillset;
-    //  — same credential/dynamic-model awareness as create.
+    // same credential/dynamic-model awareness as create.
     // Without it, even a skillset-only update on an agent running a
     // discovered model re-validates that model and bounces as
     // unknown_model.
@@ -572,14 +1024,15 @@ export async function managerUpdateAgent(
     let configuredProviders: string[] = [];
     let dynamicModelOk = false;
     try {
-      configuredProviders = await stub.listConfiguredProviders();
-      const dyn = await stub.resolveProviderForModel({ model: effectiveModel });
+      configuredProviders = await stub.listConfiguredProviders(identity);
+      const dyn = await stub.resolveProviderForModel({ model: effectiveModel }, identity);
       dynamicModelOk = dyn !== null && configuredProviders.includes(dyn.provider);
     } catch { /* static behavior */ }
     const validation = await validateAgentProfileInput(
       { model: effectiveModel, skillset: input.skillset ?? current.skillset },
       stub,
       { configuredProviders, dynamicModelOk },
+      scopeOwnerIdFor(identity),
     );
     if (!validation.ok) {
       return { ok: false, error: validation.error };
@@ -594,7 +1047,7 @@ export async function managerUpdateAgent(
     persona: input.persona,
     status: input.status,
     updatedAt: now,
-  });
+  }, identity);
   if (!result.ok) {
     return { ok: false, error: result.error };
   }
@@ -612,7 +1065,7 @@ export async function managerUpdateAgent(
       .map(([k]) => k),
     updated_at: agent.updated_at,
   });
-  //  — when the agent's `skillset` changed, push-refresh
+  // when the agent's `skillset` changed, push-refresh
   // the per-agent DO's custom-manifest cache + re-resolve effective
   // skillset so the next `getTools()` call narrows to the new
   // closure. Awaited so the manager surface returns AFTER the
@@ -676,13 +1129,13 @@ function loaderStatusToWireStatus(
   return "unknown";
 }
 
-export async function managerListSkillsets(env: ManagerEnv): Promise<ManagerSkillsetListOk> {
+export async function managerListSkillsets(env: ManagerEnv, scopeOwnerId?: string): Promise<ManagerSkillsetListOk> {
   const stub = await resolveRegistryStub(env);
-  const merged = await loadMergedManifests(stub);
+  const merged = await loadMergedManifests(stub, scopeOwnerId);
   const state = loadSkillsets(merged, { knownToolIds: STUB_KNOWN_TOOL_IDS });
   const customsById = new Map<string, CustomSkillsetWireRecord>();
   try {
-    const customs = await stub.listCustomSkillsets();
+    const customs = await stub.listCustomSkillsets(scopeOwnerId);
     for (const c of customs) customsById.set(c.id, c);
   } catch {
     // fail-soft; rows will surface as embedded-only
@@ -734,12 +1187,13 @@ export type ManagerSkillsetReadResult =
 export async function managerReadSkillset(
   env: ManagerEnv,
   input: ManagerSkillsetReadInput,
+  scopeOwnerId?: string,
 ): Promise<ManagerSkillsetReadResult> {
   if (typeof input.skillset_id !== "string" || input.skillset_id.length === 0) {
     return { status: "failed", reason: "invalid_input", message: "skillset_id is required" };
   }
   const stub = await resolveRegistryStub(env);
-  const merged = await loadMergedManifests(stub);
+  const merged = await loadMergedManifests(stub, scopeOwnerId);
   const target = merged.find((m) => m.id === input.skillset_id);
   if (!target) {
     return {
@@ -752,7 +1206,7 @@ export async function managerReadSkillset(
   let wire: CustomSkillsetWireRecord | null = null;
   if (isCustom) {
     try {
-      wire = await stub.readCustomSkillset(input.skillset_id);
+      wire = await stub.readCustomSkillset(input.skillset_id, scopeOwnerId);
     } catch {
       // fail-soft; timestamps will be omitted
     }
@@ -815,6 +1269,9 @@ export type ManagerSkillsetCreateResult =
 export async function managerCreateSkillset(
   env: ManagerEnv,
   input: ManagerSkillsetCreateInput,
+  // Owner of the new skillset = the creating agent's tenant (resolved in the
+  // adapter from its own agent id). Custom skillsets are owner-scoped.
+  ownerUserId: string,
 ): Promise<ManagerSkillsetCreateResult> {
   const validation = validateCustomSkillset({ id: input.id, manifest: input.manifest });
   if (!validation.ok) {
@@ -842,6 +1299,7 @@ export async function managerCreateSkillset(
     manifest: v.manifest,
     createdAt: now,
     updatedAt: now,
+    ownerUserId,
   });
   if (!result.ok) {
     return { ok: false, error: result.error };
@@ -904,6 +1362,7 @@ export type ManagerSkillsetUpdateResult =
 export async function managerUpdateSkillset(
   env: ManagerEnv,
   input: ManagerSkillsetUpdateInput,
+  scopeOwnerId?: string,
 ): Promise<ManagerSkillsetUpdateResult> {
   if (typeof input.skillset_id !== "string" || input.skillset_id.length === 0) {
     return {
@@ -936,10 +1395,13 @@ export async function managerUpdateSkillset(
     name: v.name,
     description: v.description,
     version: v.version,
-    sourceYaml: "",
+    // Omit sourceYaml so the stored row's source_yaml is PRESERVED (the op uses
+    // `input.sourceYaml ?? row.source_yaml`). Previously this passed "" which
+    // wiped a system skillset's seeded YAML on every edit. The manifest_json is
+    // the runtime source of truth; source_yaml is the display/seed view.
     manifest: v.manifest,
     updatedAt: now,
-  });
+  }, scopeOwnerId);
   if (!result.ok) {
     return { ok: false, error: result.error };
   }
@@ -952,7 +1414,7 @@ export async function managerUpdateSkillset(
     skill_count: stored.skills.length,
     updated_at: result.record.updated_at,
   });
-  //  — fan out a custom-manifest cache refresh to every
+  // fan out a custom-manifest cache refresh to every
   // active agent currently bound to this skillset id. The per-agent
   // DO's `refreshCustomSkillsetCache()` (357a) re-pulls registry
   // customs and re-runs `_persistEffectiveSkillsetFromProfile`; the
@@ -990,6 +1452,25 @@ export async function managerUpdateSkillset(
   };
 }
 
+/**
+ * 2026-06-19 — delete a custom skillset row (owner-scoped). Admin (undefined
+ * scope) may delete any, including a de-embedded system row (fyimd
+ * external-publishing cleanup); a scoped user only its own (mismatch →
+ * not_found, no existence leak).
+ */
+export async function managerDeleteSkillset(
+  env: ManagerEnv,
+  skillsetId: string,
+  scopeOwnerId?: string,
+): Promise<{ ok: true; id: string } | { ok: false; error: { code: string; message: string } }> {
+  const stub = await resolveRegistryStub(env);
+  const result = await stub.deleteCustomSkillset({ id: skillsetId }, scopeOwnerId);
+  if (result.ok) {
+    await stub.recordManagerEvent("manager.skillset.deleted", { skillset_id: skillsetId });
+  }
+  return result;
+}
+
 // ── manager.agent_message ─────────────────────────────────────────────
 
 export type ManagerAgentMessageInput = {
@@ -997,7 +1478,7 @@ export type ManagerAgentMessageInput = {
   text: string;
   conversation_id?: string;
   source?: string;
-  //  — optional structured TaskContext (ADR §5). Carried
+  // optional structured TaskContext (ADR §5). Carried
   // through the manager dispatch chain; recorded in the
   // `manager.agent_message.sent` event payload and promoted into the
   // subagent's first-turn `<task-context>` block.
@@ -1007,10 +1488,10 @@ export type ManagerAgentMessageInput = {
 export type ManagerAgentMessageError =
   | { code: "invalid_input"; message: string }
   | { code: "target_not_found"; message: string }
-  //  D — distinct from `target_not_found`: input doesn't even
+  // an earlier revision D — distinct from `target_not_found`: input doesn't even
   // match the canonical `agent-<uuid>` shape, so the caller almost
   // certainly passed a display name / skillset name instead of the
-  // real agent_id (the  manager-bug shape from ).
+  // real agent_id (the M9.1 manager-bug shape from an earlier revision).
   | { code: "agent_not_found"; message: string }
   | { code: "agent_loop_timeout"; message: string }
   | { code: "internal"; message: string };
@@ -1036,6 +1517,7 @@ export type ManagerAgentMessageResult =
 export async function managerSendAgentMessage(
   env: ManagerEnv,
   input: ManagerAgentMessageInput,
+  identity?: RequestIdentity,
 ): Promise<ManagerAgentMessageResult> {
   if (typeof input.agent_id !== "string" || input.agent_id.length === 0) {
     return {
@@ -1053,14 +1535,16 @@ export async function managerSendAgentMessage(
       error: { code: "invalid_input", message: "text is required and must be non-empty" },
     };
   }
-  // /355 — verify the target agent exists on the registry BEFORE
+  // verify the target agent exists on the registry BEFORE
   // touching the per-agent DO. Without this, `submitTask` against a
   // never-created agent_id would lazily instantiate a fresh DO with no
-  // profile row, which is the bug  explicitly closed.
+  // profile row, which is the bug an earlier revision explicitly closed.
   const registry = await resolveRegistryStub(env);
-  const target = await registry.readAgentProfile(input.agent_id);
+  // pass identity so a scoped user that does not own this agent
+  // gets target_not_found here, BEFORE any per-agent DO is touched.
+  const target = await registry.readAgentProfile(input.agent_id, identity);
   if (target === null) {
-    //  D — split the missing-target shape. If the caller didn't
+    // an earlier revision D — split the missing-target shape. If the caller didn't
     // even pass an `agent-<uuid>`-formatted string, return
     // `agent_not_found` so the manager LLM gets a clearer signal that
     // it passed a display name instead of resolving via
@@ -1123,7 +1607,7 @@ export async function managerSendAgentMessage(
     reply_length: raw.replyText.length,
     source: input.source,
     ...(input.conversation_id !== undefined ? { conversation_id: input.conversation_id } : {}),
-    //  — record full TaskContext on the dispatch event so
+    // record full TaskContext on the dispatch event so
     // inspect/event payloads surface it (ADR §5.2).
     ...(input.task_context !== undefined ? { task_context: input.task_context } : {}),
   });
@@ -1139,13 +1623,13 @@ export async function managerSendAgentMessage(
   };
 }
 
-// ── : async manager task helpers ─────────────────────────────
+// ── an earlier revision: async manager task helpers ─────────────────────────────
 
 export function mintManagerTaskId(): string {
   return `task-${crypto.randomUUID()}`;
 }
 
-// UTF-8 byte cap for failure-message payloads.  moved the
+// UTF-8 byte cap for failure-message payloads. an earlier revision moved the
 // worker-side failure-event emission into `managerTaskBackgroundPure.ts`,
 // where it has its own local copy of the byte-cap helper; this file
 // no longer needs the duplicate.
@@ -1163,7 +1647,7 @@ export async function readManagerTaskEvents(
 }
 
 /**
- *  — env-resolving wrapper around the @callable
+ * env-resolving wrapper around the @callable
  * `readManagerTaskMergedEvents`. Pure module split keeps the route
  * layer free of DO-stub resolution.
  */
@@ -1176,8 +1660,8 @@ export async function readManagerTaskMergedEvents(
 }
 
 /**
- *  — env-resolving wrapper around the @callable
- * `readManagerTaskCompletedEvents`. Mirrors the  merge
+ * env-resolving wrapper around the @callable
+ * `readManagerTaskCompletedEvents`. Mirrors the an earlier revision merge
  * reader; pure module split keeps the route layer free of DO-stub
  * resolution.
  */
@@ -1199,9 +1683,9 @@ export async function readManagerTaskCompletedEvents(
  * sync path so the same bracket events fire on `?sync=1` smoke
  * probes.
  *
- *  — terminal-event durability fix.
+ * terminal-event durability fix.
  *
- *  ran the full per-agent loop in this worker-side body,
+ * an earlier revision ran the full per-agent loop in this worker-side body,
  * recording `manager.task.replied` / `.failed` AFTER the long
  * `managerSendAgentMessage` await returned. Real multi-agent runs
  * (Manager take1.1, 2026-05-25) exceeded the ~30s HTTP-worker
@@ -1231,7 +1715,7 @@ export async function readManagerTaskCompletedEvents(
  *     `manager.task.replied` itself; the worker does NOT double-emit
  *     on success.
  *   - On DO RPC throw: classify timeout-shaped messages as
- *     `agent_loop_timeout` (preserves the  failure_class
+ *     `agent_loop_timeout` (preserves the an earlier revision failure_class
  *     signal), record `manager.task.failed` worker-side. If the DO
  *     ALSO managed to record a terminal event before the RPC raised,
  *     `deriveManagerTaskStatus` folds events in `created_at ASC`
@@ -1247,6 +1731,7 @@ export async function runManagerTaskBackground(
   env: ManagerEnv,
   input: ManagerAgentMessageInput,
   managerTaskId: string,
+  identity?: RequestIdentity,
 ): Promise<ManagerAgentMessageResult | null> {
   let registry: RegistryStubSurface;
   try {
@@ -1256,7 +1741,15 @@ export async function runManagerTaskBackground(
     console.warn(`[manager.task ${managerTaskId}] registry resolve failed: ${message}`);
     return null;
   }
-  //  — observable workflow run model. When this dispatch is a
+  // dispatch ownership chokepoint. A scoped dispatcher (the
+  // initiating agent's owner, threaded from the adapter / executor) can only
+  // dispatch to agents it owns; a cross-tenant target reads as target_not_found.
+  // Runs BEFORE the recordWorkflowDispatch ledger write so a blocked dispatch
+  // leaves no `workflow_dispatch` row under another tenant's parent_task_id.
+  // Admin/undefined skips → byte-identical to pre-426h.
+  const ownershipBlock = await checkDispatchOwnership(registry, input.agent_id, identity);
+  if (ownershipBlock !== null) return ownershipBlock;
+  // observable workflow run model. When this dispatch is a
   // subagent under a manager-led run (`task_context.parent_task_id`
   // present), record run/phase/agent into the workflow ledger BEFORE the
   // long dispatch. v1 run identity = `wfr-<parent_task_id>` (one manager
@@ -1273,6 +1766,11 @@ export async function runManagerTaskBackground(
           subagent_agent_id: input.agent_id,
           subagent_task_id: managerTaskId,
           prompt_preview: safePromptPreview(input.text),
+          // Multi-tenancy — stamp the dispatching identity's owner so a scoped
+          // user can owner-scope-read its own ad-hoc runs. Admin/undefined →
+          // admin sentinel (operator unchanged). The dispatch-ownership block
+          // above already ran, so `identity` is the verified dispatcher.
+          owner_user_id: identity !== undefined ? ownerUserIdFor(identity) : ADMIN_USER_ID,
         });
       } catch { /* fail-soft: workflow ledger must not break dispatch */ }
     }
@@ -1287,7 +1785,7 @@ export async function runManagerTaskBackground(
       ...(input.conversation_id !== undefined
         ? { conversation_id: input.conversation_id }
         : {}),
-      //  — propagate structured task_context through to the
+      // propagate structured task_context through to the
       // DO-side `submitManagerTask` call.
       ...(input.task_context !== undefined
         ? { task_context: input.task_context }
@@ -1303,7 +1801,7 @@ export async function runManagerTaskBackground(
 
 // ── manager.subagent_summaries ────────────────────────────────────────
 //
-//  — read surface for the PUSH v1 subagent summary aggregation.
+// read surface for the PUSH v1 subagent summary aggregation.
 // Returns the calling manager's own subagent summaries only; queries
 // from a different manager for someone else's `parent_task_id` get an
 // empty list (NOT an error, NOT leaked metadata — ADR §6.3 / card §4).
@@ -1312,6 +1810,136 @@ export interface ManagerSubagentSummariesInput {
   parent_task_id?: string;
   source_agent_id?: string;
   limit?: number;
+}
+
+// ── manager cross-agent schedule tools ────────────────────────
+// The base schedule tools  are self-only; these manager-surface
+// orchestrators take an explicit `agent_id` so a manager can put agents of
+// ITS OWN OWNER on a routine. Ownership is the an earlier revision posture: the
+// dispatching agent's owner is resolved from itself (never the manager
+// ctx), and a scoped owner's cross-tenant target reads as target_not_found.
+
+export interface ManagerScheduleSpecInput {
+  agent_id: string;
+  kind: "interval" | "daily" | "weekly";
+  prompt: string;
+  interval_hours?: number;
+  at_hour?: number;
+  at_minute?: number;
+  weekday?: number;
+  utc_offset_minutes?: number;
+}
+
+export type ManagerScheduleResult =
+  | { ok: true; schedule: ScheduledTaskWireRow }
+  | { ok: false; error: { code: string; message: string } };
+
+export async function managerScheduleCreate(
+  env: ManagerEnv,
+  input: ManagerScheduleSpecInput,
+  identity: RequestIdentity | null,
+): Promise<ManagerScheduleResult> {
+  if (identity === null) {
+    return { ok: false, error: { code: "internal", message: "cannot resolve dispatching agent's owner" } };
+  }
+  let registry: RegistryStubSurface;
+  try {
+    registry = await resolveRegistryStub(env);
+  } catch (e) {
+    return { ok: false, error: { code: "internal", message: e instanceof Error ? e.message : String(e) } };
+  }
+  const ownershipBlock = await checkDispatchOwnership(registry, input.agent_id, identity);
+  if (ownershipBlock !== null) {
+    return { ok: false, error: { code: "target_not_found", message: `no agent registered with agent_id: ${input.agent_id}` } };
+  }
+  const spec: Record<string, unknown> = { schedule_kind: input.kind, prompt: input.prompt };
+  if (input.kind === "interval") {
+    if (typeof input.interval_hours !== "number") {
+      return { ok: false, error: { code: "validation_failed", message: "interval_hours is required for kind=interval" } };
+    }
+    spec.interval_s = Math.round(input.interval_hours * 3600);
+  } else {
+    if (typeof input.at_hour !== "number" || typeof input.utc_offset_minutes !== "number") {
+      return {
+        ok: false,
+        error: { code: "validation_failed", message: "at_hour and utc_offset_minutes are required for daily/weekly (ask the user their timezone if unknown)" },
+      };
+    }
+    if (input.kind === "weekly" && typeof input.weekday !== "number") {
+      return { ok: false, error: { code: "validation_failed", message: "weekday (0=Sunday) is required for kind=weekly" } };
+    }
+    const u = localFieldsToUtc(
+      input.at_hour,
+      input.at_minute ?? 0,
+      input.kind === "weekly" ? (input.weekday ?? 0) : null,
+      input.utc_offset_minutes,
+    );
+    spec.at_hour = u.at_hour;
+    spec.at_minute = u.at_minute;
+    if (input.kind === "weekly") spec.at_weekday = u.at_weekday;
+  }
+  const result = await registry.createScheduledTaskRow({
+    id: `sched-${crypto.randomUUID()}`,
+    ownerUserId: ownerUserIdFor(identity),
+    agentId: input.agent_id,
+    spec,
+    nowIso: new Date().toISOString(),
+  });
+  if (!result.ok) {
+    return { ok: false, error: { code: result.code, message: result.message } };
+  }
+  return { ok: true, schedule: result.row };
+}
+
+export type ManagerScheduleListResult =
+  | { ok: true; schedules: ScheduledTaskWireRow[]; count: number }
+  | { ok: false; error: { code: string; message: string } };
+
+export async function managerScheduleList(
+  env: ManagerEnv,
+  input: { agent_id?: string },
+  identity: RequestIdentity | null,
+): Promise<ManagerScheduleListResult> {
+  if (identity === null) {
+    return { ok: false, error: { code: "internal", message: "cannot resolve dispatching agent's owner" } };
+  }
+  try {
+    const registry = await resolveRegistryStub(env);
+    const rows = await registry.listScheduledTaskRows({
+      ...(input.agent_id !== undefined ? { agentId: input.agent_id } : {}),
+      scopeOwnerId: scopeOwnerIdFor(identity),
+    });
+    return { ok: true, schedules: rows, count: rows.length };
+  } catch (e) {
+    return { ok: false, error: { code: "internal", message: e instanceof Error ? e.message : String(e) } };
+  }
+}
+
+export type ManagerScheduleCancelResult =
+  | { ok: true; deleted: string }
+  | { ok: false; error: { code: string; message: string } };
+
+export async function managerScheduleCancel(
+  env: ManagerEnv,
+  input: { schedule_id: string },
+  identity: RequestIdentity | null,
+): Promise<ManagerScheduleCancelResult> {
+  if (identity === null) {
+    return { ok: false, error: { code: "internal", message: "cannot resolve dispatching agent's owner" } };
+  }
+  try {
+    const registry = await resolveRegistryStub(env);
+    const r = await registry.deleteScheduledTaskRow({
+      id: input.schedule_id,
+      scopeOwnerId: scopeOwnerIdFor(identity),
+    });
+    if (!r.deleted) {
+      return { ok: false, error: { code: "not_found", message: `schedule not found: ${input.schedule_id}` } };
+    }
+    return { ok: true, deleted: input.schedule_id };
+  } catch (e) {
+    return { ok: false, error: { code: "internal", message: e instanceof Error ? e.message : String(e) } };
+  }
 }
 
 export interface ManagerSubagentSummariesOk {
@@ -1391,12 +2019,12 @@ export async function managerSubagentSummaries(
 }
 
 /**
- *  — `manager.task_merge` orchestrator. Thin wrapper over the
+ * `manager.task_merge` orchestrator. Thin wrapper over the
  * pure `emitManagerTaskMerged` helper (`managerTaskMergeOps.ts`) that
  * resolves the registry stub and adapts the @callable surface to the
  * helper's narrow `ManagerTaskMergeRegistrySurface` shape.
  *
- * Permission boundary is delegated to the pure helper (
+ * Permission boundary is delegated to the pure helper (an earlier revision
  * `filterSubagentSummariesForReader`) — no source_agent_id cross-check
  * lives at the orchestrator layer.
  */
@@ -1421,14 +2049,14 @@ export type {
 } from "./managerTaskMergeOps";
 
 /**
- *  — `manager.task_complete` orchestrator. Thin wrapper over
+ * `manager.task_complete` orchestrator. Thin wrapper over
  * the pure `emitManagerTaskCompleted` helper that resolves the
  * registry stub and adapts the @callable surface to the helper's
  * narrow `ManagerTaskCompleteRegistrySurface` shape.
  *
  * Merge precondition / verdict gating is delegated to the pure helper
  * (which uses the same `readManagerTaskMergedEvents` reader the
- *  status side-field already consumes).
+ * an earlier revision status side-field already consumes).
  */
 export async function managerTaskComplete(
   env: ManagerEnv,
@@ -1452,10 +2080,10 @@ export type {
   CompletionVerdict,
 } from "./managerTaskCompleteOps";
 
-// ──  — agent-side workflow executor entry ───────────────────
+// ── agent-side workflow executor entry ───────────────────
 // Gives a manager agent the same capability the HTTP
 // `/api/inspect/workflow-runs/execute` endpoint has: validate a
-// declarative descriptor and start the durable  executor.
+// declarative descriptor and start the durable an earlier revision executor.
 // Reuses validateWorkflowDescriptor + deriveExecutorRunId verbatim —
 // zero new execution semantics, only a new entry surface.
 
@@ -1480,7 +2108,7 @@ interface WorkflowExecutorBinding {
 export async function managerWorkflowExecute(
   env: ManagerEnv,
   input: { descriptor: unknown },
-  //  — originating manager agent_id; threaded into the executor
+  // originating manager agent_id; threaded into the executor
   // params so the run's terminal status wakes the manager back up.
   callingAgentId?: string | null,
 ): Promise<ManagerWorkflowExecuteResult> {
@@ -1493,6 +2121,19 @@ export async function managerWorkflowExecute(
   if (!wf || typeof wf.create !== "function") {
     return { ok: false, errors: ["workflow_executor_binding_missing"] };
   }
+  // stamp the run OWNER so every dispatch the executor makes
+  // inherits the initiating agent's owner. FAIL CLOSED: if a calling agent is
+  // named but its owner can't be resolved, refuse to start the run (never run
+  // it as admin). No calling agent (operator path is the separate HTTP trigger,
+  // operator-only) → admin (owner_user_id omitted).
+  let ownerUserId: string | undefined;
+  if (callingAgentId) {
+    const ownerIdentity = await resolveAgentOwnerIdentity(env, callingAgentId);
+    if (ownerIdentity === null) {
+      return { ok: false, errors: ["dispatch_owner_unresolved"] };
+    }
+    if (ownerIdentity.kind === "user") ownerUserId = ownerIdentity.userId;
+  }
   const runId = deriveExecutorRunId(crypto.randomUUID().slice(0, 8));
   const instance = await wf.create({
     id: runId,
@@ -1500,6 +2141,7 @@ export async function managerWorkflowExecute(
       run_id: runId,
       descriptor: validation.descriptor,
       ...(callingAgentId ? { origin_agent_id: callingAgentId } : {}),
+      ...(ownerUserId ? { owner_user_id: ownerUserId } : {}),
     },
   });
   return {
@@ -1514,23 +2156,44 @@ export async function managerWorkflowExecute(
 export interface ManagerWorkflowStatusResult {
   ok: boolean;
   run?: unknown;
-  code?: "not_found";
+  code?: "not_found" | "owner_unresolved";
+}
+
+/**
+ * Multi-tenancy — resolve a calling agent's owner into a READ scope id.
+ * Returns `{ ok:true, scopeOwnerId }` where `scopeOwnerId` is the user's id
+ * (scoped) or `undefined` (admin / no calling agent = unscoped, sees all).
+ * FAIL CLOSED: a named-but-unresolvable owner returns `{ ok:false }` so the
+ * caller refuses (never falls through to `undefined` = unfiltered = all-tenants).
+ */
+async function resolveWorkflowReadScope(
+  env: ManagerEnv,
+  callingAgentId: string | null | undefined,
+): Promise<{ ok: true; scopeOwnerId: string | undefined } | { ok: false }> {
+  const identity = callingAgentId
+    ? await resolveAgentOwnerIdentity(env, callingAgentId)
+    : null;
+  return decideWorkflowReadScope(callingAgentId, identity);
 }
 
 export async function managerWorkflowStatus(
   env: ManagerEnv,
   input: { run_id: string },
+  callingAgentId?: string | null,
 ): Promise<ManagerWorkflowStatusResult> {
+  // Multi-tenancy — owner-scope the run read. FAIL CLOSED on unresolved owner.
+  const scope = await resolveWorkflowReadScope(env, callingAgentId);
+  if (!scope.ok) return { ok: false, code: "owner_unresolved" };
   const stub = await resolveRegistryStub(env);
-  const tree = await stub.readWorkflowRun({ run_id: input.run_id });
+  const tree = await stub.readWorkflowRun({ run_id: input.run_id }, scope.scopeOwnerId);
   if (tree === null || tree === undefined) {
     return { ok: false, code: "not_found" };
   }
   return { ok: true, run: tree };
 }
 
-// ──  — named workflow store: save / list / run-named ────────
-// Validation lives HERE (shape via the  validator, name via
+// ── named workflow store: save / list / run-named ────────
+// Validation lives HERE (shape via the an earlier revision validator, name via
 // validateWorkflowName, args via substituteWorkflowArgs); the registry
 // @callables own persistence only.
 
@@ -1540,6 +2203,11 @@ import {
   summarizeDescriptorRow,
   type WorkflowDescriptorSummary,
 } from "./workflowNamed";
+// Multi-tenancy — pure fail-closed owner-stamp / read-scope decisions.
+import {
+  decideWorkflowSaveOwner,
+  decideWorkflowReadScope,
+} from "./workflowStoreOps";
 
 export interface ManagerWorkflowSaveResult {
   ok: boolean;
@@ -1563,12 +2231,29 @@ export async function managerWorkflowSave(
   if (!validation.ok) {
     return { ok: false, errors: validation.errors };
   }
+  // Multi-tenancy — stamp the saving agent's OWNER so the row is owner-scoped
+  // and the global `name` PRIMARY KEY can't be clobbered cross-tenant. FAIL
+  // CLOSED via the pure decision: a named-but-unresolvable owner refuses the
+  // save (mirrors dispatch_owner_unresolved); never falls back to admin.
+  const ownerIdentity = callingAgentId
+    ? await resolveAgentOwnerIdentity(env, callingAgentId)
+    : null;
+  const ownerDecision = decideWorkflowSaveOwner(callingAgentId, ownerIdentity);
+  if (!ownerDecision.ok) {
+    return { ok: false, errors: ["dispatch_owner_unresolved"] };
+  }
   const stub = await resolveRegistryStub(env);
   const saved = await stub.saveWorkflowDescriptor({
     name: input.name,
     descriptor_json: JSON.stringify(validation.descriptor),
     created_by_agent_id: callingAgentId,
+    owner_user_id: ownerDecision.ownerUserId,
   });
+  if (!saved.ok) {
+    // Cross-tenant name clobber refused at the DO (the name is owned by another
+    // tenant the caller can't see).
+    return { ok: false, name: saved.name, errors: [saved.error ?? "save_failed"] };
+  }
   return { ok: true, name: saved.name, version: saved.version };
 }
 
@@ -1576,13 +2261,19 @@ export interface ManagerWorkflowListResult {
   ok: boolean;
   workflows: WorkflowDescriptorSummary[];
   count: number;
+  errors?: string[];
 }
 
 export async function managerWorkflowList(
   env: ManagerEnv,
+  callingAgentId?: string | null,
 ): Promise<ManagerWorkflowListResult> {
+  // Multi-tenancy — owner-scope the list. FAIL CLOSED on unresolved owner
+  // (return an empty list, never the unfiltered all-tenants list).
+  const scope = await resolveWorkflowReadScope(env, callingAgentId);
+  if (!scope.ok) return { ok: false, workflows: [], count: 0, errors: ["owner_unresolved"] };
   const stub = await resolveRegistryStub(env);
-  const rows = await stub.listWorkflowDescriptors();
+  const rows = await stub.listWorkflowDescriptors(scope.scopeOwnerId);
   const workflows = rows.map(summarizeDescriptorRow);
   return { ok: true, workflows, count: workflows.length };
 }
@@ -1598,8 +2289,13 @@ export async function managerWorkflowRunNamed(
   input: { name: string; args?: Record<string, string> },
   callingAgentId?: string | null,
 ): Promise<ManagerWorkflowRunNamedResult> {
+  // Multi-tenancy — owner-scope the descriptor read so a scoped user can only
+  // run a workflow it owns. FAIL CLOSED on unresolved owner. A cross-tenant /
+  // unknown name reads as null → `unknown_workflow` (no existence leak).
+  const scope = await resolveWorkflowReadScope(env, callingAgentId);
+  if (!scope.ok) return { ok: false, errors: ["owner_unresolved"] };
   const stub = await resolveRegistryStub(env);
-  const row = await stub.readWorkflowDescriptor({ name: input.name });
+  const row = await stub.readWorkflowDescriptor({ name: input.name }, scope.scopeOwnerId);
   if (row === null) {
     return { ok: false, errors: [`unknown_workflow: ${input.name}`] };
   }

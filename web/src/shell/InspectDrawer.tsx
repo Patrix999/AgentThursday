@@ -3,7 +3,7 @@ import { InspectContent } from "../inspect/InspectContent";
 
 /**
  * Desktop right drawer. Lazy: useInspect only polls when `open` is true,
- * satisfying  acceptance "drawer 关闭后 useInspect 停止 polling".
+ * satisfying an earlier revision acceptance "drawer 关闭后 useInspect 停止 polling".
  */
 export function InspectDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { data, loading, error } = useInspect(open);

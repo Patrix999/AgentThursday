@@ -1,5 +1,5 @@
 /**
- *  — demo adapter for the YAML-sourced `skillset.runtime_summary`
+ * demo adapter for the YAML-sourced `skillset.runtime_summary`
  * tool contract.
  *
  * Reads the current skillset runtime snapshot (no operator-disable

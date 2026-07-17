@@ -5,7 +5,7 @@ import type { InspectSnapshot } from "../../shared/schema";
  * summary above the inspect tabs. Read-only: renders state, reasons,
  * model profile, evidenceRefs, and recommendedAction. No interactivity,
  * no behavior change. State color-codes are visual only — they don't
- * trigger any pause/retry/switch in v1 ( will own that).
+ * trigger any pause/retry/switch in v1 (an earlier revision will own that).
  */
 export function DegradationBanner({
   diagnostics,

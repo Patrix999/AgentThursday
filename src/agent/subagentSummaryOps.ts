@@ -1,5 +1,5 @@
 /**
- *  —  Subagent Artifact Summary Aggregation v1.
+ * M9.0 Subagent Artifact Summary Aggregation v1.
  *
  * Pure helpers — no DO, no env, no SQL. The DO @callable wrappers in
  * `src/server.ts` and the manager adapter in
@@ -12,12 +12,12 @@
  *     manager-side reads scope by trace_id without a join.
  *   - Summary shape is bounded: `reply_excerpt` is truncated by UTF-8
  *     byte count (NOT JS string length — multi-byte chars otherwise
- *     slip past a `.length` cap; see  memo).
+ *     slip past a `.length` cap; see an earlier revision memo).
  *   - `artifact_refs` are self-reported by the subagent (v1 trusts the
  *     subagent — full artifact content reads across DOs are DEFERRED
- *     per ADR §6.4 /  §5).
+ *     per ADR §6.4 / an earlier revision §5).
  *
- * Permission boundary (ADR §6.3 /  §4):
+ * Permission boundary (ADR §6.3 / an earlier revision §4):
  *   - Manager A can read summaries it issued (`source_agent_id ===
  *     callingAgentId`). Manager B querying A's `parent_task_id` gets
  *     an empty list — NOT an error, NOT leaked metadata.
@@ -82,7 +82,7 @@ export interface SubagentSummaryRow {
   payload: SubagentSummary;
   recorded_at: string;
   /**
-   *  §4 — v1→v2 `summary_id` bridge. Surfaces the underlying
+   * an earlier revision §4 — v1→v2 `summary_id` bridge. Surfaces the underlying
    * `event_log.id` (DO substrate primary key) so future migration off
    * of `summary_id == subagent task_id` semantics has an addressable
    * stable key. Optional because not every read site goes through the
@@ -99,7 +99,7 @@ export interface SubagentSummaryFilter {
 }
 
 /**
- *  §4 — permission boundary applied at the reader side.
+ * an earlier revision §4 — permission boundary applied at the reader side.
  *
  * Only rows where `source_agent_id === callingAgentId` survive. Then
  * `parent_task_id` / `source_agent_id` are applied as optional

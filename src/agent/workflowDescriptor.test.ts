@@ -1,5 +1,5 @@
 /**
- *  — pure descriptor contract tests: validator (reject malformed
+ * pure descriptor contract tests: validator (reject malformed
  * / cyclic / over-cap descriptors), executor-owned id derivation, and
  * topological phase ordering.
  */
@@ -147,7 +147,7 @@ describe("orderPhasesByDependency", () => {
 });
 
 describe("executor id derivation", () => {
-  it("derives executor-owned ids distinct from  (wfr-exec- prefix)", () => {
+  it("derives executor-owned ids distinct from an earlier revision (wfr-exec- prefix)", () => {
     const runId = deriveExecutorRunId("abc123");
     assert.equal(runId, "wfr-exec-abc123");
     assert.ok(!runId.startsWith("wfr-task-")); // not the 384 ad-hoc derivation

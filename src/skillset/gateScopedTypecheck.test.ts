@@ -1,5 +1,5 @@
 /**
- *  — pure tests for `selectTypecheckPhases` /
+ * pure tests for `selectTypecheckPhases` /
  * `classifyTypecheckPath`. These drive the gate.typecheck fast path:
  * given the worktree's changed paths, run only the relevant phases and
  * skip the slow full-repo `root` phase for localized mutations, while
@@ -46,7 +46,7 @@ describe("selectTypecheckPhases", () => {
     assert.deepEqual(phaseNames(sel), ["web"]);
     assert.deepEqual(skippedNames(sel).sort(), ["diag", "root", "scripts", "tui"]);
     assert.ok(sel.skipped.every((s) => s.reason === "scoped_fast_path"));
-    //  — web phase also needs the ROOT prewarm (../src zod).
+    // web phase also needs the ROOT prewarm (../src zod).
     assert.deepEqual(sel.depSubdirs.sort(), ["", "web"]);
     assert.deepEqual(sel.scopes, ["web"]);
   });

@@ -1,7 +1,7 @@
 /**
- *  — unified primary navigation configuration.
+ * unified primary navigation configuration.
  *
- * 2026-06-15 (operator) — Wave 3 (Cards 422/423) deep-merge reverted: the
+ * 2026-06-15 (the operator) — Wave 3 (an earlier revision) deep-merge reverted: the
  * console nav is restored to its pre-renovation surfaces so the
  * Dashboard / Workspace / Runs entries are reachable again. The
  * /activity route still exists by URL but is no longer a nav entry.
@@ -45,21 +45,28 @@ export const NAV_ITEMS: NavItem[] = [
     path: "/models",
     match: (p) => p.startsWith("/models"),
   },
-  //  (UX W1) — configuration home: provider keys + Discord bots.
+  // an earlier revision (UX W1) — configuration home: provider keys + Discord bots.
   {
     label: "Settings",
     shortLabel: "Set",
     path: "/settings",
     match: (p) => p.startsWith("/settings"),
   },
-  //  — workflow runs were unreachable except by typed URL.
+  // 2026-06-22 — console user management (admin-only end-user accounts).
+  {
+    label: "Users",
+    shortLabel: "Users",
+    path: "/users",
+    match: (p) => p.startsWith("/users"),
+  },
+  // workflow runs were unreachable except by typed URL.
   {
     label: "Runs",
     shortLabel: "Runs",
     path: "/workflow-runs",
     match: (p) => p.startsWith("/workflow-runs") || p.startsWith("/agent-runs"),
   },
-  //  — operator manual (multi-agent produced, see provenance).
+  // operator manual (multi-agent produced, see provenance).
   {
     label: "Manual",
     shortLabel: "Manual",

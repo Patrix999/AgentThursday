@@ -1,5 +1,5 @@
 /**
- *  — `ChannelHubAgent` outbound enqueue helpers extracted
+ * `ChannelHubAgent` outbound enqueue helpers extracted
  * from `src/channelHub.ts`.
  *
  * `enqueueOutboundTextImpl(agent, input)` and
@@ -14,7 +14,7 @@
  * else is `agent.sql` (public) + crypto.randomUUID + JSON.
  *
  * Behavior preserved verbatim:
- *  - Text enqueue: proactive-not-allowed gate ( §D-21), one INSERT
+ *  - Text enqueue: proactive-not-allowed gate (an earlier revision §D-21), one INSERT
  *    into `channel_outbox` with `kind='text'`.
  *  - Approval enqueue: payload hash, optional `targetToolCallId`,
  *    paired INSERTs into `channel_approvals` + `channel_outbox`
@@ -22,7 +22,7 @@
  *    env stamped into the card.
  *
  * Out of scope (kept inline in `channelHub.ts`): `deliverPendingOutbound`
- * touches direct Discord sender, Bridge bridge HTTP, post-reply poll
+ * touches direct Discord sender, OpenClaw bridge HTTP, post-reply poll
  * (cross-DO RPC), and reads multiple env vars. Bridge delivery semantics
  * are an explicit non-goal for 242z5.
  */
@@ -47,7 +47,7 @@ export async function enqueueOutboundTextImpl(
   const now = Date.now();
   const allowProactive = input.allowProactive === true;
 
-  //  §D-21: proactive outbound (no reply target) is gated. Without
+  // an earlier revision §D-21: proactive outbound (no reply target) is gated. Without
   // an existing conversation OR replyToProviderMessageId we treat this as
   // proactive and refuse unless caller explicitly opted in.
   if (input.replyToProviderMessageId == null && !allowProactive) {

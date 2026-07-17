@@ -1,5 +1,5 @@
 /**
- *  — Action UI intent mapper tests.
+ * Action UI intent mapper tests.
  *
  * Targets the pure `buildActionUiIntents` mapper. Verifies that:
  *  - Manager tool lifecycle rows (`tool.manager.<family>.<phase>`)
@@ -11,7 +11,7 @@
  *    re-applies in case future emission paths skip the redaction).
  *  - Unknown payload fields outside the whitelist are not copied
  *    through to component props.
- *  - Existing specialized intents (Cards 127/128) keep their mapping.
+ *  - Existing specialized intents (an earlier revision) keep their mapping.
  *
  * Pure tests — no DO, no env, no SDK; payloads are synthetic.
  */
@@ -21,10 +21,33 @@ import { strict as assert } from "node:assert";
 
 import {
   buildActionUiIntents,
+  isDefaultFeedIntent,
   type ActionUiIntent,
   type ActionUiIntentSourceRow,
 } from "./actionUiIntents";
 import { redactSecrets, previewText } from "./safeTextPreview";
+
+describe("isDefaultFeedIntent — console-parity activity filter", () => {
+  const base = (over: Partial<ActionUiIntent>): ActionUiIntent => ({
+    id: "i", taskId: null, sourceEventType: "x", sourceEventAt: 1, type: "generic.tool_event",
+    priority: "secondary", title: "t", component: { name: "GenericToolEventCard", props: {} },
+    placementHint: { region: "feed", size: "compact" }, safety: { rawPayloadHidden: false, truncated: false },
+    createdAt: 1, ...over,
+  });
+  it("keeps the model's real tool actions (the operator's list)", () => {
+    for (const type of ["generic.tool_event", "tool.search_results", "tool.file_read",
+      "tool.execution_result", "tool.workspace_mutation", "tool.lifecycle", "workflow.run"] as const) {
+      assert.equal(isDefaultFeedIntent(base({ type })), true, type);
+    }
+  });
+  it("drops degradation / pause / debug / lifecycle-noise (generic.event)", () => {
+    assert.equal(isDefaultFeedIntent(base({ type: "agent.degradation" })), false);
+    assert.equal(isDefaultFeedIntent(base({ type: "agent.pause" })), false);
+    assert.equal(isDefaultFeedIntent(base({ type: "generic.event" })), false);
+    assert.equal(isDefaultFeedIntent(base({ type: "generic.tool_event", priority: "debug" })), false);
+    assert.equal(isDefaultFeedIntent(base({ type: "generic.tool_event", placementHint: { region: "debug", size: "compact" } })), false);
+  });
+});
 
 function row(
   event_type: string,
@@ -358,7 +381,7 @@ describe("buildActionUiIntents — safety / leak invariants", () => {
       "agentCount", "agentId", "agentName", "agentStatus",
       "changedFields", "conversationId", "envelopeId", "errorCode",
       "errorMessagePreview", "family", "includeArchived",
-      //  — pairing pass annotates lifecycle {status, durationMs}.
+      // pairing pass annotates lifecycle {status, durationMs}.
       "lifecycle",
       "loopTriggered",
       "model", "phase", "replyLength", "replyPreview", "replyTruncated",
@@ -368,7 +391,7 @@ describe("buildActionUiIntents — safety / leak invariants", () => {
     assert.deepEqual(propKeys, expectedKeys);
   });
 
-  it("preserves existing specialized intent mappings ( / 128)", () => {
+  it("preserves existing specialized intent mappings ", () => {
     const intents = buildActionUiIntents([
       row("tool.content_search", { queryPreview: "test", mode: "single", sourceId: "repo" }),
       row("tool.content_read", { pathPreview: "src/foo.ts", sourceId: "repo" }),
@@ -383,7 +406,7 @@ describe("buildActionUiIntents — safety / leak invariants", () => {
 
   it("non-manager tool.* rows still fall through to generic mapper", () => {
     const intent = singleIntent([
-      row("tool.localdoc.convert_text.dispatch", { tool: "localdoc.convert_text" }),
+      row("tool.fyimd.convert_text.dispatch", { tool: "fyimd.convert_text" }),
     ]);
     assert.equal(intent.type, "generic.tool_event");
     assert.equal(intent.component.name, "GenericToolEventCard");

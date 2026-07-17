@@ -1,7 +1,6 @@
 /**
- *  — dangling-intent detection tests.
+ * dangling-intent detection tests.
  *
- * RCA : reply announces
  * an action, zero tools dispatched, task silently completes. Detector
  * must catch the two observed prod signatures and must NOT flag
  * legitimate text-only answers.

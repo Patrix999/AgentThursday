@@ -1,5 +1,5 @@
 /**
- *  — `ChannelHubAgent` row mappers + inspect-row types, extracted
+ * `ChannelHubAgent` row mappers + inspect-row types, extracted
  * from `src/channelHub.ts`.
  *
  * Pure functions and shared types — no DO state, no env access, no I/O.
@@ -36,14 +36,14 @@ export type InboxRow = {
   status: string;
   created_at: number;
   updated_at: number;
-  //  — additive route metadata; nullable on rows ingested before migration.
+  // additive route metadata; nullable on rows ingested before migration.
   route_action: string | null;
   route_reason: string | null;
   routed_at: number | null;
   handoff_task_id: string | null;
 };
 
-//  — patch artifact inspect row. `patch_text` is intentionally
+// patch artifact inspect row. `patch_text` is intentionally
 // excluded; only `patch_text_length` (UTF-8 bytes) surfaces. Verifier
 // gets enough to reason about size + policy without loading multi-KiB
 // diff bodies into the inspect surface.
@@ -74,7 +74,7 @@ export type PatchArtifactInspectRow = {
     policy_version: string;
   };
   policy_version: string;
-  //  — pinned base tree SHA (40-hex, lowercase) the patch was
+  // pinned base tree SHA (40-hex, lowercase) the patch was
   // authored against. Null on legacy artifacts proposed before this
   // card, on artifacts whose proposer didn't supply one, or on rows
   // whose stored value is somehow malformed. `applyPatchDryRun` uses
@@ -83,10 +83,10 @@ export type PatchArtifactInspectRow = {
   base_sha: string | null;
 };
 
-// /220 — patch apply event inspect row. Mirrors the on-disk
+// patch apply event inspect row. Mirrors the on-disk
 // table without ever exposing raw token / signature / patch body. The
 // table itself never stores those, but the typed shape makes the
-// egress contract explicit at the type system level.  added
+// egress contract explicit at the type system level. an earlier revision added
 // `dry_run_exit_code` and `head_sha` for real-dry-run provenance.
 export type PatchApplyEventInspectRow = {
   event_id: string;
@@ -108,13 +108,13 @@ export type PatchApplyEventInspectRow = {
   head_sha: string | null;
 };
 
-//  — patch apply outbox/evidence inspect row. Same redaction
+// patch apply outbox/evidence inspect row. Same redaction
 // contract as the event-log inspect: never exposes `patch_text`, raw
 // token, raw signature, auth header, or worker secret. The outbox
 // table is a redaction-safe view of apply evidence keyed by a stable
 // `outbox_id`, with a foreign key to the originating event_id and a
 // `delivery_status` field that v1 leaves at `'ready'` (no external
-// delivery semantics yet —  only does the data-boundary split).
+// delivery semantics yet — an earlier revision only does the data-boundary split).
 export type PatchApplyOutboxInspectRow = {
   outbox_id: string;
   event_id: string;

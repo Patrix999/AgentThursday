@@ -2,15 +2,15 @@ type Props = {
   sourceId: string;
   pathPreview: string;
   maxBytes?: number | null;
-  //  — bounded content preview (first ~30 lines / byte-capped).
+  // bounded content preview (first ~30 lines / byte-capped).
   resultPreview?: string | null;
 };
 
 /**
- *  — File preview panel. v1 surfaces which file was read,
+ * File preview panel. v1 surfaces which file was read,
  * from which content source, with what byte cap. The actual file
  * content is NOT in the `event_log` payload (returned to agent
- * directly), so this panel doesn't show an excerpt.  will
+ * directly), so this panel doesn't show an excerpt. an earlier revision will
  * add workspace mutation/diff focus; this card is read-side only.
  */
 export function FilePreviewPanel(props: Props) {

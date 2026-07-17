@@ -1,5 +1,5 @@
 /**
- *  —  inspect/debug views extraction.
+ * M8.9 inspect/debug views extraction.
  *
  * Four read-only inspect/debug/usage view helpers moved verbatim from
  * `AgentThursdayAgent` (`src/server.ts:2239-2547`). No SQL strings, table
@@ -12,7 +12,7 @@
  *
  * Out of scope:
  *   - `getMemoryLayers()` — already a thin delegate to
- *     `getMemoryLayersFree` via `memoryOps` ().
+ *     `getMemoryLayersFree` via `memoryOps` .
  *
  * The host is narrow on purpose. SQL is the only DO-level capability
  * exposed; the other surfaces (`getSafeState`, `getPendingToolApproval`,
@@ -27,9 +27,8 @@
  * nested calls.
  *
  * See:
- *   - ``
- *   - `src/agent/statusViews.ts` (precedent — )
- *   - `src/agent/memoryOps.ts`  (precedent — Cards 297/298)
+ *   - `src/agent/statusViews.ts` (precedent — an earlier revision)
+ *   - `src/agent/memoryOps.ts`  (precedent — an earlier revision)
  */
 
 import type { EventLogRow } from "./agentConstants";
@@ -92,7 +91,7 @@ export function getDebugTraceView(host: InspectViewsHost): DebugTraceView {
   const s = host.getSafeState();
   const lar = s.lastActionResult;
 
-  //  — SQL-side payload preview keeps debug callables
+  // SQL-side payload preview keeps debug callables
   // bounded even when individual tool events have huge inputs/outputs.
   const rawEvents = host.sql<{ event_type: string; payload: string; created_at: number }>`
       SELECT event_type, substr(payload, 1, 4000) AS payload, created_at FROM event_log
@@ -140,7 +139,7 @@ export function getDebugTraceView(host: InspectViewsHost): DebugTraceView {
   }
 
   return {
-    //  — workspace dialog AGT line must show the full
+    // workspace dialog AGT line must show the full
     // assistant reply, never the `…(+N chars)` preview suffix that
     // `getLastAssistantText(maxLen)` appends.
     lastAssistantSummary: host.getLastAssistantTextFull(),
@@ -153,7 +152,7 @@ export function getDebugTraceView(host: InspectViewsHost): DebugTraceView {
 
 // index recent degradation events into a compact view
 // for the inspect panel. Read-only: queries existing event_log rows
-// emitted by Cards 117 / 119 / 102, parses payload as JSON, and tolerates
+// emitted by an earlier revision, parses payload as JSON, and tolerates
 // shape drift via fail-soft per-row try/catch. Cap recentSummaries to
 // keep the inspect response payload bounded.
 export function getDegradationDiagnosticsView(host: InspectViewsHost): DegradationDiagnostics {
@@ -216,7 +215,7 @@ export function getDegradationDiagnosticsView(host: InspectViewsHost): Degradati
 
 export function getInspectSnapshotView(host: InspectViewsHost): InspectSnapshot {
   // real producer for /api/inspect.
-  // No new storage; pulls from event_log + DO state.  schema is canonical.
+  // No new storage; pulls from event_log + DO state. an earlier revision schema is canonical.
 
   // ladder: history of tier-bearing tool events, newest first
   const ladderRows = host.sql<EventLogRow>`
@@ -241,7 +240,7 @@ export function getInspectSnapshotView(host: InspectViewsHost): InspectSnapshot 
   });
 
   // trace: full event log (capped) newest-first; payloads parsed when valid JSON.
-  //  — SQL-side preview (substr) bounds memory for /api/inspect
+  // SQL-side preview (substr) bounds memory for /api/inspect
   // even when individual events log very large payloads (big tool outputs,
   // pasted content, etc).
   const traceRows = host.sql<EventLogRow>`
@@ -261,7 +260,7 @@ export function getInspectSnapshotView(host: InspectViewsHost): InspectSnapshot 
   });
 
   // toolEvents: kind="call" because the worker only logs tool entries today.
-  //  — independent SQL query (LIKE 'tool.%');  — SQL-side
+  // independent SQL query (LIKE 'tool.%'); SQL-side
   // preview to keep tool tab bounded.
   const toolEventRows = host.sql<EventLogRow>`
       SELECT event_type, substr(payload, 1, 4000) AS payload, created_at, trace_id FROM event_log
@@ -289,7 +288,7 @@ export function getInspectSnapshotView(host: InspectViewsHost): InspectSnapshot 
 
   // derive Action UI Intents.
   //
-  // : feed intents from a richer pool than `traceRows` alone.
+  // an earlier revision: feed intents from a richer pool than `traceRows` alone.
   // Merge traceRows + toolEventRows + actionAuxRows; dedupe by
   // (event_type, created_at, trace_id); sort with action-relevant rows
   // ahead of others so buildActionUiIntents fills its budget with

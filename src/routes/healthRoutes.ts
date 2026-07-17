@@ -2,7 +2,7 @@ import { json } from "../httpUtil";
 import { DEMO_INSTANCE } from "../demoConstants";
 
 /**
- *  — `/health` route extracted from `server.ts`.
+ * `/health` route extracted from `server.ts`.
  *
  * Behavior preserved verbatim: same shape, same fields, same default
  * 200 status. Intentionally exempt from auth in the composition root;

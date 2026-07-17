@@ -1,10 +1,10 @@
 /**
- *  — runtime capability snapshot derivation tests.
+ * runtime capability snapshot derivation tests.
  *
  * Pure helper coverage: runtime state branching (loaded / disabled /
  * rejected / absent priority), count derivations, tier distribution,
  * and cap pass-through. Frontend rendering is covered by the route
- * itself; per  §86, no DOM harness exists yet so route-level
+ * itself; per an earlier revision §86, no DOM harness exists yet so route-level
  * tests are deferred.
  */
 

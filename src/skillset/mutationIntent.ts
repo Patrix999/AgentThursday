@@ -1,13 +1,13 @@
 /**
- *  — prompt-level mutation-intent detector.
+ * prompt-level mutation-intent detector.
  *
- * Companion to `src/skillset/readIntent.ts` () but for the
+ * Companion to `src/skillset/readIntent.ts`  but for the
  * write / delete / edit / patch surface. The motivating failure mode
- * is the  retest #1 shape: a prompt like "在 `docs/qa/` 下
+ * is the an earlier revision retest #1 shape: a prompt like "在 `docs/qa/` 下
  * 创建一个临时文件 `X.md` 然后删掉它" reaches `submitTask.finally`
  * with `totalToolCalls === 0` (model finished with `assistant.parts =
  * [step-start, reasoning, text]` only), yet the visible reply claims
- * the mutation succeeded. The  unwrapped-mutation detector
+ * the mutation succeeded. The an earlier revision unwrapped-mutation detector
  * doesn't fire because nothing was dispatched at the supplier surface
  * either; the seal collapses to `read_only_no_action_required` and the
  * hallucinated narrative reaches the user with no audit evidence.
@@ -17,9 +17,9 @@
  * to disqualify the read-only-safe short-circuit and emit the
  * dedicated verdict reason `mutation_intent_no_execution`. Precedence
  * in `EvidenceEnvelope.seal`: `mutation_intent_unwrapped_execution`
- * (, stronger — supplier actually dispatched something) >
+ * (an earlier revision, stronger — supplier actually dispatched something) >
  * `mutation_intent_no_execution` (this card — zero dispatch) >
- * `read_intent_no_execution` () > generic missing-rings.
+ * `read_intent_no_execution`  > generic missing-rings.
  *
  * Design — conservative dual-anchor, same shape as `detectReadIntent`:
  * a pattern fires when a mutation verb co-occurs with a repo-shaped
@@ -33,6 +33,39 @@ export interface MutationIntent {
   detected: boolean;
   /** Lowercased pattern keys that fired, for inspect / debug. */
   matchedPatterns: string[];
+}
+
+/**
+ * Review / verdict framing. When a prompt is a code-REVIEW task, its text is
+ * FULL of mutation verbs + paths — because it describes the diff under review
+ * ("写 drain-to-self `contextOps.ts`", "删了死 `archiveChunksRemote`") — yet the
+ * reviewer correctly calls NO mutating tool. That tripped
+ * `mutation_intent_no_execution` on every agentD review reply (2026-07-01, Card
+ * 449) and even truncated the output. A review is definitionally read-only; if
+ * it also writes (e.g. a report) it dispatches a tool, so `totalToolCalls > 0`
+ * and the gate is moot. So: when strong review framing is present, suppress the
+ * mutation-intent signal. Markers are intentionally NARROW (review-specific
+ * verdict language, not a bare "review") so a real mutation request like
+ * "在 `docs/` 创建 `X.md` 然后删掉" — an earlier revision's motivating case — is NOT
+ * suppressed and still fires.
+ */
+const REVIEW_FRAMING_PATTERNS: RegExp[] = [
+  /code[\s-]?review/i,
+  // CJK has no \w word boundaries, so `\b` around Chinese never anchors — match bare.
+  /复核/,
+  /评审/,
+  /审查代码|代码审查|检视/,
+  /\bverdict\b/i,
+  /给出?\s*(?:PASS|FAIL)\b/i,
+  /判\s*(?:定\s*)?(?:PASS|FAIL)\b/i,
+  /\bPASS\s*\/\s*FAIL\b/i,
+  /review\s+(?:the\s+)?(?:diff|branch|changes?|pull\s*request|pr|code)\b/i,
+];
+
+/** True iff the text carries strong code-review / verdict framing. */
+export function hasReviewFraming(text: string): boolean {
+  if (!text) return false;
+  return REVIEW_FRAMING_PATTERNS.some(re => re.test(text));
 }
 
 /**
@@ -87,9 +120,16 @@ export function detectMutationIntent(text: string): MutationIntent {
   for (const { key, re } of MUTATION_VERB_PATTERNS) {
     if (re.test(text)) matched.push(key);
   }
-  const detected = matched.length > 0;
-  if (detected && (REPO_PATH_RE.test(text) || PATH_ONLY_RE.test(text)) && !matched.includes("repo_path_present")) {
+  if (matched.length > 0 && (REPO_PATH_RE.test(text) || PATH_ONLY_RE.test(text)) && !matched.includes("repo_path_present")) {
     matched.push("repo_path_present");
   }
-  return { detected, matchedPatterns: matched };
+  // Review-framing suppression: a code-review prompt is packed with mutation
+  // verb+path phrases (describing the diff), but the reviewer calls no mutating
+  // tool. Keep the fired verb keys for observability but report NOT detected so
+  // `mutation_intent_no_execution` never fires on a review. A real mutation
+  // request (no review framing) is unaffected.
+  if (matched.length > 0 && hasReviewFraming(text)) {
+    return { detected: false, matchedPatterns: [...matched, "suppressed_review_framing"] };
+  }
+  return { detected: matched.length > 0, matchedPatterns: matched };
 }

@@ -68,6 +68,35 @@ describe("pickModelContextProfile — family/prefix patterns (tier 3)", () => {
     assert.strictEqual(pickModelContextProfile("claude-fancy"), MODEL_CONTEXT_REGISTRY["claude-sonnet-4-6"]);
   });
 
+  // 2026-07-17 pricing-auditor context-window sweep.
+  it("Claude 5-gen / Opus 4.8 resolve to 1M entries, not the 200K 4.x defaults", () => {
+    assert.strictEqual(pickModelContextProfile("claude-fable-5-preview"), MODEL_CONTEXT_REGISTRY["claude-fable-5"]);
+    assert.strictEqual(pickModelContextProfile("claude-opus-4-8@20260601"), MODEL_CONTEXT_REGISTRY["claude-opus-4-8"]);
+    assert.strictEqual(pickModelContextProfile("claude-opus-4.8"), MODEL_CONTEXT_REGISTRY["claude-opus-4-8"]);
+    assert.strictEqual(pickModelContextProfile("claude-sonnet-5-20260301"), MODEL_CONTEXT_REGISTRY["claude-sonnet-5"]);
+    assert.equal(pickModelContextProfile("claude-opus-4-8").modelMaxTokens, 1_000_000);
+    // Opus 4.7 must NOT be swallowed by the 4.8 rule.
+    assert.strictEqual(pickModelContextProfile("claude-opus-4-7"), MODEL_CONTEXT_REGISTRY["claude-opus-4-7"]);
+  });
+
+  it("Grok 4.x family maps to audited windows; unknown grok stays on DEFAULT", () => {
+    assert.equal(pickModelContextProfile("grok-4.5").modelMaxTokens, 500_000);
+    assert.equal(pickModelContextProfile("grok-4.3").modelMaxTokens, 1_000_000);
+    assert.equal(pickModelContextProfile("grok-4.20-fast").modelMaxTokens, 1_000_000);
+    assert.strictEqual(pickModelContextProfile("grok-3-mini"), DEFAULT_CONTEXT_PROFILE);
+  });
+
+  it("DeepSeek V4 family is 1M while -chat/-reasoner (V3/R1) stay 64K", () => {
+    assert.equal(pickModelContextProfile("deepseek-v4-pro").modelMaxTokens, 1_000_000);
+    assert.equal(pickModelContextProfile("deepseek-v4-flash").modelMaxTokens, 1_000_000);
+    assert.equal(pickModelContextProfile("deepseek-chat").modelMaxTokens, 64_000);
+  });
+
+  it("GLM-5 maps to 200K without disturbing glm-4.7-flash", () => {
+    assert.equal(pickModelContextProfile("glm-5").modelMaxTokens, 200_000);
+    assert.equal(pickModelContextProfile("glm-4.7-flash").modelMaxTokens, 131_072);
+  });
+
   it("OpenAI specificity: gpt-4.1-mini must not collapse to gpt-4.1", () => {
     assert.strictEqual(pickModelContextProfile("gpt-4.1-mini-2026"), MODEL_CONTEXT_REGISTRY["gpt-4.1-mini"]);
     assert.strictEqual(pickModelContextProfile("gpt-4.1-nano-rc"), MODEL_CONTEXT_REGISTRY["gpt-4.1-nano"]);

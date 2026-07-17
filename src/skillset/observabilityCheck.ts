@@ -7,10 +7,10 @@
  * the per-task summary) as the **cross-check source**.
  *
  * If a tool name appears in trace but not in toolEvents, the fabric
- * is leaking observability — exactly the  gap  is meant to
+ * is leaking observability — exactly the M7.9 gap M8.1 is meant to
  * close. This module produces a gap report so:
  *   - inspect can render `toolEvents_gap` warnings,
- *   - QA suites () can assert "no gap" as part of acceptance,
+ *   - QA suites (M8.3) can assert "no gap" as part of acceptance,
  *   - and downstream telemetry can alert on regression.
  *
  * Pure module: takes already-fetched arrays, returns a report. Caller
@@ -82,8 +82,8 @@ export interface ToolEventsGapReport {
 }
 
 /**
- *  — agent-facing snake_case tool names map back to the
- * canonical  dotted contract names. AI SDK forbids dots in tool
+ * agent-facing snake_case tool names map back to the
+ * canonical M8.1 dotted contract names. AI SDK forbids dots in tool
  * names so 188 had to register `repo_read` etc. on the agent surface
  * while the underlying dispatcher still emits `tool.repo.read.*`.
  * Without this mapping the gap checker would flag the snake_case

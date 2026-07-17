@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-//  — ContentHub audit events surfaced via /api/inspect. Field shape
+// ContentHub audit events surfaced via /api/inspect. Field shape
 // is intentionally permissive (`payload: z.unknown()`) because the producer
 // (ContentHubAgent.logAudit) already capped/redacted before persisting; the
 // inspect surface just relays. `type` is one of `content.sources`,
@@ -13,8 +13,8 @@ export const ContentAuditEventSchema = z.object({
 });
 export type ContentAuditEvent = z.infer<typeof ContentAuditEventSchema>;
 
-//  — ContentHub evidence pack (aggregated audit summary). Sits next
-// to 's raw `contentAudit` rows, NOT replacing them. Three pivot
+// ContentHub evidence pack (aggregated audit summary). Sits next
+// to an earlier revision's raw `contentAudit` rows, NOT replacing them. Three pivot
 // views answer the reviewer's recurring questions:
 //   - byTraceId: in this agent round, what did it touch?
 //   - bySourceId: what's the cumulative usage of this source?
@@ -80,8 +80,8 @@ export type ContentAuditSummary = z.infer<typeof ContentAuditSummarySchema>;
 // ============================================================================
 // ContentHub: provider-agnostic content source layer.
 //
-//  ships schemas + a hardcoded `agentthursday-github` registry entry only.
-// /109 fill in real GitHub network reads/list/search.
+// an earlier revision ships schemas + a hardcoded `agentthursday-github` registry entry only.
+// an earlier revision fill in real GitHub network reads/list/search.
 //
 // Design constraints (ADR §3, §4):
 //   - `ContentRevision` is a discriminated union from day 1, never a bare
@@ -131,13 +131,20 @@ export type ContentRef = z.infer<typeof ContentRefSchema>;
 export const ContentSourceScopeSchema = z.enum(["project", "personal", "team", "channel", "public", "fixture"]);
 export type ContentSourceScope = z.infer<typeof ContentSourceScopeSchema>;
 
+// BYO GitHub (2026-06-26): the resolved owner identity of a content_* caller,
+// threaded from the dispatching agent through to the ContentHub DO. Replaces the
+// older `callerIsOperator: boolean` — owner-scoping personal sources needs the
+// owner id, not just the operator bit. `ownerUserId: null` = unresolved → fail
+// closed (no access beyond tenant-public fixtures).
+export type ContentCaller = { ownerUserId: string | null; isOperator: boolean };
+
 export const ContentSourceAuthModeSchema = z.enum(["public", "secret", "oauth", "mcp", "browser", "none"]);
 export type ContentSourceAuthMode = z.infer<typeof ContentSourceAuthModeSchema>;
 
-//  v2  — explicit per-source capability declaration. Forward
+// M7.4 v2 explicit per-source capability declaration. Forward
 // compatible: undefined `capabilities` on existing v1 sources is permitted
 // and treated as "all true" by callers that haven't adopted the field yet.
-//  fan-out search will filter sources by `capabilities.search:true`
+// an earlier revision fan-out search will filter sources by `capabilities.search:true`
 // instead of provider-name matching, so honest declarations matter.
 export const ContentSourceCapabilitiesSchema = z.object({
   read: z.boolean(),
@@ -159,12 +166,18 @@ export const ContentSourceSchema = z.object({
   deniedPaths: z.array(z.string()).optional(),
   maxFileBytes: z.number().int().positive().optional(),
   capabilities: ContentSourceCapabilitiesSchema.optional(),
+  // BYO GitHub (2026-06-26): the owning user for a `scope:"personal"` source.
+  // Present ONLY on personal sources; undefined on project/fixture. This is the
+  // tenant-isolation key — `canAccessSource` requires caller owner === this, and
+  // the ContentHub token resolver reads ONLY this owner's github credential
+  // (never env.GITHUB_TOKEN). Server-stamped at registration, never client-set.
+  owner_user_id: z.string().optional(),
 });
 export type ContentSource = z.infer<typeof ContentSourceSchema>;
 
 export const ContentSourceHealthSchema = z.object({
   ok: z.boolean(),
-  // v1 = "registry-only" (no network probe). /109 will add "live"
+  // v1 = "registry-only" (no network probe). an earlier revision will add "live"
   // (real GitHub probe) and "degraded" (rate-limited / partial).
   mode: z.enum(["registry-only", "live", "degraded"]),
   latencyMs: z.number().int().nonnegative().optional(),
@@ -184,7 +197,7 @@ export const ContentSourcesResponseSchema = z.object({
 });
 export type ContentSourcesResponse = z.infer<typeof ContentSourcesResponseSchema>;
 
-// File entry for list results — used by +.
+// File entry for list results — used by an earlier revision+.
 export const ContentFileEntrySchema = z.object({
   name: z.string(),
   pathOrId: z.string(),
@@ -203,12 +216,20 @@ export type ContentRedaction = z.infer<typeof ContentRedactionSchema>;
 
 export const ContentReadResultSchema = z.object({
   ref: ContentRefSchema,
-  content: z.string(),                    // v1 utf-8 text only; binary path is v1.5+ ()
+  content: z.string(),                    // v1 utf-8 text only; binary path is v1.5+ 
   contentType: z.string(),
-  size: z.number().int().nonnegative(),
+  size: z.number().int().nonnegative(),   // TRUE total file size in bytes (not just this window)
   truncated: z.boolean().optional(),
   truncatedBytes: z.number().int().nonnegative().optional(),
   redactions: z.array(ContentRedactionSchema).optional(),
+  // 2026-06-29 — windowed/paginated read. `content` is bytes [offset, offset+bytesReturned).
+  // When `hasMore`, call content_read again with `offset = nextOffset` to continue.
+  offset: z.number().int().nonnegative().optional(),
+  bytesReturned: z.number().int().nonnegative().optional(),
+  nextOffset: z.number().int().nonnegative().optional(),
+  remainingBytes: z.number().int().nonnegative().optional(),
+  remainingLines: z.number().int().nonnegative().optional(), // APPROXIMATE (byte-ratio estimate)
+  hasMore: z.boolean().optional(),
 });
 export type ContentReadResult = z.infer<typeof ContentReadResultSchema>;
 
@@ -235,11 +256,11 @@ export type ContentSearchMode = z.infer<typeof ContentSearchModeSchema>;
 export const ContentSearchCoverageSchema = z.enum(["full", "partial"]);
 export type ContentSearchCoverage = z.infer<typeof ContentSearchCoverageSchema>;
 
-//  — request/response envelopes for content_list and content_read.
+// request/response envelopes for content_list and content_read.
 // Discriminated `{ ok: true, result } | { ok: false, error }` shape so both
 // the API endpoint and the LLM tool wrapper can forward without exception
-// machinery. `error.code` enumerates the structured failure modes
-// produces; the list grows in +.
+// machinery. `error.code` enumerates the structured failure modes an earlier revision
+// produces; the list grows in an earlier revision+.
 
 export const ContentErrorCodeSchema = z.enum([
   // Path policy
@@ -263,18 +284,20 @@ export const ContentErrorCodeSchema = z.enum([
   "list-failed",
   "not-a-directory",
   "no-body",
-  //  — search
+  // search
   "quota-exhausted",
   "code-search-failed",
   "search-failed",
-  //  — multi-source fan-out
+  // multi-source fan-out
   "capability-not-supported",
+  // operator-internal source refused for a scoped (user-owned) caller
+  "forbidden-source",
   // Generic fallback
   "internal",
 ]);
 export type ContentErrorCode = z.infer<typeof ContentErrorCodeSchema>;
 
-//  — per-source result/error state for multi-source fan-out.
+// per-source result/error state for multi-source fan-out.
 // Each entry carries provenance even on failure so the agent can tell which
 // source succeeded and which didn't, without a single source's failure
 // silently swallowing another source's hits. `ok:true` populates `hits` (+
@@ -302,7 +325,7 @@ export const ContentSearchResultSchema = z.object({
   searchCoverage: ContentSearchCoverageSchema.optional(),
   searchedPaths: z.array(z.string()).optional(),
   omittedReason: z.string().optional(),
-  //  — multi-source fan-out result. Present iff the request used
+  // multi-source fan-out result. Present iff the request used
   // `sourceIds`. In that mode top-level `hits` is an empty array and the
   // agent MUST consume `perSource[]` for grouped results — flat aggregation
   // would lose source-level provenance, which the audit and ContentRef
@@ -317,7 +340,7 @@ export const ContentErrorSchema = z.object({
   sourceId: z.string().optional(),
   path: z.string().optional(),
   status: z.number().int().nullable().optional(),
-  //  §7.1 — quota / upstream-failure errors carry an explicit
+  // an earlier revision §7.1 — quota / upstream-failure errors carry an explicit
   // fallback hint so the caller can opt in to `strategy: "bounded-local"`.
   // Only set on search errors; other endpoints leave these undefined.
   fallbackAvailable: z.boolean().optional(),
@@ -342,6 +365,8 @@ export const ContentReadRequestSchema = z.object({
   path: z.string().min(1).max(1024),
   ref: z.string().min(1).max(200).optional(),
   maxBytes: z.number().int().positive().max(1024 * 1024).optional(),
+  // 2026-06-29 — byte offset for windowed/paginated reads (default 0).
+  offset: z.number().int().nonnegative().optional(),
 });
 export type ContentReadRequest = z.infer<typeof ContentReadRequestSchema>;
 
@@ -352,16 +377,16 @@ export const ContentListRequestSchema = z.object({
 });
 export type ContentListRequest = z.infer<typeof ContentListRequestSchema>;
 
-//  — request/response envelopes for content_search. Mirrors the
-//  read/list discriminated-union pattern so clients forward errors
+// request/response envelopes for content_search. Mirrors the
+// an earlier revision read/list discriminated-union pattern so clients forward errors
 // without exception machinery. Default strategy is `api-search` (fail-loud
 // on quota); `bounded-local` is opt-in degraded grep over the connector's
 // list+read path, always carries `searchCoverage:"partial"`.
 export const ContentSearchRequestSchema = z.object({
-  //  — `sourceId` and `sourceIds` are mutually exclusive, fail-loud:
+  // `sourceId` and `sourceIds` are mutually exclusive, fail-loud:
   //  - exactly one must be provided
   //  - presenting both, or neither, is a 400 at the request boundary
-  // Single-source mode (`sourceId`) keeps  behavior unchanged.
+  // Single-source mode (`sourceId`) keeps an earlier revision behavior unchanged.
   // Multi-source mode (`sourceIds`) returns a `perSource` array; top-level
   // `hits` is empty stub to preserve schema shape.
   sourceId: z.string().min(1).optional(),
@@ -384,7 +409,7 @@ export const ContentSearchResponseSchema = z.discriminatedUnion("ok", [
 export type ContentSearchResponse = z.infer<typeof ContentSearchResponseSchema>;
 
 // Connector contract — TS interface, not zod (it's an internal shape, not
-// API-surface JSON).  adds the GitHub implementation.
+// API-surface JSON). an earlier revision adds the GitHub implementation.
 export interface ContentSourceConnector {
   readonly meta: ContentSource;
 

@@ -1,15 +1,15 @@
 /**
- *   / 150b — JSX-free markdown parser.
+ * M7.8 an earlier revision — JSX-free markdown parser.
  *
- *  originally lived as part of `MarkdownText.tsx`. The
- * verifier () found that pulling the parser into the
+ * an earlier revision originally lived as part of `MarkdownText.tsx`. The
+ * verifier  found that pulling the parser into the
  * `scripts/` typecheck via the smoke harness fails when the smoke
  * script imports a `.tsx` module without `--jsx` enabled. Extracting
  * the parser + types into this JSX-free file lets both the React
  * renderer and the smoke harness import from the same source without
  * the scripts tsconfig dependency on JSX.
  *
- * Security contract preserved from : the parser produces an
+ * Security contract preserved from an earlier revision: the parser produces an
  * AST of typed nodes; rendering happens in `MarkdownText.tsx` which
  * builds a React tree directly (no `dangerouslySetInnerHTML`). The
  * `SAFE_URL_RE` allowlist exported here is the canonical source of
@@ -39,7 +39,11 @@ export type Block =
       rows: InlineNode[][][];
     };
 
-export const SAFE_URL_RE = /^(?:https?:\/\/|mailto:)/i;
+// http(s) / mailto, plus ROOT-RELATIVE paths (`/shared/:id` share links etc.).
+// The `(?!\/)` guard rejects protocol-relative `//evil.com` (cross-origin); a
+// single leading slash is same-origin and cannot carry a `javascript:`/`data:`
+// scheme.
+export const SAFE_URL_RE = /^(?:https?:\/\/|mailto:|\/(?!\/))/i;
 
 export function parseBlocks(input: string): Block[] {
   const lines = input.replace(/\r\n?/g, "\n").split("\n");
@@ -70,7 +74,7 @@ export function parseBlocks(input: string): Block[] {
       continue;
     }
 
-    // Heading (): `^#{1,6}\s+text`. Each `#` is a level. The
+    // Heading : `^#{1,6}\s+text`. Each `#` is a level. The
     // line is its own block — never gathered into a paragraph — so a
     // table immediately following a heading without a blank line gets
     // the chance to start a new table block instead of being absorbed
@@ -83,7 +87,7 @@ export function parseBlocks(input: string): Block[] {
       continue;
     }
 
-    // Pipe table (). A header line containing at least one
+    // Pipe table . A header line containing at least one
     // unescaped `|` followed by a delimiter line whose cells are
     // dashes (`---`) optionally bracketed by `:` for alignment, then
     // one or more body rows that look like pipe-separated cells.
@@ -137,7 +141,7 @@ export function parseBlocks(input: string): Block[] {
     }
 
     // Paragraph: gather contiguous non-blank, non-list, non-fence
-    // lines.  adds two more stop conditions so paragraph
+    // lines. an earlier revision adds two more stop conditions so paragraph
     // gathering yields control back to the heading / table detectors:
     //   - the next line starts a heading (`# / ## / …`)
     //   - the next line is a table header AND the line after that
@@ -259,7 +263,7 @@ function findItalicClose(text: string, start: number): number {
   return -1;
 }
 
-// ──  table helpers ──────────────────────────────────────────
+// ── an earlier revision table helpers ──────────────────────────────────────────
 
 function looksLikeTableHeader(line: string): boolean {
   // A pipe-table row line contains at least one `|`. Allow leading /

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // Conversation Archive ingestion. `drainForArchive`
 // runs on a per-context DO and returns its full sanitized message log
-// (no `lastN` cap, intentionally — the  public snapshot caps
+// (no `lastN` cap, intentionally — the an earlier revision public snapshot caps
 // at 200 which would silently truncate older contexts during
 // archival). `archiveChunks` runs on the registry DO and writes the
 // chunks into the canonical `conversation_archive` table.
@@ -32,6 +32,12 @@ export const ArchiveChunksInputSchema = z.object({
   trigger: ArchiveTriggerSchema,
   chunks: z.array(ArchiveChunkInputSchema),
   reason: z.string().nullable().optional(),
+  // Multi-tenancy — owner of the archived conversation, resolved by the
+  // pushing per-agent DO from its OWN profile (admin sentinel for the
+  // operator). Stamped on each chunk so `conversation_search` can owner-scope.
+  // Best-effort: omitted / unresolved → admin default (hides the row from
+  // scoped users, never leaks cross-tenant — the read filter is the boundary).
+  ownerUserId: z.string().nullable().optional(),
 });
 export type ArchiveChunksInput = z.infer<typeof ArchiveChunksInputSchema>;
 
@@ -51,7 +57,7 @@ export type ArchiveFlushResult = z.infer<typeof ArchiveFlushResultSchema>;
 // `conversation_archive`. Defaults: cross-context (no `contextId`
 // filter); topK clamped to [1, 10] with default 3; snippet cap 300
 // chars per hit. Hits include source refs but NOT raw tool payloads
-// or system content ( sanitization preserved upstream during
+// or system content (an earlier revision sanitization preserved upstream during
 // archive ingestion).
 export const ConversationSearchInputSchema = z.object({
   query: z.string().min(1).max(500),
@@ -164,7 +170,7 @@ export type ArchiveInspectSummary = z.infer<typeof ArchiveInspectSummarySchema>;
 //   - skipped: pressure below threshold, nothing to do
 //   - proposed: pressure high but a risk gate fired; plan recorded but
 //     not applied
-//   - auto-applied: pressure high, all gates clear;
+//   - auto-applied: pressure high, all gates clear; an earlier revision
 //     applyCompactPlan succeeded
 //   - failed: applyCompactPlan threw or returned partial rejection
 // Manual-trigger only in v1; scheduled triggers are opt-in via a
@@ -240,7 +246,7 @@ export type HygieneRunResult = z.infer<typeof HygieneRunResultSchema>;
 // pure inspect surface: the candidates are derived from
 // conversation_archive / message log / local conversation_search and
 // returned to the caller, but **never written** to `agent_memories`.
-// Promote / dismiss flows are explicitly out of scope ().
+// Promote / dismiss flows are explicitly out of scope .
 // ────────────────────────────────────────────────────────────────────
 
 export const MemoryCandidateTypeSchema = z.enum([

@@ -1,9 +1,9 @@
 /**
- *  — pure helper that fills missing `task_context` fields on a
+ * pure helper that fills missing `task_context` fields on a
  * `manager.agent_message` input from the calling manager's current task
  * context. Keeps the orchestrator/adapter free of branching logic.
  *
- * Rules (ADR §5.x extension,  必做 2):
+ * Rules (ADR §5.x extension, an earlier revision 必做 2):
  *   - If `input.task_context` is undefined (text-only call), return input
  *     unchanged.
  *   - If `task_context.parent_task_id` is missing/null, fill it with the
@@ -13,7 +13,7 @@
  *   - Explicit non-empty values are NEVER overridden — manager LLM can
  *     still cross-link to a parent outside the current task chain.
  *
- *  — `resolveDispatchTaskContext` is the dispatch-boundary
+ * `resolveDispatchTaskContext` is the dispatch-boundary
  * resolver: it composes (a) the manager-turn fallback above with (b)
  * strict `TaskContextSchema` validation and (c) a hard-required
  * `parent_task_id` gate so a parent-less subagent dispatch returns
@@ -52,16 +52,16 @@ export function applyManagerTaskContextFallback(
 }
 
 /**
- *  — dispatch-boundary task_context resolver.
+ * dispatch-boundary task_context resolver.
  *
  * Composes:
- *   1. The  manager-turn fallback when `current` is non-null.
+ *   1. The an earlier revision manager-turn fallback when `current` is non-null.
  *   2. Strict `TaskContextSchema` validation.
  *   3. A hard-required `parent_task_id` gate. The canonical schema
  *      keeps `parent_task_id` `nullable().optional()` so audit/replay
  *      paths can read legacy rows; at the dispatch boundary, however,
  *      a missing parent silently breaks `manager.subagent.summary`
- *      aggregation ( push is keyed by `parent_task_id`).
+ *      aggregation (an earlier revision push is keyed by `parent_task_id`).
  *
  * Returns:
  *   - `{ ok: true, taskContext: undefined }` for text-only calls.

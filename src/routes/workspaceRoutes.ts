@@ -9,7 +9,7 @@ import { buildWorkspaceSnapshot } from "../workspaceSnapshot";
 import type { AgentThursdayAgent } from "../server";
 
 /**
- *  — `/api/workspace*` routes extracted from `server.ts`.
+ * `/api/workspace*` routes extracted from `server.ts`.
  *
  * Each handler is the verbatim body of the original `server.ts`
  * branch, lifted into its own function. Behavior preserved:
@@ -23,7 +23,7 @@ import type { AgentThursdayAgent } from "../server";
  * passes them in. Keeps `getCanonicalActiveAgentThursdayAgentStub` /
  * `DEMO_INSTANCE` out of the route module's import graph and
  * preserves the rule that `server.ts` only exports DO classes +
- * the default fetch handler ( v2 runtime fix).
+ * the default fetch handler (an earlier revision v2 runtime fix).
  *
  * Auth: gated by the `/api/*` umbrella in `server.ts`. Handlers
  * never re-check.
@@ -53,11 +53,11 @@ export async function handleApiWorkspace(
   stub: AgentThursdayAgentStub,
   registry: AgentThursdayAgentStub,
 ): Promise<Response> {
-  //  — route the message-bearing fields of the workspace
+  // route the message-bearing fields of the workspace
   // snapshot through the active context DO so `new context` /
   // `reset` visibly clears or switches the dialog after refresh.
   //
-  //  — when the request lacks `X-AgentThursday-Context-Id`,
+  // when the request lacks `X-AgentThursday-Context-Id`,
   // resolve the canonical active context via the registry pointer
   // instead of falling back to DEMO_INSTANCE. This is what makes
   // a fresh-cache browser / Discord / cron request follow the
@@ -83,26 +83,26 @@ export async function handleApiWorkspace(
     stub.getDeliverableGate(),
     stub.getPendingKanbanMutations(),
     stub.getEventLog(),
-    //  — separate query because getEventLog caps at 20 rows.
+    // separate query because getEventLog caps at 20 rows.
     stub.getLastResetAt(),
-    //  — canonical active pointer for client reconcile.
+    // canonical active pointer for client reconcile.
     registry.getActiveContextId(),
-    //  — turn-aware dialog history. Each entry pairs
+    // turn-aware dialog history. Each entry pairs
     // a user message's text with the assistant text that
     // followed it (or null if tool-only). `buildWorkspaceSnapshot`
     // matches each `task.submitted` event to a turn by
     // `userText`, so old assistants from prior rounds can never
     // be misattributed to a newer user (the 153z4 v1 bug).
-    //  — bumped from 30 → 60 turns so desktop dialog
+    // bumped from 30 → 60 turns so desktop dialog
     // can show a long enough history to align with the 60-row
     // taskSubmittedEvents window below.
     stub.getDialogTurns(60),
-    //  — independent `task.submitted` window (60 newest)
+    // independent `task.submitted` window (60 newest)
     // so the desktop summaryStream isn't capped at ~4 turns when
     // event_log is dominated by agent.woken / tool.* / channel
     // ack noise. Mobile collapses client-side regardless of length.
     stub.getRecentTaskSubmittedEvents(60),
-    //  — independent `task.reply.finalized` window (60
+    // independent `task.reply.finalized` window (60
     // newest) so `summaryStream` can prefer the warning-bearing
     // user-visible reply over the SDK message log's raw text.
     stub.getRecentFinalizedReplyEvents(60),
@@ -131,13 +131,13 @@ export async function handleApiWorkspaceFiles(
   stub: AgentThursdayAgentStub,
   searchParams: URLSearchParams,
 ): Promise<Response> {
-  //  — route through canonical active context so the
+  // route through canonical active context so the
   // workspace file listing reflects the same DO that the agent's
   // own write/list/read tools mutate. Previously hardcoded to
   // DEMO_INSTANCE: the agent wrote files into its active context
   // DO while operators inspecting via this endpoint listed an
   // unrelated registry/bootstrap DO and saw zero files
-  // (the 156l miss that surfaced when operator &  couldn't find
+  // (the 156l miss that surfaced when the operator & agentP couldn't find
   // hermes-vs-agentthursday-comparison.md).
   try {
     const list = await stub.listWorkspaceFiles(searchParams.get("path"));
@@ -151,7 +151,7 @@ export async function handleApiWorkspaceFile(
   stub: AgentThursdayAgentStub,
   searchParams: URLSearchParams,
 ): Promise<Response> {
-  //  — same fix as /api/workspace/files: read from the
+  // same fix as /api/workspace/files: read from the
   // canonical active DO so the file content matches what the
   // agent actually wrote.
   try {

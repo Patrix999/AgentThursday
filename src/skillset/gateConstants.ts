@@ -1,12 +1,12 @@
 /**
- *  — gate-runner constants extracted from `gateRunner.ts`.
+ * gate-runner constants extracted from `gateRunner.ts`.
  *
  * This module holds every runtime value that drives the gate runner's
  * behavior: target allowlist + per-target command/timeout maps, phase
  * configuration arrays, watchdog grace, prewarm map, dependency-marker
  * requirements, and bootstrap install commands.
  *
- *  invariant: values are moved byte-equivalently from
+ * an earlier revision invariant: values are moved byte-equivalently from
  * `gateRunner.ts`. No numeric/string change. Several constants and
  * type aliases that were previously module-private had to widen to
  * `export` so `gateRunner.ts` (and the later 266b/266c modules) can
@@ -18,7 +18,7 @@
  *     (e.g. `BootstrapStatus` imports `InstallStrategy` from here).
  *   - The runtime orchestrator (`runGate`), the phase runner
  *     (`runPhasedGate`), and the bootstrap helpers stay in
- *     `gateRunner.ts` until Cards 266b/266c move them.
+ *     `gateRunner.ts` until an earlier revision move them.
  */
 
 export const GATE_TARGETS = ["typecheck", "build", "test", "dry_run"] as const;
@@ -32,7 +32,7 @@ export const GATE_COMMAND_ALLOWLIST: Record<GateTarget, string> = {
 };
 
 /**
- *  — per-target hard timebox in seconds for the actual
+ * per-target hard timebox in seconds for the actual
  * gate command (the npm / wrangler invocation that runs after
  * dependency bootstrap). Hard-coded; never composed from model
  * input. Wrapped via the GNU coreutils `timeout` builtin so a
@@ -70,7 +70,7 @@ export const GATE_COMMAND_TIMEOUT_S: Record<GateTarget, number> = {
 };
 
 /**
- *  — per-phase evidence for typecheck.
+ * per-phase evidence for typecheck.
  *
  * `npm run typecheck` runs three independent `tsc --noEmit`
  * invocations (root / tui / scripts). Production showed the
@@ -85,7 +85,7 @@ export const GATE_COMMAND_TIMEOUT_S: Record<GateTarget, number> = {
  * sandbox doesn't burn timeboxes on later phases that won't
  * change the verdict.
  */
-//  — `web` is the scoped typecheck phase: `cd web && tsc --noEmit`.
+// `web` is the scoped typecheck phase: `cd web && tsc --noEmit`.
 // The fixed `TYPECHECK_PHASES` chain (diag/root/tui/scripts) covers
 // src/**/tui/**/scripts/** via the root + per-project tsconfigs; web/**
 // has its OWN tsconfig and is only type-checked by gate.build's
@@ -93,7 +93,7 @@ export const GATE_COMMAND_TIMEOUT_S: Record<GateTarget, number> = {
 // adds a `web` phase so a web-only mutation gets a fast, relevant
 // gate.typecheck instead of the slow full-repo `root` phase.
 export type GateTypecheckPhase = "diag" | "root" | "tui" | "scripts" | "web";
-//  — build gate phase breakdown. `npm run build:web` is two
+// build gate phase breakdown. `npm run build:web` is two
 // distinct steps under the hood (`tsc --noEmit && vite build` inside
 // web/); splitting them into named phases lets verifiers tell whether
 // a build failure was the type checker or the bundler.
@@ -101,7 +101,7 @@ export type GateBuildPhase = "web_tsc" | "web_vite";
 export type GatePhase = GateTypecheckPhase | GateBuildPhase;
 
 /**
- *  — fixed phase breakdown for `gate.typecheck`. Each
+ * fixed phase breakdown for `gate.typecheck`. Each
  * entry corresponds to one of the three `tsc --noEmit` invocations
  * inside `npm run typecheck`. Commands are static — never composed
  * from model input — and use the local `node_modules/.bin/tsc`
@@ -117,27 +117,26 @@ export const TYPECHECK_PHASES: ReadonlyArray<{
   command: string;
   timeout_s: number;
 }> = [
-  //  — root phase timebox 180→300s. Local cold tsc with 45
+  // root phase timebox 180→300s. Local cold tsc with 45
   // src + 262 .d.ts (skipLibCheck) is ~2.5s; production Cloudflare
   // sandbox stuck at ≥180s wallclock with 190i watchdog firing at
   // 195s. 190j production confirmed root completes at ~231s in 300s.
   //
-  //  — root phase timebox 300→450s. Production cold sandbox
+  // root phase timebox 300→450s. Production cold sandbox
   // tsc has been creeping up across deploys: 190l verifier 252s,
   // 192 acceptance 274s, 193b verifier 300s+ TIMEOUT (Version
   // 2a318fee), 193c probe 300,898ms TIMEOUT (Version 2a318fee, same
   // worker, replicated). 450s gave ~50% headroom over observed
   // cold-sandbox runs (252–305s).
   //
-  //  — root phase timebox 450→600s. 193c production rerun
+  // root phase timebox 450→600s. 193c production rerun
   // (Version e8bbe42a) showed root duration_ms=465000 / exit 124 —
   // hit the 450s budget + 15s watchdog ceiling exactly, fail-fast
-  // skipped tui/scripts. 193d investigation (see
-  // 20260508112436--193d-investigation-findings.md) confirmed
+  // skipped tui/scripts. Investigation confirmed
   // workload split is dead (server.ts is a 428KB hub, any phase
   // containing it ≈ full work) and incremental cache is fragile
   // (cwd/path-depth mismatch between bake and runtime invalidates
-  // tsbuildinfo). Per operator's call: data-driven bounded bump rather
+  // tsbuildinfo). Per the operator's call: data-driven bounded bump rather
   // than async / cache rewrite. 600s is +33% over the 450s ceiling
   // we just hit — same headroom-per-step shape as 190j (180→300,
   // +67%) and 193c (300→450, +50%) — and stays inside a single
@@ -161,17 +160,17 @@ export const TYPECHECK_PHASES: ReadonlyArray<{
   // (193d §4), not 193e=600→750. The bump is bounded by the
   // qualitative threshold of "request still feels like a gate
   // call, not a background job," which we set at 10 minutes.
-  //  — `diag` phase. Runs `tsc --noEmit --listFilesOnly`: tsc
+  // `diag` phase. Runs `tsc --noEmit --listFilesOnly`: tsc
   // resolves the program graph (config + includes + module resolution)
   // and prints every file that would be type-checked, then exits
   // WITHOUT running the binder / checker. Local baseline on cold
   // node_modules: 0:00.49 wall / 1.14s user / 194MB RSS / 389 files.
   //
   // Purpose: surface diagnostic evidence on production typecheck
-  // timeouts.  was opened after production root phase hit
-  // exit 124 / 600s on  Step 5 aggregate validation while local
+  // timeouts. an earlier revision was opened after production root phase hit
+  // exit 124 / 600s on M8.9 Step 5 aggregate validation while local
   // root tsc finishes in 2.91s — i.e. it is a sandbox-side
-  // amplification, not a local type-graph regression. operator's
+  // amplification, not a local type-graph regression. the operator's
   // directive: do NOT continue bumping the 600s root budget; instead
   // instrument so the next aggregate run produces a structured signal
   // about WHERE in the pipeline tsc is stuck.
@@ -210,7 +209,7 @@ export const TYPECHECK_PHASES: ReadonlyArray<{
   // with full type-checking will not somehow recover.
   { phase: "diag", command: "./node_modules/.bin/tsc --noEmit --listFilesOnly", timeout_s: 120 },
   { phase: "root", command: "./node_modules/.bin/tsc --noEmit", timeout_s: 600 },
-  //  — tui phase timebox 90→300s. Local cold tsc with
+  // tui phase timebox 90→300s. Local cold tsc with
   // tui/tsconfig.json scans 323 files (3 src + React + ink + Node
   // types) and runs ~0.95s warm; production timed out at 90s
   // (`duration_ms=91199`, raw exec exit 124, watchdog NOT fired —
@@ -222,8 +221,8 @@ export const TYPECHECK_PHASES: ReadonlyArray<{
   // timeouts at 300s in production, that's a strong "workload
   // optimization required" signal (open 190l/190m).
   { phase: "tui", command: "./node_modules/.bin/tsc --noEmit -p tui/tsconfig.json", timeout_s: 300 },
-  //  — scripts phase timebox 90→300s. 190k production rerun
-  // (trace `-prod-1778198009-gate1`, Version ID
+  // scripts phase timebox 90→300s. 190k production rerun
+  // (trace `card190k-prod-1778198009-gate1`, Version ID
   // `8e5ee0b9-605a-4a24-aa80-99cf80135fca`) advanced past root
   // (134221ms PASS) and tui (90401ms PASS) but scripts timed out at
   // 90s (`duration_ms=90694`, raw exec exit 124, watchdog NOT fired).
@@ -240,7 +239,7 @@ export const TYPECHECK_PHASES: ReadonlyArray<{
 ];
 
 /**
- *  — the `web` typecheck phase. Same command + timebox as
+ * the `web` typecheck phase. Same command + timebox as
  * gate.build's `web_tsc` phase (which already proves the prewarm /
  * bootstrap path for `web/node_modules`); the inner command must run
  * from inside web/ because web has its own tsconfig (see BUILD_PHASES
@@ -256,7 +255,7 @@ export const TYPECHECK_WEB_PHASE: {
 } = { phase: "web", command: "bash -c 'cd web && ./node_modules/.bin/tsc --noEmit'", timeout_s: 450 };
 
 /**
- *  — coarse scope of a single changed path, used to pick which
+ * coarse scope of a single changed path, used to pick which
  * typecheck phases are relevant after a repo mutation.
  *
  *   web     → web/**                      → `web` phase
@@ -295,7 +294,7 @@ export interface TypecheckPhaseSelection {
 }
 
 /**
- *  — pure phase selection for `gate.typecheck`. Given the
+ * pure phase selection for `gate.typecheck`. Given the
  * worktree's changed paths (e.g. from `git status --porcelain` after
  * the agent's uncommitted repo.write/repo.patch), return the relevant
  * subset of phases plus an auditable record of what was skipped and
@@ -334,7 +333,7 @@ export function selectTypecheckPhases(changedPaths: string[]): TypecheckPhaseSel
   if (scopeSet.has("src")) { selected.push(diag, root); depSubdirs.add(""); }
   if (scopeSet.has("tui")) { selected.push(tui); depSubdirs.add(""); }
   if (scopeSet.has("scripts")) { selected.push(scripts); depSubdirs.add(""); }
-  //  — web/tsconfig compiles ../src/** whose imports (zod)
+  // web/tsconfig compiles ../src/** whose imports (zod)
   // resolve from the ROOT node_modules; without the root prewarm the
   // scoped web run fails with a TS2307 'zod' cascade on a clean tree
   // (381 attempt #4, task-e20784d8).
@@ -355,8 +354,8 @@ export function selectTypecheckPhases(changedPaths: string[]): TypecheckPhaseSel
 }
 
 /**
- *  — fixed phase breakdown for `gate.build`.
- *  — data-driven bounded bump for web_tsc 300 → 450 after
+ * fixed phase breakdown for `gate.build`.
+ * data-driven bounded bump for web_tsc 300 → 450 after
  * the first production smoke showed an exact-budget timeout.
  *
  * `npm run build:web` resolves to `npm --prefix web run build`, which
@@ -380,7 +379,7 @@ export function selectTypecheckPhases(changedPaths: string[]): TypecheckPhaseSel
  *              193c-shape +50% bounded bump to 450s. Headroom-per-step
  *              precedent: 190j +67% / 193c +50% / 193d +29%.
  *
- *              195a contract (operator 5-08, Discord 100000000000000008):
+ *              195a contract (the operator 5-08, Discord 100000000000000008):
  *              if 450s still times out, do NOT bump web_tsc again —
  *              switch surface to web tsconfig / workload split (e.g.
  *              project references, exclude tests, narrower include).
@@ -398,7 +397,7 @@ export function selectTypecheckPhases(changedPaths: string[]): TypecheckPhaseSel
  *              web_tsc PASSed, that is strong "vite-specific" signal
  *              (bundler config / asset pipeline bottleneck), not a
  *              marginal-budget signal — different remediation surface,
- *              future .
+ *              a future revision.
  *
  * Each phase wraps the actual binary directly via the web subdir
  * `node_modules/.bin` (prewarmed via 190g GATE_DEP_REQUIREMENTS.build
@@ -454,7 +453,7 @@ export const BUILD_PHASES: ReadonlyArray<{
 ];
 
 /**
- *  — JS-side await watchdog grace.
+ * JS-side await watchdog grace.
  *
  * Each phase's `await exec(wrapped)` is raced against a setTimeout
  * fired at `cfg.timeout_s + PHASE_AWAIT_GRACE_S` so a non-returning
@@ -486,7 +485,7 @@ export const STDOUT_CAP = 32 * 1024;
 export const STDERR_CAP = 16 * 1024;
 
 /**
- *  — sandbox dependency prewarm. The Cloudflare sandbox
+ * sandbox dependency prewarm. The Cloudflare sandbox
  * image bakes `/opt/agentthursday/prewarm-{root,web}/node_modules` from the
  * repo's static `package.json` files at image build time so a fresh
  * checkout doesn't have to pay the cold `npm install` cost on the
@@ -567,7 +566,7 @@ export const GATE_DEP_REQUIREMENTS: Record<
 };
 
 /**
- *  / 190e / 190f — install commands tuned for the
+ * an earlier revision — install commands tuned for the
  * non-interactive sandbox.
  *
  *   --include=dev      both ci and install: ensure devDependencies
@@ -584,7 +583,7 @@ export const GATE_DEP_REQUIREMENTS: Record<
  * `npm ci`. It's deterministic and skips dependency resolution.
  *
  * 190f: when the subdir has NO tracked lockfile (the AgentThursday
- * repo's  manifest denylists `package-lock.json` so production
+ * repo's M8.0 manifest denylists `package-lock.json` so production
  * checkouts never have one), use `npm install` with
  * `--no-package-lock` so npm doesn't waste time generating /
  * writing a lockfile. This matches the clean-deploy workflow that
@@ -600,7 +599,7 @@ export const BOOTSTRAP_INSTALL_CMD_BY_STRATEGY: Record<InstallStrategy, string> 
 };
 
 /**
- *  / 190e — bootstrap install hard timebox in seconds.
+ * an earlier revision — bootstrap install hard timebox in seconds.
  * Production showed `npm install` could spend the entire 240s
  * resolving dependencies; `npm ci` skips resolution but the cold
  * download alone can still cost ~3 minutes. We bump the cap a

@@ -1,5 +1,5 @@
 /**
- *  D — canonical `agent-<uuid>` shape recogniser.
+ * an earlier revision D — canonical `agent-<uuid>` shape recogniser.
  *
  * Lives in its own tiny pure module so both `managerOps.ts` (which
  * pulls `cloudflare:workers` via the agents SDK) and

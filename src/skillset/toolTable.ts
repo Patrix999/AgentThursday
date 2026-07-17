@@ -1,5 +1,5 @@
 /**
- *  Tool table builder.
+ * M8.1 Tool table builder.
  *
  * Authority: ADR 2026-05-07 IM-4 — every loaded skillset's tools[]
  * is projected into the agent's tool table with x_* metadata used
@@ -10,9 +10,9 @@
  *
  * For tools whose contract is `implemented: false`, fabric should
  * surface them as "available but disabled" in the agent's view, OR
- * omit them entirely.  chooses to **include** all entries with
+ * omit them entirely. M8.1 chooses to **include** all entries with
  * an `x_implemented: false` flag, so agents can introspect what is
- * planned vs available; future  fabric may filter at runtime.
+ * planned vs available; future M8.2 fabric may filter at runtime.
  */
 
 import { TOOL_CONTRACTS, type ToolContract } from "./contractRegistry";

@@ -1,6 +1,6 @@
 /**
- *  — pure reader/status-side-field tests for
- * `manager.task.completed`. Mirrors 's reader test pattern.
+ * pure reader/status-side-field tests for
+ * `manager.task.completed`. Mirrors an earlier revision's reader test pattern.
  */
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
@@ -58,7 +58,7 @@ describe("deriveCompletionSideField", () => {
       row({
         payload: {
           completion_verdict: "success",
-          summary: " done",
+          summary: "task done",
           completed_at: "2026-05-27T09:30:00.000Z",
         },
       }),
@@ -67,7 +67,7 @@ describe("deriveCompletionSideField", () => {
     assert.equal(out.completion_count, 1);
     assert.equal(out.latest_verdict, "success");
     assert.equal(out.latest_completed_at, "2026-05-27T09:30:00.000Z");
-    assert.equal(out.latest_summary, " done");
+    assert.equal(out.latest_summary, "task done");
   });
 
   it("picks the last row (ASC ordered) as latest", () => {

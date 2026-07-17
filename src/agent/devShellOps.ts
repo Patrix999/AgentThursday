@@ -1,22 +1,22 @@
 /**
  * devShellOps — dev-shell read + gate + write dispatch free functions.
  *
- *  extracts the dev-shell read/gate surfaces from
- * `src/server.ts` per  preflight §2 (two-module split:
+ * an earlier revision extracts the dev-shell read/gate surfaces from
+ * `src/server.ts` per an earlier revision preflight §2 (two-module split:
  * `devShellOps.ts` for read/gate/write, `envelopeOps.ts` for
  * envelope store/finalize/sweeper/CRUD).
  *
- *  (first wave) moved five read+gate surfaces.
+ * an earlier revision (first wave) moved five read+gate surfaces. an earlier revision
  * adds the write dispatcher:
  *
- *   - `devShellDispatchFree`           — /184a read dispatcher
- *   - `devShellObservabilityCheckFree` — /187a observability inspector
- *   - `devShellGateRunFree`            —  gate runner (sync; DO agent path)
- *   - `startGateJobFree`               —  async gate kickoff (returns {job_id})
- *   - `getGateJobStatusFree`           —  trace-id keyed job polling
- *   - `devShellWriteDispatchFree`      — /193/212f write dispatcher ()
+ *   - `devShellDispatchFree`           — an earlier revision read dispatcher
+ *   - `devShellObservabilityCheckFree` — an earlier revision observability inspector
+ *   - `devShellGateRunFree`            — an earlier revision gate runner (sync; DO agent path)
+ *   - `startGateJobFree`               — an earlier revision async gate kickoff (returns {job_id})
+ *   - `getGateJobStatusFree`           — an earlier revision trace-id keyed job polling
+ *   - `devShellWriteDispatchFree`      — an earlier revision write dispatcher 
  *
- * Envelope store/finalize/sweeper/CRUD is deferred to Cards 291/292/294.
+ * Envelope store/finalize/sweeper/CRUD is deferred to an earlier revision.
  *
  * Host shape:
  *
@@ -29,10 +29,10 @@
  *
  * `startGateJobFree` calls `devShellGateRunFree(host, …)` directly
  * (NOT a server method) so the free functions don't re-enter the
- * agent surface — preserves  async-start invariant without
+ * agent surface — preserves an earlier revision async-start invariant without
  * forming a runtime cycle.
  *
- * Behavior contract ( spec §"必须保持的行为契约"):
+ * Behavior contract (an earlier revision spec §"必须保持的行为契约"):
  *
  *   - callable names/signatures, route paths, event names, payload
  *     keys, error reason strings unchanged.
@@ -41,7 +41,7 @@
  *   - `event_log.trace_id = job_id` remains the index.
  *   - `TYPECHECK_PHASES` is not touched here; root timeout not bumped.
  *   - `devShellGateRunFree` sync semantics preserved for DO-internal
- *     callers (agent tool dispatch via  auto-gate); only the
+ *     callers (agent tool dispatch via an earlier revision auto-gate); only the
  *     HTTP route uses the async-start path through `startGateJobFree`.
  */
 
@@ -89,7 +89,7 @@ export interface DevShellOpsHost {
    * `ctx.waitUntil` bound method. The Host does not surface the
    * full `DurableObjectState`; only this narrow capability is
    * needed by `startGateJobFree` to fire-and-forget background gate
-   * work without blocking the HTTP response ( invariant —
+   * work without blocking the HTTP response (an earlier revision invariant —
    * decouples production gate runs from Cloudflare's ~90s sync HTTP
    * envelope, CF error 1101).
    */
@@ -144,7 +144,7 @@ async function materializeRepoForDispatch(
 }
 
 /**
- * /184a — read-only dev-shell dispatcher. Validates input,
+ * read-only dev-shell dispatcher. Validates input,
  * materializes the repo into the dev-shell sandbox (idempotent), and
  * runs `dispatchReadTool` with workspace + sandbox backends wired in.
  * Returns the structured `DispatchResult` unchanged so callers can
@@ -173,7 +173,7 @@ export async function devShellDispatchFree(
 }
 
 /**
- * /187a — toolEvents observability + conversation_search
+ * toolEvents observability + conversation_search
  * trigger audit. Read-only inspector: pulls recent toolEvents and the
  * latest `supplier.signal.summary` (cross-check source per 178 §6.2),
  * computes the gap report, and optionally audits a query for
@@ -232,13 +232,13 @@ export function devShellObservabilityCheckFree(
 }
 
 /**
- *  — gate runner. Runs an allowlisted gate (typecheck /
+ * gate runner. Runs an allowlisted gate (typecheck /
  * build / test / dry_run) via the agentthursday-dev-shell sandbox container.
  * Emits dispatch + result/error events through `logEvent` so
  * toolEvents has the gate trace. Returns the structured `GateResult`;
  * callers (e.g. envelope wiring) fold the result into evidence.
  *
- * Sync semantics. The DO-internal  auto-gate path calls this
+ * Sync semantics. The DO-internal an earlier revision auto-gate path calls this
  * directly during a task turn (within the DO request envelope, not
  * subject to CF 1101). For HTTP, the route uses `startGateJobFree`
  * which kicks off `devShellGateRunFree` under `waitUntil` so the
@@ -260,7 +260,7 @@ export async function devShellGateRunFree(
 }
 
 /**
- *  — async gate job entry. Returns `{ job_id }` immediately;
+ * async gate job entry. Returns `{ job_id }` immediately;
  * the actual gate work runs in the background via the Host's
  * `waitUntil` so the HTTP response is not bound to gate duration.
  * Required because production `gate_typecheck` root phase exceeds
@@ -275,7 +275,7 @@ export async function devShellGateRunFree(
  *
  * Internally calls `devShellGateRunFree(host, …)` directly so the
  * free function does not re-enter the agent surface — preserves the
- *  §"free fn 内部不要回调 server method 形成循环" constraint.
+ * an earlier revision §"free fn 内部不要回调 server method 形成循环" constraint.
  */
 export function startGateJobFree(
   host: DevShellOpsHost,
@@ -317,7 +317,7 @@ export function startGateJobFree(
 }
 
 /**
- *  — poll an async gate job. Reads every `event_log` row
+ * poll an async gate job. Reads every `event_log` row
  * whose `trace_id` matches the supplied `job_id` and derives a
  * coarse status from the bracketing `gate.job.started` /
  * `gate.job.finished` / `gate.job.error` events.
@@ -328,7 +328,7 @@ export function startGateJobFree(
  *
  * The `substr(payload, 1, 4000)` cap is preserved from the original
  * implementation — large aggregate `tool.gate_<target>.result` rows
- * may surface as raw string when truncated mid-JSON.
+ * may surface as raw string when truncated mid-JSON. an earlier revision
  * verifier doc notes this as a known follow-up for harness needs
  * full aggregate payload; phase rows + `gate.job.finished` bracket
  * row provide sufficient durable evidence for status/exit/timeout.
@@ -367,7 +367,7 @@ export function getGateJobStatusFree(
   return { job_id: jobId, status, events };
 }
 
-// ──  — write dispatcher ──────────────────────────────────────
+// ── write dispatcher ──────────────────────────────────────
 //
 // Write-side surface for `devShellWriteDispatch`. Narrow Host: only the
 // capabilities the dispatcher actually needs. Cross-DO callbacks
@@ -375,7 +375,7 @@ export function getGateJobStatusFree(
 // `src/server.ts` and are surfaced here as lambdas so this module does
 // not import ChannelHub / agentNamespace specifics.
 //
-// Behavior contract ( §"必须保持的行为契约"):
+// Behavior contract (an earlier revision §"必须保持的行为契约"):
 //
 //   - supported write tool ids unchanged (`repo.write`, `repo.patch`,
 //     `repo.delete`) — enforced inside `dispatchWriteTool`.
@@ -429,22 +429,22 @@ export interface DevShellWriteHost {
     input_hash: string;
   }) => Promise<ApprovalConsumeResult>;
   /**
-   *  B — gate set by a successful `repo.prepare`. When this
+   * an earlier revision B — gate set by a successful `repo.prepare`. When this
    * returns `false`, the write dispatcher short-circuits with
    * `no_prepared_worktree` instead of attempting `ensureRepoCheckout`,
    * so agents cannot blind-write into an empty Tier-0 scratch
    * workspace. Optional for backward compatibility with hosts that
-   * predate .
+   * predate an earlier revision.
    */
   isRepoPrepared?: () => boolean;
 }
 
 /**
- * /193/212f — Developer Shell write dispatcher.
+ * Developer Shell write dispatcher.
  *
- *  routes writes into the production sandbox checkout so
+ * an earlier revision routes writes into the production sandbox checkout so
  * `repo.read` / `gate.*` see the patched files in the same workspace.
- *  layers approval-token consumption for tier-≥4 tools.
+ * an earlier revision layers approval-token consumption for tier-≥4 tools.
  *
  * Same event routing as `devShellDispatchFree` (logEvent → event_log →
  * toolEvents). Manifest path policy comes from the embedded software-dev
@@ -469,7 +469,7 @@ export async function devShellWriteDispatchFree(
     denylist: Array.isArray(safety?.path_denylist) ? safety.path_denylist : [],
   };
 
-  //  B — `no prepared worktree` gate. Reject repo.write /
+  // an earlier revision B — `no prepared worktree` gate. Reject repo.write /
   // repo.patch / repo.delete BEFORE any approval consume or
   // ensureRepoCheckout. The gate is opt-in via `host.isRepoPrepared`
   // so legacy /api/dev-shell admin endpoints that bypass the agent

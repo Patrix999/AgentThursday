@@ -1,10 +1,10 @@
 /**
- *  — adapter for `patch.validate` dynamic tool.
+ * adapter for `patch.validate` dynamic tool.
  *
- * Smallest -accessible surface that runs the  validate-only
+ * Smallest agentD-accessible surface that runs the an earlier revision validate-only
  * loop (hunk audit → `git apply --check` → isolated apply → new-file
  * EOF/line-count → optional allowlisted gate) and returns a closed
- * `PatchValidationResult`.  can submit a patch either inline
+ * `PatchValidationResult`. agentD can submit a patch either inline
  * (`patchText`) or by reference to an artifact previously written via
  * `artifact.write` (`cardId` + `filename`).
  *
@@ -18,7 +18,7 @@
  *   - Patch text is base64-transported to the sandbox so shell
  *     metachars in patch content never see shell evaluation.
  *
- * Mirrors `dev_patch_sandbox_policy.evidence_payload_fields` so the
+ * Mirrors `agentd_patch_sandbox_policy.evidence_payload_fields` so the
  * returned record matches the YAML-declared closed field set.
  */
 

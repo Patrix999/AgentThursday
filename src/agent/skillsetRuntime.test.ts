@@ -1,5 +1,5 @@
 /**
- *  — per-agent custom skillset loader sync.
+ * per-agent custom skillset loader sync.
  *
  * The cross-DO sync path exposes a host-level accessor
  * (`getExtraCustomManifests()`) that lets a per-agent DO mirror the
@@ -103,7 +103,7 @@ function fakeHost(opts: FakeHostOptions = {}): SkillsetRuntimeReadHost {
 // Tests
 // ───────────────────────────────────────────────────────────────────
 
-describe("skillsetRuntime —  per-agent custom-manifest sync", () => {
+describe("skillsetRuntime — an earlier revision per-agent custom-manifest sync", () => {
   it("extras flow into state.entries with manifests attached", () => {
     // Use a tool id that's already in STUB_KNOWN_TOOL_IDS so the
     // loader accepts the custom manifest (no v2 unknown_tool_id

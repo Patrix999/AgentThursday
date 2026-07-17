@@ -1,5 +1,5 @@
 /**
- *  — `ChannelHubAgent` schema/migration setup, extracted from
+ * `ChannelHubAgent` schema/migration setup, extracted from
  * `src/channelHub.ts` `onStart()`.
  *
  * `ensureChannelHubSchema(agent, agentthursdayDiscordBotId)` runs the additive,
@@ -92,26 +92,26 @@ export function ensureChannelHubSchema(
     )
   `;
 
-  //  —  conversation → agent live binding. Additive,
+  // M9.0 conversation → agent live binding. Additive,
   // idempotent. NULL means "unbound" (existing behavior: routePending
   // falls back to canonical active context). When set, points to an
   // agent row owned by the registry DO (stored under the legacy
   // `agent_profiles` table); no cross-DO SQL FK — validation happens
   // at set-time + route-time via RPC.
   //
-  //  — column NAME stays `active_profile_id` for storage
+  // column NAME stays `active_profile_id` for storage
   // compatibility; the VALUE it carries is the agent_id used as the
   // per-agent DO routing key. New code reads/writes the
   // `activeAgentId` field on the API; the only column-aware code is
   // here, in `getConversationBinding` / `setConversationBinding`, and
   // in the `routePending` per-row resolver call site. See
-  //
+  // docs/design/2026-05-24-m9.0-agent-centric-correction.md.
   const conversationCols = agent.sql<{ name: string }>`PRAGMA table_info(channel_conversations)`;
   if (!conversationCols.some(c => c.name === "active_profile_id")) {
     agent.sql`ALTER TABLE channel_conversations ADD COLUMN active_profile_id TEXT`;
   }
 
-  //  — additive route metadata on channel_inbox. Idempotent via
+  // additive route metadata on channel_inbox. Idempotent via
   // PRAGMA table_info check (mirrors the kanban_mutations migration in
   // AgentThursdayAgent.onStart). Existing rows get NULL until they're routed.
   const inboxCols = agent.sql<{ name: string }>`PRAGMA table_info(channel_inbox)`;
@@ -128,7 +128,7 @@ export function ensureChannelHubSchema(
     agent.sql`ALTER TABLE channel_inbox ADD COLUMN handoff_task_id TEXT`;
   }
 
-  //  — additive outbox kind + approval link.
+  // additive outbox kind + approval link.
   const outboxCols = agent.sql<{ name: string }>`PRAGMA table_info(channel_outbox)`;
   if (!outboxCols.some(c => c.name === "kind")) {
     agent.sql`ALTER TABLE channel_outbox ADD COLUMN kind TEXT NOT NULL DEFAULT 'text'`;
@@ -137,7 +137,7 @@ export function ensureChannelHubSchema(
     agent.sql`ALTER TABLE channel_outbox ADD COLUMN approval_id TEXT`;
   }
 
-  //  — channel_approvals state machine. Single-resolution semantics
+  // channel_approvals state machine. Single-resolution semantics
   // enforced by the `status` field plus the resolve callable. Payload hash
   // is stored so a payload mutation invalidates a pending approval.
   agent.sql`
@@ -164,13 +164,13 @@ export function ensureChannelHubSchema(
   `;
   agent.sql`CREATE INDEX IF NOT EXISTS idx_channel_approvals_status_at ON channel_approvals(status, created_at)`;
 
-  //  —  approval token store. Distinct from `channel_approvals`
-  // (, outbox-level reply approval) because these tokens bind a
+  // M8.5 approval token store. Distinct from `channel_approvals`
+  // (an earlier revision, outbox-level reply approval) because these tokens bind a
   // specific (agent, tool_id, input_hash) tuple for runtime tool replay
   // rather than gating an outbound message. `token_hash` is the only
   // representation of the secret persisted; raw token never lands here.
   // `reviewer_signature_hash` likewise — raw signatures are forbidden by
-  //  ADR §D5 and never written through any code path.
+  // an earlier revision ADR §D5 and never written through any code path.
   agent.sql`
     CREATE TABLE IF NOT EXISTS agent_tool_approvals (
       token_id TEXT PRIMARY KEY,
@@ -193,9 +193,9 @@ export function ensureChannelHubSchema(
   `;
   agent.sql`CREATE INDEX IF NOT EXISTS idx_agent_tool_approvals_status_at ON agent_tool_approvals(status, created_at)`;
   agent.sql`CREATE INDEX IF NOT EXISTS idx_agent_tool_approvals_agent_tool ON agent_tool_approvals(agent_id, tool_id)`;
-  //  — idempotent in-place migration for tables that pre-date
+  // idempotent in-place migration for tables that pre-date
   // the `key_id` column (any DO whose `agent_tool_approvals` was first
-  // created under /b). SQLite throws "duplicate column name"
+  // created under an earlier revision/b). SQLite throws "duplicate column name"
   // when the column already exists; treat that as success.
   try {
     agent.sql`ALTER TABLE agent_tool_approvals ADD COLUMN key_id TEXT`;
@@ -204,10 +204,10 @@ export function ensureChannelHubSchema(
     if (!/duplicate column/i.test(msg)) throw e;
   }
 
-  //  — propose-patch artifact store ( reviewer/write-boundary
+  // propose-patch artifact store (M8.6 reviewer/write-boundary
   // ADR §D4). Holds verifier-only patch proposals so an agent can surface
   // a candidate diff without writing the working tree. Apply path is NOT
-  // implemented in this card — + wires apply via approval replay.
+  // implemented in this card — an earlier revision+ wires apply via approval replay.
   // Failure modes (path-deny, redaction-violation) are fail-closed at
   // creation time and produce no row, so inspect can never leak a
   // policy-failed artifact's body.
@@ -235,7 +235,7 @@ export function ensureChannelHubSchema(
   agent.sql`CREATE INDEX IF NOT EXISTS idx_propose_patch_artifacts_status_at ON propose_patch_artifacts(status, created_at)`;
   agent.sql`CREATE INDEX IF NOT EXISTS idx_propose_patch_artifacts_agent_tool ON propose_patch_artifacts(agent_id, tool_id)`;
 
-  //  — patch apply event log. One row per apply attempt
+  // patch apply event log. One row per apply attempt
   // (success or verify-failure). Combines the event_log + outbox roles
   // for v1 — the row IS the durable evidence that an apply was
   // attempted, the verifier replays it from inspect. If 220+ requires
@@ -267,21 +267,21 @@ export function ensureChannelHubSchema(
   agent.sql`CREATE INDEX IF NOT EXISTS idx_patch_apply_events_at ON patch_apply_events(created_at)`;
   agent.sql`CREATE INDEX IF NOT EXISTS idx_patch_apply_events_artifact ON patch_apply_events(artifact_id)`;
 
-  //  — additive columns for real-dry-run evidence. SQLite has
+  // additive columns for real-dry-run evidence. SQLite has
   // no `ADD COLUMN IF NOT EXISTS`, so we attempt-and-swallow the
   // duplicate-column error. Idempotent across DO restarts.
   try { agent.sql`ALTER TABLE patch_apply_events ADD COLUMN dry_run_exit_code INTEGER`; } catch { /* already added */ }
   try { agent.sql`ALTER TABLE patch_apply_events ADD COLUMN head_sha TEXT`; } catch { /* already added */ }
 
-  //  — additive `base_sha` column on artifact rows so apply
+  // additive `base_sha` column on artifact rows so apply
   // dry-run can fail closed when the sandbox checkout HEAD has moved
   // off the tree the artifact was written against. Nullable for
   // historical compatibility (rows proposed before this card simply
   // skip the mismatch check; see `applyPatchDryRun`).
   try { agent.sql`ALTER TABLE propose_patch_artifacts ADD COLUMN base_sha TEXT`; } catch { /* already added */ }
 
-  //  — split apply event-log from outbox/evidence semantics.
-  // `patch_apply_events` stays as the immutable attempt log (+).
+  // split apply event-log from outbox/evidence semantics.
+  // `patch_apply_events` stays as the immutable attempt log .
   // `patch_apply_outbox` is the redaction-safe evidence/delivery view:
   // every event that reaches the post-validation path gets exactly one
   // outbox row referencing it (UNIQUE event_id). v1 has no external
@@ -314,9 +314,9 @@ export function ensureChannelHubSchema(
   agent.sql`CREATE INDEX IF NOT EXISTS idx_patch_apply_outbox_artifact ON patch_apply_outbox(artifact_id)`;
   agent.sql`CREATE INDEX IF NOT EXISTS idx_patch_apply_outbox_event ON patch_apply_outbox(event_id)`;
 
-  //  — one-time Discord identity self repair. Older builds set
-  // `is_self=1` for any `authorIsBot=true`, so  /  (Discord bots that
-  // talk to  but are NOT ) ended up flagged as self and got
+  // one-time Discord identity self repair. Older builds set
+  // `is_self=1` for any `authorIsBot=true`, so agentP / agentC (Discord bots that
+  // talk to agentD but are NOT agentD) ended up flagged as self and got
   // `loopback from self` ignores at the router. Reconcile against
   // AGENT_THURSDAY_DISCORD_BOT_ID, which is the only true "self" for Discord.
   // No-op when AGENT_THURSDAY_DISCORD_BOT_ID is unset (avoid clearing all selfs).

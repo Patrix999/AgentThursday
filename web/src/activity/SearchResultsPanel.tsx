@@ -6,12 +6,12 @@ type Props = {
   strategy?: string | null;
   pathPreview?: string | null;
   maxResults?: number | null;
-  //  — first matches as `file:line: text` (byte-capped).
+  // first matches as `file:line: text` (byte-capped).
   resultPreview?: string | null;
 };
 
 /**
- *  — Search results panel. v1 surfaces what was searched and
+ * Search results panel. v1 surfaces what was searched and
  * where, not the hits themselves (search hits aren't persisted in
  * `event_log`; they're returned to the agent reply directly). When
  * we later persist `tool.content_search.ok` follow-up events we can

@@ -1,7 +1,7 @@
 /**
- *  / 417 — the registry DO instance name (owns
+ * an earlier revision — the registry DO instance name (owns
  * `context_active`, agent profiles, provider credentials, and the
- *  discord_bot table). Extracted from `channelHub.ts` so the
+ * an earlier revision discord_bot table). Extracted from `channelHub.ts` so the
  * Discord gateway DO can resolve the same registry without importing
  * the whole ChannelHub module.
  */

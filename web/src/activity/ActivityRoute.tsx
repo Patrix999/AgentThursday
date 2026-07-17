@@ -6,7 +6,7 @@ import { listWorkflowRuns, type WorkflowRunRow } from "../api/workflowRuns";
 import { useAgentNameMap } from "../agents/useAgentNameMap";
 
 /**
- *  (UX W3, D3-C) — the single "what is happening" surface.
+ * an earlier revision (UX W3, D3-C) — the single "what is happening" surface.
  * Replaces the separate Agent-runs / Workflow-runs / Inspect nav
  * entries: agent runs and workflow runs live here side by side, each
  * row deep-links to its existing detail view. (The legacy /workspace,

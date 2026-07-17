@@ -1,10 +1,10 @@
 /**
- *  — `manager.task.merged` emitter pure-helper tests.
+ * `manager.task.merged` emitter pure-helper tests.
  *
  * Covers the audit-grade merge emitter contract:
  *   1. Happy path: valid refs → record + payload echo.
  *   2. Status derivation unchanged: `received → started → merged →
- *      replied` still derives `replied` ( invariant).
+ *      replied` still derives `replied` (an earlier revision invariant).
  *   3. Permission negative: cross-manager refs → permission_denied.
  *   4. Bad-ref negatives: nonexistent summary_id → summary_not_found;
  *      task_id/agent_id mismatch → ref_mismatch.
@@ -156,7 +156,7 @@ describe("emitManagerTaskMerged — happy path", () => {
   });
 });
 
-describe("manager.task.merged +  status derivation", () => {
+describe("manager.task.merged + an earlier revision status derivation", () => {
   it("does not alter terminal status when interleaved with received/started/replied", () => {
     const events: ManagerTaskEventRow[] = [
       {
@@ -319,12 +319,12 @@ describe("emitManagerTaskMerged — zero-ref legality", () => {
     assert.equal(writes.length, 1);
   });
 
-  //  — zero-ref + success is a hard validation failure.
+  // zero-ref + success is a hard validation failure.
   // Pre-376 this was silently accepted, papering over a broken
   // summary-aggregation chain (the operator saw "success" with no
   // subagent rows attached). Audit-only zero-ref merges remain legal
   // under partial / failed.
-  it("rejects zero-ref merge with verdict=success ()", async () => {
+  it("rejects zero-ref merge with verdict=success ", async () => {
     const { registry, writes } = buildRegistry([]);
     const result = await emitManagerTaskMerged(
       registry,

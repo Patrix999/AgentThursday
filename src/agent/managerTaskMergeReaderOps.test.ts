@@ -1,5 +1,5 @@
 /**
- *  — pure helpers for the merge reader/status surface.
+ * pure helpers for the merge reader/status surface.
  *
  * No DO, no env: every test feeds raw `ManagerTaskMergedRow[]` arrays
  * directly into `deriveMergeSideField` / `buildMergeReaderResponse` so

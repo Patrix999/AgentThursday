@@ -1,7 +1,7 @@
 import type { AgentLifecycleView } from "../api/agentProfiles";
 
 /**
- *  — shared lifecycle badge for `/agents` list + detail.
+ * shared lifecycle badge for `/agents` list + detail.
  *
  * Four-layer model (ADR v2):
  *   lifecycle persisted: initialized | archived | deleted_marker
@@ -74,7 +74,7 @@ function Badge(props: {
 }
 
 /**
- *  — human-readable lifecycle `reason` copy.
+ * human-readable lifecycle `reason` copy.
  *
  * Stale reasons (ADR v2 §2.2) can be comma-joined from the resolver.
  * Each is mapped to a user-facing sentence.
@@ -86,7 +86,7 @@ export function humanizeLifecycleReason(reason: string | null | undefined): stri
   const mapped = parts.map((r) => {
     const s = r.trim();
     switch (s) {
-      //  — stale reasons
+      // stale reasons
       case "task_overdue":
         return "Task overdue — check agent status";
       case "poll_failure":
@@ -119,7 +119,7 @@ export function humanizeLifecycleReason(reason: string | null | undefined): stri
 }
 
 /**
- *  — relative timestamp helper. "just now" for < 1m, otherwise
+ * relative timestamp helper. "just now" for < 1m, otherwise
  * coarse age (Xm / Xh / Xd). ISO string falls back to "—" when missing.
  */
 export function relativeTime(iso: string | null | undefined, now: Date = new Date()): string {

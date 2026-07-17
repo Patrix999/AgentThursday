@@ -15,7 +15,7 @@ const RESET_EVENT = "agentthursday:context:reset";
  * (Inspect-drawer Context tab) need the same data. Without this
  * provider they would each call `useContextInspect(true)` and run
  * separate `setInterval` loops against the same endpoint — a regression
- *  spec explicitly forbids ("Do not add another independent
+ * an earlier revision spec explicitly forbids ("Do not add another independent
  * high-frequency polling loop if existing useContextInspect or inspect
  * polling can be reused").
  *
@@ -26,7 +26,7 @@ const RESET_EVENT = "agentthursday:context:reset";
  */
 export function ContextInspectProvider({ children, enabled = true }: { children: ReactNode; enabled?: boolean }) {
   const state = useContextInspect(enabled);
-  //  — when a compact (or future reset-from-UI) lands, re-poll
+  // when a compact (or future reset-from-UI) lands, re-poll
   // immediately rather than waiting up to 12s for the interval. Both
   // events are user-triggered mutations, so a fresh fetch right after
   // is the lowest-cost way to keep the rail/panel visually consistent.

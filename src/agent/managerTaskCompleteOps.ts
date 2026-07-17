@@ -1,14 +1,13 @@
 /**
- *  —  `manager.task.completed` emitter v1.
+ * M9.1 `manager.task.completed` emitter v1.
  *
  * Structured completion-record emitter the manager calls AFTER its
- * normal `replied` terminal (and optionally a  `task_merge`
+ * normal `replied` terminal (and optionally a an earlier revision `task_merge`
  * audit-grade merge). The completion event is report/archive
- * evidence ONLY — it does NOT change the  lifecycle terminal
+ * evidence ONLY — it does NOT change the an earlier revision lifecycle terminal
  * (`replied` / `failed` are still the only terminal classes; see
  * `deriveManagerTaskStatus` `completed` case = no-op).
  *
- * Contract anchor — ``:
  *
  *   1. `parent_task_id` (required) keys `event_log.trace_id` so the
  *      completion event sits in the same task-keyed stream as
@@ -21,7 +20,7 @@
  *      prevent leaking full transcripts / secrets through completion
  *      payloads, summary is capped at `SUMMARY_BYTE_MAX` UTF-8 bytes
  *      (TextEncoder byte length — multi-byte Chinese / emoji is
- *      counted correctly per  hardening).
+ *      counted correctly per an earlier revision hardening).
  *   5. `success` completion default-REQUIRES a prior
  *      `manager.task.merged` row for the same parent_task_id. The
  *      merge precondition is checked via the registry surface
@@ -58,7 +57,7 @@ const VALID_COMPLETION_VERDICTS: ReadonlySet<CompletionVerdict> = new Set([
  * completion note in any language but small enough that callers cannot
  * paste an entire subagent transcript / secret-bearing prompt through
  * the field. Counted via `TextEncoder().encode().byteLength` so
- * multi-byte characters are charged correctly ( lesson —
+ * multi-byte characters are charged correctly (an earlier revision lesson —
  * `string.length` undercounts CJK / emoji).
  */
 export const SUMMARY_BYTE_MAX = 2000;
@@ -119,7 +118,7 @@ export interface ManagerTaskCompleteErr {
   ok: false;
   error: {
     /**
-     *  spec §"语义规则": no-merge + success rejection is
+     * an earlier revision spec §"语义规则": no-merge + success rejection is
      * surfaced as `validation_failed` (same code as shape errors).
      * Operators discriminate the two cases by the error message,
      * which always names `allow_without_merge` when the rejection
@@ -136,7 +135,7 @@ export type ManagerTaskCompleteResult =
 
 export interface ManagerTaskCompleteRegistrySurface {
   /**
-   *  reader — used here purely as a precondition probe. Empty
+   * an earlier revision reader — used here purely as a precondition probe. Empty
    * array means "no merge event for this parent" → success completes
    * are rejected unless `allow_without_merge` is set.
    */

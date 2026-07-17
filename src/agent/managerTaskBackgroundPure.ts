@@ -1,5 +1,5 @@
 /**
- *  — pure dispatch helper for `runManagerTaskBackground`.
+ * pure dispatch helper for `runManagerTaskBackground`.
  *
  * Lives in its own module (NOT inside `managerOps.ts`) so the test
  * suite can `node --import tsx --test` it without triggering the
@@ -46,7 +46,7 @@ export interface ManagerTaskBackgroundPerAgent {
       displayText?: string;
       source?: string;
       conversationId?: string;
-      //  — structured TaskContext threaded through to the DO.
+      // structured TaskContext threaded through to the DO.
       taskContext?: unknown;
     },
   ): Promise<{
@@ -63,7 +63,7 @@ export interface ManagerTaskBackgroundInput {
   text: string;
   source?: string;
   conversation_id?: string;
-  //  — optional structured TaskContext (loose-typed at this
+  // optional structured TaskContext (loose-typed at this
   // boundary so the pure helper does not import the zod-typed schema).
   task_context?: unknown;
 }
@@ -179,7 +179,7 @@ export async function runManagerTaskBackgroundPure(
       ...(input.conversation_id !== undefined
         ? { conversationId: input.conversation_id }
         : {}),
-      //  — propagate structured task_context through to the
+      // propagate structured task_context through to the
       // DO-side @callable so the subagent's first-turn user message
       // receives the `<task-context>` block.
       ...(input.task_context !== undefined

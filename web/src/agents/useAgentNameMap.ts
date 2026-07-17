@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { listAgentProfiles } from "../api/agentProfiles";
 
 /**
- *  (UX W3) — id → display-name map for replacing raw
+ * an earlier revision (UX W3) — id → display-name map for replacing raw
  * `agent-<uuid>` strings across the UI. Fail-soft: an empty map keeps
  * callers rendering the raw id.
  */

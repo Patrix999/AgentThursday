@@ -1,5 +1,5 @@
 /**
- *  — content-update fan-out tests.
+ * content-update fan-out tests.
  *
  * Tests target `managerSkillsetContentFanout.ts` rather than
  * `managerOps.ts` directly because `managerOps` imports
@@ -82,7 +82,7 @@ function makeRegistry(opts: FakeRegistryOptions): FakeRegistry {
       listCalls.push(o);
       if (opts.listThrows) throw opts.listThrows;
       const includeArchived = o.includeArchived === true;
-      //  — mirror prod: default list excludes both `archived`
+      // mirror prod: default list excludes both `archived`
       // and `deleted_marker` (ADR §2.1 tombstone is UI-invisible).
       return opts.agents.filter(
         (a) =>
@@ -105,8 +105,8 @@ function makePerAgent(opts: {
       if (opts.throws) throw opts.throws;
       return {
         profile_id: "unused",
-        custom_skillset_ids: ["-content"],
-        effective_skillset_ids: opts.effectiveIds ?? ["-content"],
+        custom_skillset_ids: ["card357b-content"],
+        effective_skillset_ids: opts.effectiveIds ?? ["card357b-content"],
         fallback_reason: null,
       };
     },
@@ -119,7 +119,7 @@ function makePerAgent(opts: {
 
 describe("357b fanoutCustomSkillsetContentRefresh", () => {
   it("fans out refresh to agents bound to the updated skillset; bypasses other agents", async () => {
-    const SKILLSET = "-content";
+    const SKILLSET = "card357b-content";
     const agentA = agentProfile("agent-A", SKILLSET);
     const agentB = agentProfile("agent-B", SKILLSET);
     const agentC = agentProfile("agent-C", "qa-reviewer-basic");
@@ -157,7 +157,7 @@ describe("357b fanoutCustomSkillsetContentRefresh", () => {
   });
 
   it("excludes archived agents from fan-out", async () => {
-    const SKILLSET = "-content";
+    const SKILLSET = "card357b-content";
     const agentLive = agentProfile("agent-live", SKILLSET);
     const agentArchived = agentProfile("agent-archived", SKILLSET, "archived");
     const resolved: string[] = [];
@@ -178,7 +178,7 @@ describe("357b fanoutCustomSkillsetContentRefresh", () => {
   });
 
   it("records per-agent refresh failure as refresh_failed and keeps other agents going", async () => {
-    const SKILLSET = "-content";
+    const SKILLSET = "card357b-content";
     const agentOk = agentProfile("agent-ok", SKILLSET);
     const agentBoom = agentProfile("agent-boom", SKILLSET);
     const reg = makeRegistry({ agents: [agentOk, agentBoom] });
@@ -216,7 +216,7 @@ describe("357b fanoutCustomSkillsetContentRefresh", () => {
   });
 
   it("records enumerate failure with phase=enumerate and skips per-agent attempts", async () => {
-    const SKILLSET = "-content";
+    const SKILLSET = "card357b-content";
     const reg = makeRegistry({
       agents: [],
       listThrows: new Error("registry list crashed"),
@@ -251,7 +251,7 @@ describe("357b fanoutCustomSkillsetContentRefresh", () => {
     });
     const result = await fanoutCustomSkillsetContentRefresh({
       stub: reg,
-      skillsetId: "-content",
+      skillsetId: "card357b-content",
       updatedAt: "2026-05-25T01:00:00.000Z",
       resolvePerAgent: async () => makePerAgent(),
     });

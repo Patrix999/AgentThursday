@@ -1,12 +1,12 @@
 /**
- *  — async manager message controller tests.
+ * async manager message controller tests.
  *
  * Targets `managerAsyncTaskController.ts` directly. The route layer
  * (`managerRoutes.ts`) cannot be imported under `node --import tsx
  * --test` because its `managerOps` import pulls partyserver →
  * cloudflare:workers. The controller is pure and accepts injected
  * registry stubs + spawn/clock factories, mirroring the
- * `managerSkillsetContentFanout` pattern from .
+ * `managerSkillsetContentFanout` pattern from an earlier revision.
  *
  * Covers spec §"Focused tests":
  *   - async POST returns `received` without awaiting reply
@@ -355,17 +355,17 @@ function readerStub(events: ManagerTaskEventRow[]): ReadManagerTaskEventsSurface
     async readManagerTaskEvents() {
       return events;
     },
-    //  — stub the new merged-events surface as empty so the
+    // stub the new merged-events surface as empty so the
     // pre-372 status tests continue to assert `status` derivation
-    // without the side field colliding. 's own tests live
+    // without the side field colliding. an earlier revision's own tests live
     // in `managerTaskMergeReaderOps.test.ts` and the dedicated
     // status-with-merge tests below.
     async readManagerTaskMergedEvents() {
       return [];
     },
-    //  — stub the completion-events surface as empty so
+    // stub the completion-events surface as empty so
     // pre-378 status tests continue to assert `status` derivation
-    // without the side field colliding. 's own reader tests
+    // without the side field colliding. an earlier revision's own reader tests
     // live in `managerTaskCompleteReaderOps.test.ts`.
     async readManagerTaskCompletedEvents() {
       return [];
@@ -523,7 +523,7 @@ describe("handleManagerTaskStatus", () => {
   });
 });
 
-//  — merge side field on the status endpoint.
+// merge side field on the status endpoint.
 //
 // Asserts:
 //   - default no-merge side field surfaces `merged: false` + zero counts
@@ -532,7 +532,7 @@ describe("handleManagerTaskStatus", () => {
 //     derived `status` (still `replied` / `in_progress` / `unknown`)
 //   - the multi-row latest derives from the newest merge row
 //   - malformed merge payload is fail-soft (no throw + null verdict)
-describe("handleManagerTaskStatus —  merge side field", () => {
+describe("handleManagerTaskStatus — an earlier revision merge side field", () => {
   const now = new Date("2026-05-25T12:00:00.000Z");
 
   function readerStubWithMerges(
@@ -739,5 +739,81 @@ describe("handleManagerTaskStatus —  merge side field", () => {
     assert.equal(body.merge.latest_verdict, null);
     assert.equal(body.merge.latest_merged_at, "2026-05-25T11:59:30.000Z");
     assert.equal(body.merge.subagent_count, 0);
+  });
+});
+
+// ── manager message dispatch ownership (leak assertions) ───────
+function makeOwnerScopedRegistry(
+  owners: Record<string, string>,
+): AsyncMessageRegistryStub & { recorded: RecordedEvent[] } {
+  const recorded: RecordedEvent[] = [];
+  return {
+    recorded,
+    async readAgentProfile(id, identity) {
+      const owner = owners[id];
+      if (owner === undefined) return null;
+      if (!identity || identity.kind === "admin") return { id };
+      return identity.userId === owner ? { id } : null;
+    },
+    async recordManagerTaskEvent(type, payload, taskId) {
+      recorded.push({ type, payload, taskId });
+    },
+  };
+}
+
+describe("manager message dispatch ownership", () => {
+  const BOB_AGENT = "agent-11111111-1111-1111-1111-111111111111";
+
+  it("cross-tenant message is rejected (404, no received event, no spawn)", async () => {
+    const reg = makeOwnerScopedRegistry({ [BOB_AGENT]: "user-bob" });
+    const spy = spawnSpy();
+    const outcome = await handleAsyncManagerMessage(
+      reg,
+      { agent_id: BOB_AGENT, text: "hi" },
+      {
+        mintTaskId: () => fixedTaskId,
+        now: () => fixedNow,
+        spawnBackground: spy.deps.spawnBackground,
+        identity: { kind: "user", userId: "user-alice" },
+      },
+    );
+    assert.equal(outcome.kind, "rejected");
+    if (outcome.kind !== "rejected") return;
+    assert.equal(outcome.httpStatus, 404);
+    assert.equal(outcome.body.error.code, "target_not_found");
+    assert.equal(reg.recorded.length, 0);
+    assert.equal(spy.calls.length, 0);
+  });
+
+  it("owner can message their own agent (accepted)", async () => {
+    const reg = makeOwnerScopedRegistry({ [BOB_AGENT]: "user-bob" });
+    const spy = spawnSpy();
+    const outcome = await handleAsyncManagerMessage(
+      reg,
+      { agent_id: BOB_AGENT, text: "hi" },
+      {
+        mintTaskId: () => fixedTaskId,
+        now: () => fixedNow,
+        spawnBackground: spy.deps.spawnBackground,
+        identity: { kind: "user", userId: "user-bob" },
+      },
+    );
+    assert.equal(outcome.kind, "accepted");
+  });
+
+  it("admin can message any tenant's agent (accepted)", async () => {
+    const reg = makeOwnerScopedRegistry({ [BOB_AGENT]: "user-bob" });
+    const spy = spawnSpy();
+    const outcome = await handleAsyncManagerMessage(
+      reg,
+      { agent_id: BOB_AGENT, text: "hi" },
+      {
+        mintTaskId: () => fixedTaskId,
+        now: () => fixedNow,
+        spawnBackground: spy.deps.spawnBackground,
+        identity: { kind: "admin" },
+      },
+    );
+    assert.equal(outcome.kind, "accepted");
   });
 });

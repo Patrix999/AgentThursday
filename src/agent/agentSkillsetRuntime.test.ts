@@ -274,7 +274,7 @@ describe("agentSkillsetRuntime — resolveEffectiveSkillset", () => {
 });
 
 // ───────────────────────────────────────────────────────────────────
-//  §Required 6 — boundary tests at the dynamic-tool mapper.
+// an earlier revision §Required 6 — boundary tests at the dynamic-tool mapper.
 //
 // The resolver tests above prove the closure math. These prove that
 // the closure is actually consulted where it matters: at
@@ -304,9 +304,12 @@ describe("agentSkillsetRuntime — describeDynamicToolBindings allowedSkillsetId
     "artifact.write",
     "artifact.read",
     "artifact.list",
-    "localdoc.convert_text",
-    "skillset.runtime_summary",
-    "admin.smoke",
+    // manager.* (kept skillset) — replaced fyimd.convert_text /
+    // skillset.runtime_summary / admin.smoke, whose skillsets were removed
+    // 2026-06-17 (skillsets-as-data cleanup).
+    "manager.agent_list",
+    "manager.skillset_list",
+    "manager.skillset_create",
     "patch.validate",
   ]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -330,9 +333,13 @@ describe("agentSkillsetRuntime — describeDynamicToolBindings allowedSkillsetId
     assert.ok(toolIds.has("artifact.write"));
     assert.ok(toolIds.has("artifact.read"));
     assert.ok(toolIds.has("artifact.list"));
-    assert.ok(toolIds.has("localdoc.convert_text"));
-    assert.ok(toolIds.has("skillset.runtime_summary"));
-    assert.ok(toolIds.has("admin.smoke"));
+    // Tools from other kept skillsets (manager). The previously-asserted
+    // fyimd.convert_text / skillset.runtime_summary / admin.smoke belonged to
+    // external-publishing / runtime-inspector-basic / directed-validation, all
+    // removed 2026-06-17 (skillsets-as-data cleanup).
+    assert.ok(toolIds.has("manager.agent_list"));
+    assert.ok(toolIds.has("manager.skillset_list"));
+    assert.ok(toolIds.has("manager.skillset_create"));
     const skillsetIds = new Set(all.map(b => b.skillset_id));
     assert.ok(skillsetIds.size > 1, `expected >1 skillset_id, got ${skillsetIds.size}`);
   });
@@ -354,10 +361,10 @@ describe("agentSkillsetRuntime — describeDynamicToolBindings allowedSkillsetId
     assert.ok(toolIds.has("artifact.write"));
     assert.ok(toolIds.has("artifact.read"));
     assert.ok(toolIds.has("artifact.list"));
-    // Tools owned by other loaded skillsets must be absent.
-    assert.ok(!toolIds.has("localdoc.convert_text"));
-    assert.ok(!toolIds.has("skillset.runtime_summary"));
-    assert.ok(!toolIds.has("admin.smoke"));
+    // Tools owned by other loaded skillsets (manager) must be absent.
+    assert.ok(!toolIds.has("manager.agent_list"));
+    assert.ok(!toolIds.has("manager.skillset_list"));
+    assert.ok(!toolIds.has("manager.skillset_create"));
   });
 
   it("§Required 6 third bullet: allowedSkillsetIds=∅ exposes zero tools (no-callable-surface state)", () => {

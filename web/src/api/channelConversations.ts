@@ -1,7 +1,7 @@
 /**
- *  — recent channel conversations for the create-form binding
+ * recent channel conversations for the create-form binding
  * picker. Reads the already-existing `GET /api/channel/snapshot`
- * ( added `recentConversations`) — no new backend route.
+ * (an earlier revision added `recentConversations`) — no new backend route.
  */
 import { authHeaders, clearSecret } from "../auth/secret";
 

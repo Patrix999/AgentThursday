@@ -1,25 +1,25 @@
 /**
- *  ContentHub — `ContentHubAgent` Durable Object.
+ * M7.4 ContentHub — `ContentHubAgent` Durable Object.
  *
- *  added: registry skeleton, types, hardcoded `agentthursday-github`,
+ * an earlier revision added: registry skeleton, types, hardcoded `agentthursday-github`,
  *                 static `getSources` callable.
- *  adds:  GitHub-backed `read` + `list` callables, revision-pinned
+ * an earlier revision adds:  GitHub-backed `read` + `list` callables, revision-pinned
  *                 DO SQLite cache, secret redaction on read results.
  *
- *  still does NOT implement (per ADR +  §Out of scope):
- *   - `content_search` / GitHub Code Search ()
- *   - R2 large-blob storage ()
- *   - OAuth / `CredentialProvider` abstraction ( — ADR §14 Q4)
- *   - Audit / inspect surface ()
+ * an earlier revision still does NOT implement (per ADR + an earlier revision §Out of scope):
+ *   - `content_search` / GitHub Code Search 
+ *   - R2 large-blob storage 
+ *   - OAuth / `CredentialProvider` abstraction (ADR §14 Q4)
+ *   - Audit / inspect surface 
  *   - External writes / push / commit / PR
  *   - LLM tool registration — done in `AgentThursdayAgent.getTools()` in server.ts
  *
- * Boundary rationale ( ADR §1, §4): kept as its own DO so external
+ * Boundary rationale (M7.4 ADR §1, §4): kept as its own DO so external
  * Content Source state (registry, cache, audit) does not leak into
  * AgentThursdayAgent.event_log or Tier 0 workspace storage.
  */
 
-import { Agent, unstable_callable as callable } from "agents";
+import { Agent, unstable_callable as callable, getAgentByName, type AgentNamespace } from "agents";
 import type {
   ContentRef,
   ContentRevision,
@@ -33,13 +33,15 @@ import type {
   ContentListResult,
   ContentError,
   ContentSource,
+  ContentSourceWithHealth,
+  ContentCaller,
   ContentAuditSummary,
   ContentAuditByTrace,
   ContentAuditBySource,
   ContentAuditByOperation,
   ContentAuditOperationCounts,
 } from "./schema";
-import { HARDCODED_REGISTRY, listSources, type ListSourcesInput } from "./contentRegistry";
+import { HARDCODED_REGISTRY, listSources, staticHealth, type ListSourcesInput } from "./contentRegistry";
 import {
   checkPath,
   redactSecrets,
@@ -52,12 +54,28 @@ import {
   GithubContentError,
   DEFAULT_READ_MAX_BYTES,
   HARD_READ_MAX_BYTES,
+  type GithubRepo,
 } from "./githubContentConnector";
 import {
   localFsList,
   localFsRead,
   LocalFsContentError,
 } from "./localFsContentConnector";
+import { canAccessSource, tokenPlanForSource } from "./contentSourceAccess";
+import {
+  ensureUserContentSourceTable,
+  insertUserContentSource,
+  getUserContentSourceById,
+  listUserContentSourcesByOwner,
+  deleteUserContentSourceRow,
+  type UserContentSourceRow,
+  type UserContentSourceSqlTag,
+} from "./agent/userContentSourceOps";
+import { DEMO_INSTANCE } from "./demoConstants";
+import type { RequestIdentity } from "./agent/requestIdentity";
+// Type-only — erased at build, so NO runtime import cycle (server.ts imports
+// THIS module at runtime; this back-reference is purely for the RPC stub type).
+import type { AgentThursdayAgent } from "./server";
 
 // Single-tenant default; matches AgentThursdayAgent / ChannelHubAgent convention.
 export const CONTENT_HUB_INSTANCE = "agentthursday-dev";
@@ -65,7 +83,7 @@ export const CONTENT_HUB_INSTANCE = "agentthursday-dev";
 // LRU cache caps. Best-effort; eviction runs after every cache write.
 const CACHE_MAX_ROWS = 100;
 
-//  — audit log caps.
+// audit log caps.
 const AUDIT_MAX_ROWS = 500;
 const AUDIT_PREVIEW_MAX = 120;
 
@@ -92,6 +110,7 @@ type ContentReadCallableInput = {
   path: string;
   ref?: string;
   maxBytes?: number;
+  offset?: number;
 };
 
 type ContentListCallableInput = {
@@ -101,7 +120,7 @@ type ContentListCallableInput = {
 };
 
 type ContentSearchCallableInput = {
-  //  — exactly one of `sourceId` (single) or `sourceIds` (fan-out)
+  // exactly one of `sourceId` (single) or `sourceIds` (fan-out)
   // must be set. Server-side route validates via Zod refinement; the DO
   // callable trusts that contract and treats both-undefined or both-set as
   // a `bad-input` error to keep the LLM tool path equally fail-loud.
@@ -114,7 +133,7 @@ type ContentSearchCallableInput = {
   maxResults?: number;
 };
 
-//  bounded-local caps. Conservative on purpose: the strategy is a
+// an earlier revision bounded-local caps. Conservative on purpose: the strategy is a
 // degraded fallback meant to confirm coverage exists, not to power high-fan-out
 // repository scans. Any caller asking for more should retry with `api-search`
 // once GitHub Code Search quota refills.
@@ -127,6 +146,75 @@ const BOUNDED_LOCAL_PREVIEW_MAX = 200;
 
 function findSource(sourceId: string): ContentSource | null {
   return HARDCODED_REGISTRY.find(s => s.id === sourceId) ?? null;
+}
+
+// BYO source ids (2026-06-27) — short, non-secret, copy-reliable. A 36-char
+// UUID is unreliable for an LLM agent to reproduce verbatim from memory: it
+// intermittently flips a char or truncates the id, which then reads as
+// `source-not-found` and (worse) drives a retry-loop that burns the turn's step
+// budget. 40 bits of Crockford-base32 (8 chars, ambiguous I/L/O/U dropped) is
+// far easier to copy correctly, still unguessable, and collision-checked at the
+// call site. Tenant isolation does NOT rely on id secrecy (owner-scoped at the
+// SQL layer) — this only needs enough entropy to avoid accidental collisions.
+const SOURCE_ID_ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz";
+function newUserSourceId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(5)); // 40 bits → 8 chars
+  let value = 0, bits = 0, out = "";
+  for (const b of bytes) {
+    value = (value << 8) | b;
+    bits += 8;
+    while (bits >= 5) {
+      bits -= 5;
+      out += SOURCE_ID_ALPHABET[(value >>> bits) & 31];
+    }
+    value &= (1 << bits) - 1;
+  }
+  return `usrc-${out}`;
+}
+
+// Recovery-oriented reason for an unknown source id (2026-06-27). When an agent
+// names a source id that doesn't resolve, the usual cause is a mis-copied /
+// truncated id (see newUserSourceId). A bare "unknown source" invites the agent
+// to retry the SAME bad id, which burns the turn's step budget; this reason
+// tells it to re-list via content_sources and copy the id verbatim instead.
+function unknownSourceReason(sourceId: string): string {
+  return `unknown source: ${sourceId} — not a registered source id. Do NOT retry this id. Call content_sources to list the exact ids you can access and copy the id verbatim (don't retype it from memory).`;
+}
+
+// BYO GitHub (2026-06-26) — content_* caller with no resolved owner: deny
+// everything beyond tenant-public fixtures. The legitimate tool path always
+// passes a real resolved owner; this default only guards a phantom caller (e.g.
+// a @callable invoked without the arg) — it must NOT default to operator.
+const FAIL_CLOSED_CALLER: ContentCaller = { ownerUserId: null, isOperator: false };
+
+// Secrets a user must never read even out of their OWN repo (defense-in-depth on
+// top of the connector's gh*-token redaction). Personal sources carry no
+// allowedPaths (whole repo readable — see checkPath), only these denials.
+const PERSONAL_DENIED_PATHS = [".git", ".env", ".dev.vars", ".wrangler", "node_modules"];
+
+// A stored personal (BYO) source row → the in-memory ContentSource the rest of
+// ContentHub already understands. `owner_user_id` is the tenant-isolation key.
+function personalRowToContentSource(row: UserContentSourceRow): ContentSource {
+  return {
+    id: row.source_id,
+    provider: "github",
+    label: row.label ?? row.repo,
+    scope: "personal",
+    access: "read",
+    authMode: "secret",
+    owner_user_id: row.owner_user_id,
+    defaultRef: row.default_ref ?? undefined,
+    deniedPaths: PERSONAL_DENIED_PATHS,
+    capabilities: { read: true, list: true, search: true, health: true },
+  };
+}
+
+// Parse the stored "owner/repo" into the connector's GithubRepo. null on a
+// malformed value → the caller surfaces `no-repo-mapping` (never a silent fetch).
+function parsePersonalRepo(row: UserContentSourceRow): GithubRepo | null {
+  const parts = row.repo.split("/");
+  if (parts.length !== 2 || parts[0].length === 0 || parts[1].length === 0) return null;
+  return { owner: parts[0], repo: parts[1], defaultRef: row.default_ref ?? "main" };
 }
 
 function preview(s: string | undefined | null, max = AUDIT_PREVIEW_MAX): string | null {
@@ -170,7 +258,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
   async onStart(props?: unknown): Promise<void> {
     await super.onStart(props as Record<string, unknown> | undefined);
 
-    //  — revision-pinned content cache. Key = (source_id, path,
+    // revision-pinned content cache. Key = (source_id, path,
     // revision_key, result_kind). LRU eviction by `last_access_at`. No TTL
     // (ADR §6: TTL is the偷懒 path; revision-pinned keys self-invalidate
     // when ref changes).
@@ -189,7 +277,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     `;
     this.sql`CREATE INDEX IF NOT EXISTS idx_content_cache_lru ON content_cache(last_access_at)`;
 
-    //  — structured audit log for ContentHub access. Row shape
+    // structured audit log for ContentHub access. Row shape
     // mirrors AgentThursdayAgent.event_log (event_type, payload-JSON, created_at,
     // trace_id) so reviewers can scan ContentHub access via /api/inspect
     // alongside tool/* events. `trace_id` is nullable: v1 doesn't yet thread
@@ -205,10 +293,162 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
       )
     `;
     this.sql`CREATE INDEX IF NOT EXISTS idx_audit_log_at ON audit_log(created_at)`;
+
+    // BYO GitHub (2026-06-26) — owner-scoped per-user (BYO) content sources.
+    ensureUserContentSourceTable(this._userContentHost());
+  }
+
+  // ── BYO GitHub — owner-scoped source resolution + token gate ─────────────
+
+  private _userContentHost(): { sql: UserContentSourceSqlTag } {
+    return { sql: this.sql.bind(this) as unknown as UserContentSourceSqlTag };
   }
 
   /**
-   *  — append a structured audit entry. Best-effort: on serialize or
+   * Resolve a source id to its ContentSource + GithubRepo, from the hardcoded
+   * registry (operator `project` + `fixture`) FIRST, then the owner-scoped
+   * personal (BYO) store. `null` = unknown id (callers surface `source-not-found`).
+   * Resolution alone grants NOTHING — `_accessDenial` (canAccessSource) is the
+   * access gate and `_resolveTokenForSource` is the credential gate.
+   */
+  private _resolveSource(sourceId: string): { source: ContentSource; repo: GithubRepo | null } | null {
+    const hard = findSource(sourceId);
+    if (hard) return { source: hard, repo: getRepoForSource(hard.id) };
+    const row = getUserContentSourceById(this._userContentHost(), sourceId);
+    if (row) return { source: personalRowToContentSource(row), repo: parsePersonalRepo(row) };
+    return null;
+  }
+
+  /**
+   * Access gate (which source ids a caller may name) — shared by list/read/
+   * search single-mode. Returns the denial error code, or null when allowed OR
+   * when the id is unknown (deferred to `_do*` for a uniform `source-not-found`).
+   * A foreign tenant's PERSONAL source is hidden as `source-not-found` (don't
+   * leak that another user registered it); an operator-internal `project` source
+   * stays the existing `forbidden-source`.
+   */
+  private _accessDenial(
+    sourceId: string,
+    caller: ContentCaller,
+  ): { code: "forbidden-source" | "source-not-found"; reason: string } | null {
+    const resolved = this._resolveSource(sourceId);
+    if (resolved === null) return null;
+    const access = canAccessSource({
+      scope: resolved.source.scope,
+      sourceOwnerId: resolved.source.owner_user_id ?? null,
+      callerOwnerId: caller.ownerUserId,
+      isOperator: caller.isOperator,
+    });
+    if (access.allow) return null;
+    if (resolved.source.scope === "personal") {
+      return { code: "source-not-found", reason: unknownSourceReason(sourceId) };
+    }
+    return { code: "forbidden-source", reason: "operator-internal content source not available to this tenant" };
+  }
+
+  /**
+   * THE CATASTROPHIC GATE — whose credential reads a source's bytes. The ONLY
+   * place `env.GITHUB_TOKEN` is read (the `project` branch). A `personal` (BYO)
+   * source resolves its token EXCLUSIVELY from its OWNER's encrypted
+   * `user_provider_credential('github')` (reuses the registry's
+   * `getProviderCredentialSecret`, the same decrypt path getModel uses, owner
+   * passed as an explicit RPC arg — an earlier revision proved that crosses); absent →
+   * hard `token-missing`; NEVER falls back to the env token (that has broad
+   * private-repo access — a fallback would let a user read someone else's repo
+   * through operator creds). Any other scope → `token-missing`, never env.
+   *
+   * Defense-in-depth behind `canAccessSource`: the token is fetched for the
+   * SOURCE's owner, and only when the verified caller IS that owner.
+   */
+  private async _resolveTokenForSource(
+    source: ContentSource,
+    callerOwnerId: string | null,
+  ): Promise<{ ok: true; token: string } | { ok: false; error: ContentError }> {
+    // The env-vs-owner-vs-none DECISION is the pure, unit-tested `tokenPlanForSource`
+    // (never env for a personal source). This method only EXECUTES the plan.
+    const plan = tokenPlanForSource({ scope: source.scope, sourceOwnerId: source.owner_user_id, callerOwnerId });
+    if (plan.source === "env") {
+      const token = this.env.GITHUB_TOKEN;
+      if (!token) return { ok: false, error: { code: "token-missing", reason: "GITHUB_TOKEN env not set", sourceId: source.id } };
+      return { ok: true, token };
+    }
+    if (plan.source === "owner-credential") {
+      try {
+        const registry = await getAgentByName<Env, AgentThursdayAgent>(
+          this.env.AgentThursdayAgent as unknown as AgentNamespace<AgentThursdayAgent>,
+          DEMO_INSTANCE,
+        );
+        const row = await registry.getProviderCredentialSecret({ provider: "github" }, { kind: "user", userId: plan.ownerUserId });
+        if (row && typeof row.api_key === "string" && row.api_key.length > 0) {
+          return { ok: true, token: row.api_key };
+        }
+      } catch {
+        /* fall through to token-missing — NEVER env fallback for a user source */
+      }
+      return { ok: false, error: { code: "token-missing", reason: "no github credential configured for this source's owner", sourceId: source.id } };
+    }
+    return { ok: false, error: { code: "token-missing", reason: plan.reason, sourceId: source.id } };
+  }
+
+  // ── BYO GitHub — owner-scoped registration (Unit 3) ──────────────────────
+  /**
+   * Register a personal (BYO) GitHub content source for the CALLER. The owner is
+   * server-stamped from the resolved `identity` — NEVER from client input — and the
+   * `source_id` is server-generated, unguessable, and never reused (so it can't
+   * shadow a hardcoded source or collide across tenants). Registration is for
+   * scoped users only (admin uses project sources). The PAT itself is stored
+   * separately in the registry's owner-scoped `user_provider_credential('github')`.
+   */
+  @callable()
+  registerUserContentSource(
+    input: { repo: string; label?: string | null; default_ref?: string | null },
+    identity?: RequestIdentity,
+  ): { ok: true; source_id: string } | { ok: false; code: string; message: string } {
+    const owner = identity !== undefined && identity.kind === "user" ? identity.userId : null;
+    if (owner === null) {
+      return { ok: false, code: "registration_requires_user", message: "content source registration requires a scoped user identity" };
+    }
+    const repo = typeof input.repo === "string" ? input.repo.trim() : "";
+    const parts = repo.split("/");
+    if (parts.length !== 2 || parts[0].length === 0 || parts[1].length === 0) {
+      return { ok: false, code: "invalid_repo", message: "repo must be in 'owner/repo' form" };
+    }
+    const sourceId = newUserSourceId();
+    if (findSource(sourceId) !== null || getUserContentSourceById(this._userContentHost(), sourceId) !== null) {
+      return { ok: false, code: "id_collision", message: "generated id collided; retry" };
+    }
+    insertUserContentSource(this._userContentHost(), {
+      source_id: sourceId,
+      owner_user_id: owner,
+      provider: "github",
+      repo,
+      default_ref: input.default_ref ?? null,
+      label: input.label ?? null,
+    }, new Date().toISOString());
+    this.logAudit("content.source.registered", { sourceId: preview(sourceId), owner: preview(owner), repoPreview: preview(repo) });
+    return { ok: true, source_id: sourceId };
+  }
+
+  /**
+   * Remove one of the CALLER's own personal sources. Owner-scoped at the SQL
+   * level (`deleteUserContentSourceRow` only deletes a row owned by `owner`), so a
+   * user can never delete another tenant's source even by guessing its id. Also
+   * purges any cached bytes for the id.
+   */
+  @callable()
+  deleteUserContentSource(input: { source_id: string }, identity?: RequestIdentity): { ok: boolean } {
+    const owner = identity !== undefined && identity.kind === "user" ? identity.userId : null;
+    if (owner === null) return { ok: false };
+    const removed = deleteUserContentSourceRow(this._userContentHost(), input.source_id, owner);
+    if (removed) {
+      this.sql`DELETE FROM content_cache WHERE source_id = ${input.source_id}`;
+      this.logAudit("content.source.deleted", { sourceId: preview(input.source_id), owner: preview(owner) });
+    }
+    return { ok: removed };
+  }
+
+  /**
+   * append a structured audit entry. Best-effort: on serialize or
    * sql failure the operation is swallowed (per spec: audit must NOT break
    * the underlying content op). Caller is responsible for ensuring `payload`
    * already contains only safe fields — this helper does no further redaction.
@@ -241,7 +481,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — recent ContentHub audit events for /api/inspect. Newest-first.
+   * recent ContentHub audit events for /api/inspect. Newest-first.
    * Defaults to 100 rows; capped at the table's AUDIT_MAX_ROWS.
    */
   @callable()
@@ -259,10 +499,10 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — aggregated evidence-pack summary over the audit_log. Three
+   * aggregated evidence-pack summary over the audit_log. Three
    * pivot views (byTraceId / bySourceId / byOperation) computed from already-
    * redacted audit row metadata. NO raw content, NO hit previews, NO token —
-   * the audit rows themselves are the safe-only source of truth ().
+   * the audit rows themselves are the safe-only source of truth .
    *
    * Best-effort: any individual row that fails to JSON-parse is skipped, not
    * propagated. Aggregation never throws — caller (`/api/inspect`) can rely
@@ -444,26 +684,53 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     };
   }
 
-  // ───  — source registry listing ────────────────────────────────
+  // ─── source registry listing ────────────────────────────────
   /**
    * List registered content sources. v1 returns hardcoded `agentthursday-github`.
    * Delegates to `listSources` in `contentRegistry.ts`.
    */
   @callable()
-  async getSources(input?: ListSourcesInput, traceId: string | null = null): Promise<ContentSourcesResponse> {
+  async getSources(input?: ListSourcesInput, traceId: string | null = null, caller: ContentCaller = FAIL_CLOSED_CALLER): Promise<ContentSourcesResponse> {
     const startedAt = Date.now();
-    const result = listSources(input);
+    const includeHealth = input?.includeHealth !== false;
+    const listed = listSources(input);
+    // a scoped caller never even SEES operator-internal `project`
+    // sources (filtered from discovery so the agent can't learn the private repo
+    // exists). canAccessSource is the single source of truth for visibility.
+    const hardcoded = listed.sources.filter(s =>
+      canAccessSource({
+        scope: s.source.scope,
+        sourceOwnerId: s.source.owner_user_id ?? null,
+        callerOwnerId: caller.ownerUserId,
+        isOperator: caller.isOperator,
+      }).allow,
+    );
+    // BYO GitHub — plus the caller's OWN personal (BYO) sources (owner-scoped
+    // store; never another tenant's). Honors the `sourceId` filter like listSources.
+    const personalRows = caller.ownerUserId !== null
+      ? listUserContentSourcesByOwner(this._userContentHost(), caller.ownerUserId)
+      : [];
+    const personal: ContentSourceWithHealth[] = personalRows
+      .filter(r => !input?.sourceId || r.source_id === input.sourceId)
+      .map(r => {
+        const source = personalRowToContentSource(r);
+        return includeHealth ? { source, health: staticHealth(source) } : { source };
+      });
+    const result: ContentSourcesResponse = { sources: [...hardcoded, ...personal] };
     this.logAudit("content.sources", {
       ok: true,
       sourceIdFilter: input?.sourceId ? preview(input.sourceId) : null,
-      includeHealth: input?.includeHealth ?? true,
+      includeHealth,
       resultCount: result.sources.length,
+      personalCount: personal.length,
+      isOperator: caller.isOperator,
+      callerOwnerId: preview(caller.ownerUserId),
       latencyMs: Date.now() - startedAt,
     }, traceId);
     return result;
   }
 
-  // ───  — GitHub-backed list ─────────────────────────────────────
+  // ─── GitHub-backed list ─────────────────────────────────────
   /**
    * List a directory in a content source. For `agentthursday-github`:
    *   - empty path → synthetic top-level (registry-derived, no network)
@@ -472,13 +739,18 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
    * Returns `{ ok: false, error }` for path-policy / GitHub failures so
    * the API endpoint and tool wrapper can forward without try/catch.
    *
-   *  — public wrapper appends a `content.list` audit row to the DO
-   * audit_log. The inner `_doList` keeps the original  logic unchanged.
+   * public wrapper appends a `content.list` audit row to the DO
+   * audit_log. The inner `_doList` keeps the original an earlier revision logic unchanged.
    */
   @callable()
-  async list(input: ContentListCallableInput, traceId: string | null = null): Promise<ContentListResponse> {
+  async list(input: ContentListCallableInput, traceId: string | null = null, caller: ContentCaller = FAIL_CLOSED_CALLER): Promise<ContentListResponse> {
     const startedAt = Date.now();
-    const response = await this._doList(input);
+    const denial = this._accessDenial(input.sourceId, caller);
+    if (denial) {
+      this.logAudit("content.list", { ok: false, sourceId: preview(input.sourceId), errorCode: denial.code, isOperator: caller.isOperator, callerOwnerId: preview(caller.ownerUserId), latencyMs: Date.now() - startedAt }, traceId);
+      return { ok: false, error: { code: denial.code, reason: denial.reason, sourceId: input.sourceId } };
+    }
+    const response = await this._doList(input, caller.ownerUserId);
     this.logAudit("content.list", {
       ok: response.ok,
       sourceId: preview(input.sourceId),
@@ -494,12 +766,13 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     return response;
   }
 
-  private async _doList(input: ContentListCallableInput): Promise<ContentListResponse> {
-    const source = findSource(input.sourceId);
-    if (!source) {
-      return { ok: false, error: { code: "source-not-found", reason: `unknown source: ${input.sourceId}`, sourceId: input.sourceId } };
+  private async _doList(input: ContentListCallableInput, callerOwnerId: string | null): Promise<ContentListResponse> {
+    const resolved = this._resolveSource(input.sourceId);
+    if (!resolved) {
+      return { ok: false, error: { code: "source-not-found", reason: unknownSourceReason(input.sourceId), sourceId: input.sourceId } };
     }
-    //  v2  — Local-fs provider branch. No network, no token,
+    const { source, repo } = resolved;
+    // M7.4 v2 Local-fs provider branch. No network, no token,
     // content-hash revision; everything else (path safety, audit shape,
     // ContentRef provenance) stays uniform with GitHub via the shared
     // ContentSourceConnector contract.
@@ -517,14 +790,15 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     if (source.provider !== "github") {
       return { ok: false, error: { code: "no-repo-mapping", reason: `provider not implemented: ${source.provider}`, sourceId: source.id } };
     }
-    const repo = getRepoForSource(source.id);
     if (!repo) {
       return { ok: false, error: { code: "no-repo-mapping", reason: `no repo binding for source`, sourceId: source.id } };
     }
 
-    // Top-level synthetic listing — derived from registry, no network call.
+    // Top-level listing. For the operator repo this is a synthetic,
+    // registry-derived listing (no network); a personal (BYO) source has no
+    // registry allow-list, so its top-level is a REAL root fetch (path "").
     const isTopLevel = input.path === "" || input.path === "/";
-    if (isTopLevel) {
+    if (isTopLevel && source.scope !== "personal") {
       return {
         ok: true,
         result: {
@@ -543,18 +817,18 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
       };
     }
 
-    // Path policy.
-    const policy = checkPath(source, input.path);
+    // Path policy. Personal top-level ("" or "/") fetches the repo root.
+    const pathForPolicy = isTopLevel ? "" : input.path;
+    const policy = checkPath(source, pathForPolicy);
     if (!policy.ok) {
       return { ok: false, error: { code: policy.code, reason: policy.reason, sourceId: source.id, path: input.path } };
     }
     const normalized = policy.normalized;
 
-    // Token.
-    const token = this.env.GITHUB_TOKEN;
-    if (!token) {
-      return { ok: false, error: { code: "token-missing", reason: "GITHUB_TOKEN env not set", sourceId: source.id } };
-    }
+    // Token (chokepoint): project → env; personal → owner's own github cred.
+    const tok = await this._resolveTokenForSource(source, callerOwnerId);
+    if (!tok.ok) return { ok: false, error: tok.error };
+    const token = tok.token;
 
     const ref = input.ref ?? source.defaultRef ?? repo.defaultRef;
 
@@ -611,7 +885,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     return { ok: true, result };
   }
 
-  // ───  — GitHub-backed read ─────────────────────────────────────
+  // ─── GitHub-backed read ─────────────────────────────────────
   /**
    * Read a single file in a content source. Always:
    *   - rejects denied/unsafe paths before any network call
@@ -620,14 +894,19 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
    *   - applies high-confidence secret redaction (PEM = whole-file refusal)
    *   - returns `cacheStatus: "hit" | "miss"` and provenance
    *
-   *  — public wrapper appends a `content.read` audit row. The inner
-   * `_doRead` keeps the original  logic unchanged. Audit payload
+   * public wrapper appends a `content.read` audit row. The inner
+   * `_doRead` keeps the original an earlier revision logic unchanged. Audit payload
    * deliberately excludes content; only metadata fields are recorded.
    */
   @callable()
-  async read(input: ContentReadCallableInput, traceId: string | null = null): Promise<ContentReadResponse> {
+  async read(input: ContentReadCallableInput, traceId: string | null = null, caller: ContentCaller = FAIL_CLOSED_CALLER): Promise<ContentReadResponse> {
     const startedAt = Date.now();
-    const response = await this._doRead(input);
+    const denial = this._accessDenial(input.sourceId, caller);
+    if (denial) {
+      this.logAudit("content.read", { ok: false, sourceId: preview(input.sourceId), errorCode: denial.code, isOperator: caller.isOperator, callerOwnerId: preview(caller.ownerUserId), latencyMs: Date.now() - startedAt }, traceId);
+      return { ok: false, error: { code: denial.code, reason: denial.reason, sourceId: input.sourceId } };
+    }
+    const response = await this._doRead(input, caller.ownerUserId);
     this.logAudit("content.read", {
       ok: response.ok,
       sourceId: preview(input.sourceId),
@@ -646,12 +925,13 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     return response;
   }
 
-  private async _doRead(input: ContentReadCallableInput): Promise<ContentReadResponse> {
-    const source = findSource(input.sourceId);
-    if (!source) {
-      return { ok: false, error: { code: "source-not-found", reason: `unknown source: ${input.sourceId}`, sourceId: input.sourceId } };
+  private async _doRead(input: ContentReadCallableInput, callerOwnerId: string | null): Promise<ContentReadResponse> {
+    const resolved = this._resolveSource(input.sourceId);
+    if (!resolved) {
+      return { ok: false, error: { code: "source-not-found", reason: unknownSourceReason(input.sourceId), sourceId: input.sourceId } };
     }
-    //  v2  — Local-fs provider branch. Synchronous in-process
+    const { source, repo } = resolved;
+    // M7.4 v2 Local-fs provider branch. Synchronous in-process
     // fixture lookup; no network, no token, content-hash revision. Honors
     // the shared ContentReadResponse contract so audit shape stays uniform.
     if (source.provider === "local-fs") {
@@ -668,7 +948,6 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     if (source.provider !== "github") {
       return { ok: false, error: { code: "no-repo-mapping", reason: `provider not implemented: ${source.provider}`, sourceId: source.id } };
     }
-    const repo = getRepoForSource(source.id);
     if (!repo) {
       return { ok: false, error: { code: "no-repo-mapping", reason: `no repo binding for source`, sourceId: source.id } };
     }
@@ -679,12 +958,15 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     }
     const normalized = policy.normalized;
 
-    const token = this.env.GITHUB_TOKEN;
-    if (!token) {
-      return { ok: false, error: { code: "token-missing", reason: "GITHUB_TOKEN env not set", sourceId: source.id } };
-    }
+    // Token (chokepoint): project → env; personal → owner's own github cred.
+    const tok = await this._resolveTokenForSource(source, callerOwnerId);
+    if (!tok.ok) return { ok: false, error: tok.error };
+    const token = tok.token;
 
     const maxBytes = clampMaxBytes(input.maxBytes);
+    // 2026-06-29 — windowed/paginated read. offset>0 reads bytes [offset, offset+maxBytes)
+    // and bypasses the (offset-agnostic) cache so windows aren't conflated.
+    const offset = Math.max(0, Math.floor(input.offset ?? 0));
     const ref = input.ref ?? source.defaultRef ?? repo.defaultRef;
 
     let sha: string;
@@ -701,19 +983,23 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     // smaller maxBytes hit on a cached larger payload is acceptable since
     // we re-truncate after read; a larger maxBytes after a smaller
     // truncated cached entry should re-fetch (handled below).
-    const cached = this.sql<CacheRow>`
+    const cached = offset === 0 ? this.sql<CacheRow>`
       SELECT * FROM content_cache
       WHERE source_id = ${source.id}
         AND path = ${normalized}
         AND revision_key = ${revisionKey}
         AND result_kind = 'read'
-    `;
+    ` : [];
     if (cached.length > 0) {
       const stored = JSON.parse(cached[0].result_json) as ContentReadResult;
       // If the cached payload was truncated and the caller is asking for
       // more bytes than we have, re-fetch. Otherwise return the cache hit.
       const cachedBytes = stored.truncatedBytes ?? stored.size;
-      const needsRefetch = !!stored.truncated && maxBytes > cachedBytes;
+      // Refetch if the cache holds fewer bytes than the caller now wants (was
+      // truncated + bigger ask) OR MORE bytes than the requested window (a
+      // smaller windowed read must not be served a larger cached payload —
+      // 2026-06-29 pagination; also self-heals pre-pagination whole-file caches).
+      const needsRefetch = (!!stored.truncated && maxBytes > cachedBytes) || cachedBytes > maxBytes;
       if (!needsRefetch) {
         const now = Date.now();
         this.sql`
@@ -733,10 +1019,10 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
       }
     }
 
-    // Network fetch.
+    // Network fetch (windowed: bytes [offset, offset+maxBytes)).
     let raw;
     try {
-      raw = await fetchRawFile(repo, sha, normalized, token, maxBytes);
+      raw = await fetchRawFile(repo, sha, normalized, token, maxBytes, offset);
     } catch (e) {
       return { ok: false, error: ghErrorToContentError(e, source.id, normalized) };
     }
@@ -744,6 +1030,18 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     // Secret redaction. PEM private keys cause whole-file refusal; other
     // patterns are inline-replaced with offset metadata.
     const { content, redactions, refusedWholeFile } = redactSecrets(raw.content);
+
+    // 2026-06-29 — pagination continuation hints so a model can page a large
+    // file without loading it whole. remainingLines is APPROXIMATE (estimated
+    // from this window's bytes-per-line).
+    const bytesReturned = raw.bytesReturned;
+    const nextOffset = offset + bytesReturned;
+    const remainingBytes = Math.max(0, raw.size - nextOffset);
+    const hasMore = raw.truncated === true && remainingBytes > 0;
+    const windowLines = content.length === 0 ? 0 : content.split("\n").length;
+    const remainingLines = hasMore && bytesReturned > 0
+      ? Math.round(remainingBytes / (bytesReturned / Math.max(1, windowLines)))
+      : 0;
 
     const result: ContentReadResult = {
       ref: buildRef({ sourceId: source.id, path: normalized, sha, ref, cacheStatus: "miss" }),
@@ -753,15 +1051,19 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
       ...(raw.truncated ? { truncated: true } : {}),
       ...(raw.truncatedBytes !== undefined ? { truncatedBytes: raw.truncatedBytes } : {}),
       ...(redactions.length > 0 ? { redactions } : {}),
+      offset,
+      bytesReturned,
+      ...(hasMore ? { hasMore: true, nextOffset, remainingBytes, remainingLines } : { hasMore: false }),
     };
 
     // Cache-as-stored should be the redacted form so future reads never
     // serve raw secrets. PEM-refused content is also cached as the refusal
     // marker; if upstream rotates the file, the next ref change invalidates
-    // this entry naturally.
-    this.cachePut(source.id, normalized, revisionKey, "read", result, raw.size);
+    // this entry naturally. Only the offset=0 window is cached (the cache key
+    // is offset-agnostic; caching a non-zero window would mis-serve offset=0).
+    if (offset === 0) this.cachePut(source.id, normalized, revisionKey, "read", result, raw.size);
 
-    // Audit-relevant marker (for ): emit a noop log line so it's
+    // Audit-relevant marker (for an earlier revision): emit a noop log line so it's
     // grep-able in production logs without surfacing secret offsets.
     if (refusedWholeFile) {
       console.warn(`[contenthub] PEM-refusal: source=${source.id} path=${normalized.slice(0, 80)}`);
@@ -770,7 +1072,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     return { ok: true, result };
   }
 
-  // ───  — search (api-search default, bounded-local opt-in) ──────
+  // ─── search (api-search default, bounded-local opt-in) ──────
   /**
    * Literal search over an external Content Source.
    *
@@ -784,18 +1086,18 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
    *     Always returns `searchMode:"degraded-grep"`, `searchCoverage:"partial"`,
    *     `searchedPaths`, and `omittedReason` — even on zero hits.
    *
-   * Out of scope (per ): semantic / vector / multi-source / regex.
+   * Out of scope (per an earlier revision): semantic / vector / multi-source / regex.
    *
-   *  — public wrapper appends a `content.search` audit row. The inner
-   * `_doSearch` keeps the original  logic unchanged. The audit payload
+   * public wrapper appends a `content.search` audit row. The inner
+   * `_doSearch` keeps the original an earlier revision logic unchanged. The audit payload
    * intentionally excludes hit previews to avoid duplicating result content;
    * only counts and metadata are recorded.
    */
   @callable()
-  async search(input: ContentSearchCallableInput, traceId: string | null = null): Promise<ContentSearchResponse> {
+  async search(input: ContentSearchCallableInput, traceId: string | null = null, caller: ContentCaller = FAIL_CLOSED_CALLER): Promise<ContentSearchResponse> {
     const startedAt = Date.now();
 
-    //  — `sourceId` ⊕ `sourceIds` mutual exclusion. The HTTP route's
+    // `sourceId` ⊕ `sourceIds` mutual exclusion. The HTTP route's
     // Zod refinement enforces this at request boundary; the DO callable also
     // enforces it so cross-DO callers (LLM tool wrapper) can't bypass.
     const hasSingle = typeof input.sourceId === "string" && input.sourceId.length > 0;
@@ -818,8 +1120,18 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
       return response;
     }
 
+    // an earlier revision + BYO — gate by source access. Single mode is denied outright;
+    // multi mode drops inaccessible sources from the fan-out below.
     if (hasSingle) {
-      // Single-source mode —  behavior preserved verbatim.
+      const denial = this._accessDenial(input.sourceId!, caller);
+      if (denial) {
+        this.logAudit("content.search", { ok: false, mode: "single", sourceId: preview(input.sourceId!), queryPreview: preview(input.query), errorCode: denial.code, isOperator: caller.isOperator, callerOwnerId: preview(caller.ownerUserId), latencyMs: Date.now() - startedAt }, traceId);
+        return { ok: false, error: { code: denial.code, reason: denial.reason, sourceId: input.sourceId } };
+      }
+    }
+
+    if (hasSingle) {
+      // Single-source mode — an earlier revision behavior preserved verbatim.
       const response = await this._doSearch({
         sourceId: input.sourceId!,
         query: input.query,
@@ -827,7 +1139,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
         ref: input.ref,
         strategy: input.strategy,
         maxResults: input.maxResults,
-      });
+      }, caller.ownerUserId);
       this.logAudit("content.search", {
         ok: response.ok,
         mode: "single",
@@ -849,9 +1161,25 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
       return response;
     }
 
-    //  — multi-source fan-out mode.
-    const sourceIds = input.sourceIds!;
-    const perSource = await this._doSearchMulti(sourceIds, input);
+    // multi-source fan-out mode.
+    // an earlier revision + BYO — drop sources this caller may not access (operator-internal
+    // `project` for a tenant, or another tenant's `personal`); keep UNKNOWN ids so
+    // the fan-out reports per-source `source-not-found`. If none remain, refuse.
+    const sourceIds = input.sourceIds!.filter(id => {
+      const resolved = this._resolveSource(id);
+      if (resolved === null) return true;
+      return canAccessSource({
+        scope: resolved.source.scope,
+        sourceOwnerId: resolved.source.owner_user_id ?? null,
+        callerOwnerId: caller.ownerUserId,
+        isOperator: caller.isOperator,
+      }).allow;
+    });
+    if (sourceIds.length === 0) {
+      this.logAudit("content.search", { ok: false, mode: "multi", queryPreview: preview(input.query), errorCode: "forbidden-source", isOperator: caller.isOperator, callerOwnerId: preview(caller.ownerUserId), latencyMs: Date.now() - startedAt }, traceId);
+      return { ok: false, error: { code: "forbidden-source", reason: "content source(s) not available to this tenant", sourceId: input.sourceIds!.join(",") } };
+    }
+    const perSource = await this._doSearchMulti(sourceIds, input, caller.ownerUserId);
 
     // Aggregate audit metadata. Per spec: source 数量 / sourceId previews+counts /
     // per-source hits count / per-source error code / latency. NO raw snippets,
@@ -900,11 +1228,11 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — fan-out dispatch. For each requested sourceId, in parallel:
+   * fan-out dispatch. For each requested sourceId, in parallel:
    *   - registry lookup (source-not-found → per-source error)
    *   - capability gate (`capabilities.search === false` → per-source
    *     `capability-not-supported`; explicit, NOT silent skip)
-   *   - else delegate to `_doSearch` (single-source flow, includes
+   *   - else delegate to `_doSearch` (single-source flow, includes an earlier revision
    *     api-search/bounded-local strategies + GitHub auth/quota mapping)
    *
    * Returns an array of `ContentSearchPerSourceState` preserving caller
@@ -915,20 +1243,22 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
   private async _doSearchMulti(
     sourceIds: string[],
     input: ContentSearchCallableInput,
+    callerOwnerId: string | null,
   ): Promise<ContentSearchPerSourceState[]> {
     const perSourcePromises = sourceIds.map<Promise<ContentSearchPerSourceState>>(async sourceId => {
       const startedAt = Date.now();
-      const source = findSource(sourceId);
-      if (!source) {
+      const resolved = this._resolveSource(sourceId);
+      if (!resolved) {
         return {
           sourceId,
           ok: false,
           errorCode: "source-not-found",
-          reason: `unknown source: ${sourceId}`,
+          reason: unknownSourceReason(sourceId),
           latencyMs: Date.now() - startedAt,
         };
       }
-      //  capability gate. local-fs declares `search:false`; honest
+      const source = resolved.source;
+      // an earlier revision capability gate. local-fs declares `search:false`; honest
       // refusal here keeps "not-supported" out of `_doSearch` where
       // capability-vs-implementation distinctions get muddled.
       if (source.capabilities && source.capabilities.search !== true) {
@@ -948,7 +1278,7 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
         ref: input.ref,
         strategy: input.strategy,
         maxResults: input.maxResults,
-      });
+      }, callerOwnerId);
       const elapsedMs = Date.now() - startedAt;
       if (sub.ok) {
         return {
@@ -977,24 +1307,24 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   // Internal narrow input: `_doSearch` always operates on a single resolved
-  // sourceId ( contract).  fan-out (`_doSearchMulti`)
+  // sourceId (an earlier revision contract). an earlier revision fan-out (`_doSearchMulti`)
   // synthesizes one of these per source.
-  private async _doSearch(input: { sourceId: string; query: string; path?: string; ref?: string; strategy?: "api-search" | "bounded-local"; maxResults?: number }): Promise<ContentSearchResponse> {
-    const source = findSource(input.sourceId);
-    if (!source) {
-      return { ok: false, error: { code: "source-not-found", reason: `unknown source: ${input.sourceId}`, sourceId: input.sourceId } };
+  private async _doSearch(input: { sourceId: string; query: string; path?: string; ref?: string; strategy?: "api-search" | "bounded-local"; maxResults?: number }, callerOwnerId: string | null): Promise<ContentSearchResponse> {
+    const resolved = this._resolveSource(input.sourceId);
+    if (!resolved) {
+      return { ok: false, error: { code: "source-not-found", reason: unknownSourceReason(input.sourceId), sourceId: input.sourceId } };
     }
+    const { source, repo } = resolved;
     if (source.provider !== "github") {
       return { ok: false, error: { code: "no-repo-mapping", reason: `search not implemented for provider: ${source.provider}`, sourceId: source.id } };
     }
-    const repo = getRepoForSource(source.id);
     if (!repo) {
       return { ok: false, error: { code: "no-repo-mapping", reason: `no repo binding for source`, sourceId: source.id } };
     }
-    const token = this.env.GITHUB_TOKEN;
-    if (!token) {
-      return { ok: false, error: { code: "token-missing", reason: "GITHUB_TOKEN env not set", sourceId: source.id } };
-    }
+    // Token (chokepoint): project → env; personal → owner's own github cred.
+    const tok = await this._resolveTokenForSource(source, callerOwnerId);
+    if (!tok.ok) return { ok: false, error: tok.error };
+    const token = tok.token;
     const ref = input.ref ?? source.defaultRef ?? repo.defaultRef;
     const maxResults = Math.max(1, Math.min(100, input.maxResults ?? 30));
     const strategy = input.strategy ?? "api-search";
@@ -1211,8 +1541,8 @@ export class ContentHubAgent extends Agent<Env, Record<string, never>> {
     }
   }
 
-  // Test/inspect helper — returns the current cache row count.  may
-  // promote this to a richer inspect surface; for  it lets the
+  // Test/inspect helper — returns the current cache row count. an earlier revision may
+  // promote this to a richer inspect surface; for an earlier revision it lets the
   // smoke verify cache hits.
   @callable()
   async getCacheStats(): Promise<{ rows: number }> {

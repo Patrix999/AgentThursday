@@ -15,13 +15,15 @@ import { ManualRoute } from "./manual/ManualRoute";
 import ModelsRoute from "./models/ModelsRoute";
 import SettingsRoute from "./settings/SettingsRoute";
 import ActivityRoute from "./activity/ActivityRoute";
+import { SharedFileRoute } from "./shared/SharedFileRoute";
+import { UsersRoute } from "./users/UsersRoute";
 
 export function App() {
   return (
     <BrowserRouter>
       <SecretGate>
         <Routes>
-          {/* 2026-06-15 (operator) — restore Dashboard as landing (Wave 3 IA reverted). */}
+          {/* 2026-06-15 (the operator) — restore Dashboard as landing (Wave 3 IA reverted). */}
           <Route path="/" element={<DashboardRoute />} />
           <Route path="/dashboard" element={<DashboardRoute />} />
           <Route path="/workspace" element={<Workspace />} />
@@ -37,8 +39,12 @@ export function App() {
           <Route path="/skillsets/:id" element={<SkillsetDetailRoute />} />
           <Route path="/models" element={<ModelsRoute />} />
           <Route path="/settings" element={<SettingsRoute />} />
-          {/*  (UX W3, D3-C) — unified Activity view (kept reachable by URL). */}
+          {/* 2026-06-22 — console user management (admin-only app_user CRUD). */}
+          <Route path="/users" element={<UsersRoute />} />
+          {/* an earlier revision (UX W3, D3-C) — unified Activity view (kept reachable by URL). */}
           <Route path="/activity" element={<ActivityRoute />} />
+          {/* 2026-06-19 — shared workspace file viewer (share_file link target). */}
+          <Route path="/shared/:id" element={<SharedFileRoute />} />
           <Route path="*" element={<DashboardRoute />} />
         </Routes>
       </SecretGate>

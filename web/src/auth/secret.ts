@@ -1,15 +1,15 @@
 /**
- * web client side of 's `X-AgentThursday-Secret` contract.
+ * web client side of an earlier revision's `X-AgentThursday-Secret` contract.
  *
  * Stored in localStorage so a refresh keeps you logged in. Cleared on 401.
  *
- *   — `X-AgentThursday-Context-Id` header carries the active
+ * M7.7v3 `X-AgentThursday-Context-Id` header carries the active
  * context for per-context DO routing. Stored in localStorage so the UI
  * remembers the active context across reloads. Cleared via
  * `clearActiveContextId()` if needed.
  *
- *  — `agentthursday.activeAgentPin.id` records the user's explicit
- * selector pick (a cloud `agent_id`, which per  equals the DO
+ * `agentthursday.activeAgentPin.id` records the user's explicit
+ * selector pick (a cloud `agent_id`, which per an earlier revision equals the DO
  * name). When set, `useWorkspace` suppresses the canonical-pointer
  * reconcile so the pick isn't reverted to whatever the server registry
  * thinks is canonical. The pin and `agentthursday.contextId` carry the same
@@ -83,7 +83,7 @@ export function authHeaders(): Record<string, string> {
 }
 
 /**
- *  — user's explicit selector pick. When non-null, the
+ * user's explicit selector pick. When non-null, the
  * `useWorkspace` reconcile skips revert-to-canonical-pointer so the
  * pick is sticky across polls until the user changes it (or the
  * pinned agent disappears from the list).

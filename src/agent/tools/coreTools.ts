@@ -1,15 +1,15 @@
 /**
- *  —  `getTools()` family extraction step 4: core
+ * M8.9 `getTools()` family extraction step 4: core
  * lifecycle family C (`review_project_status`, `write_checkpoint`,
  * `review_note`, `advance_kanban_card`).
  *
- * Per  preflight §4 split order this is the fourth step — the
+ * Per an earlier revision preflight §4 split order this is the fourth step — the
  * first family that touches `sql` (3 INSERTs) + `setAgentThursdayState`
  * mutation (4×). `advance_kanban_card` also sets `needsApproval: true`,
  * which gates the tool behind a human-approval prompt — this flag must
  * survive the move unchanged.
  *
- *  §3 sketched `CoreToolHost = { sql, logEvent, getSafeState,
+ * an earlier revision §3 sketched `CoreToolHost = { sql, logEvent, getSafeState,
  * setAgentThursdayState }`. Implementation adds two read-only callbacks that
  * the inline closures actually need:
  *
@@ -25,7 +25,7 @@
  * shapes, SQL INSERT targets and column ordering, the
  * `needsApproval: true` flag on `advance_kanban_card`, and the
  * `ActionResult` outcomes are preserved verbatim from
- * `src/server.ts:932-983` (pre-).
+ * `src/server.ts:932-983` (pre-an earlier revision).
  */
 
 import { tool } from "ai";
@@ -51,7 +51,7 @@ export interface CoreToolHost {
   getAgentThursdayState: () => AgentThursdayState;
   setAgentThursdayState: (next: AgentThursdayState) => void;
   /**
-   * Bounded knowledge digest (). Returned by
+   * Bounded knowledge digest . Returned by
    * `review_project_status` to the model.
    */
   readKnowledge: () => string;
@@ -100,7 +100,7 @@ export function buildCoreTools(host: CoreToolHost) {
     advance_kanban_card: tool({
       description: "推进当前 kanban 卡，记录推进结果（需要人类确认）",
       inputSchema: z.object({
-        card_ref: z.string().describe("卡片引用，如 "),
+        card_ref: z.string().describe("卡片引用，如 card-55"),
         description: z.string().describe("推进描述"),
         diff_hint: z.string().describe("预期修改提示"),
       }),

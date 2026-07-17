@@ -1,5 +1,5 @@
 /**
- *  —  Skillset Management UI client.
+ * M9.0 Skillset Management UI client.
  *
  * Read-only wrappers around four existing inspect / runtime / options
  * endpoints. No new persistence, no mutation surface — see the card
@@ -14,7 +14,7 @@
  *
  * Auth is the umbrella `X-AgentThursday-Secret` (via `authHeaders()`); on 401
  * we clear the secret and notify `SecretGate` — same pattern as the
- *  agent-profiles client.
+ * an earlier revision agent-profiles client.
  */
 import { authHeaders, clearSecret } from "../auth/secret";
 
@@ -107,9 +107,9 @@ async function authedGet<T>(url: string): Promise<T | null> {
 }
 
 export async function getSkillsetOptions(): Promise<SkillsetOption[] | null> {
-  // Reuses `/api/agent-profiles/options` () rather than adding
+  // Reuses `/api/agent-profiles/options`  rather than adding
   // a new "list selectable skillsets" endpoint. The options payload is
-  // the canonical "selectable for new cloud agents" set per .
+  // the canonical "selectable for new cloud agents" set per an earlier revision.
   const data = await authedGet<{
     skillsets: SkillsetOption[];
   }>("/api/agent-profiles/options");
@@ -130,8 +130,56 @@ export async function getSkillsetTools(
   return authedGet<SkillsetToolsResponse>(`/api/inspect/skillset/tools${qs}`);
 }
 
+// ── Edit (Stage 2) — read the full editable manifest + save via PATCH ──────
+
+export interface ManagerSkillsetRead {
+  status: string;
+  source: "embedded" | "custom";
+  loader_status: string;
+  rejected_reason?: string;
+  skillset: {
+    id: string;
+    name: string;
+    description: string;
+    version: string;
+    manifest: unknown;
+    created_at?: string;
+    updated_at?: string;
+  };
+}
+
+/** GET /api/manager/skillsets/:id — full manifest (the editable shape). */
+export async function getManagerSkillset(id: string): Promise<ManagerSkillsetRead | null> {
+  return authedGet<ManagerSkillsetRead>(`/api/manager/skillsets/${encodeURIComponent(id)}`);
+}
+
+/** PATCH /api/manager/skillsets/:id — owner-scoped update (admin edits system rows). */
+export async function updateManagerSkillset(
+  id: string,
+  manifest: unknown,
+): Promise<{ ok: boolean; status: number; errorCode?: string; errorMessage?: string }> {
+  const res = await fetch(`/api/manager/skillsets/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ manifest }),
+  });
+  if (res.status === 401) {
+    clearSecret();
+    window.dispatchEvent(new Event("agentthursday:unauthorized"));
+    return { ok: false, status: 401, errorCode: "auth.required" };
+  }
+  let data: { error?: { code?: string; message?: string }; code?: string; message?: string } | null = null;
+  try { data = await res.json(); } catch { /* non-JSON */ }
+  return {
+    ok: res.ok,
+    status: res.status,
+    errorCode: data?.error?.code ?? data?.code,
+    errorMessage: data?.error?.message ?? data?.message,
+  };
+}
+
 export async function getSkillsetRuntime(): Promise<SkillsetRuntimeSummary | null> {
-  // Routes through the canonical active AgentThursdayAgent () so the
+  // Routes through the canonical active AgentThursdayAgent  so the
   // summary reflects loaded / disabled / rejected ids and agent_tools
   // for the active agent — which is exactly what the active-agent
   // context strip needs to show on the skillsets UI.

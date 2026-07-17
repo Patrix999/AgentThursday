@@ -85,7 +85,7 @@ describe("computeManagerTruthfulnessDrift — manager-tier drift detection", () 
   });
 
   it("ignores observed tools outside the watched list", () => {
-    // `recall` is in 's KNOWN_TOOL_NAMES but not in the manager
+    // `recall` is in an earlier revision's KNOWN_TOOL_NAMES but not in the manager
     // watched list. It must not appear in observed_tool_ids and must
     // not affect drift detection.
     const reply = "I called manager.agent_list.";
@@ -101,7 +101,7 @@ describe("computeManagerTruthfulnessDrift — manager-tier drift detection", () 
 
   it("claims of non-watched tools do not register", () => {
     // `recall` is not in the watched list — a claim of it must not
-    // produce a drift entry.  still handles `recall` via its
+    // produce a drift entry. an earlier revision still handles `recall` via its
     // separate gate.
     const reply = "I called `recall` and saw nothing relevant.";
     const out = computeManagerTruthfulnessDrift(
@@ -129,7 +129,7 @@ describe("computeManagerTruthfulnessDrift — manager-tier drift detection", () 
     assert.deepEqual(out.observed_tool_ids, ["write"]);
   });
 
-  it("negation in the same sentence is not a claim ( parity)", () => {
+  it("negation in the same sentence is not a claim (an earlier revision parity)", () => {
     const reply =
       "I did not call manager.skillset_create — there was nothing to make.";
     const out = computeManagerTruthfulnessDrift(

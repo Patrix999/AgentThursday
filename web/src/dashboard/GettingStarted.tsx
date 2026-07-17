@@ -4,7 +4,7 @@ import { authHeaders } from "../auth/secret";
 import { listAgentProfiles } from "../api/agentProfiles";
 
 /**
- *  (UX W2) — getting-started checklist. Steps check off from
+ * an earlier revision (UX W2) — getting-started checklist. Steps check off from
  * live config state so a new operator always sees the next action.
  * Hidden once everything is done.
  */

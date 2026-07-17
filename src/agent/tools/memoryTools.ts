@@ -1,15 +1,15 @@
 /**
- *  —  `getTools()` family extraction step 5: memory
+ * M8.9 `getTools()` family extraction step 5: memory
  * family E (`remember`, `recall`).
  *
- * Per  preflight §4 split order this is the fifth step — two
+ * Per an earlier revision preflight §4 split order this is the fifth step — two
  * tools wrapping the `rememberMemory` / `recallMemory` @callable
  * methods on `AgentThursdayAgent`. The wrappers do **not** emit any events of
  * their own — `rememberMemory()` internally emits `tool.memory.remember`
  * and `recall` is a pure passthrough. Behavior must stay byte-equal.
  *
- *  ack identity stays on `AgentThursdayAgent` as
- * `_currentTaskRememberAck`.  §3 risk 2 left two options for
+ * an earlier revision ack identity stays on `AgentThursdayAgent` as
+ * `_currentTaskRememberAck`. an earlier revision §3 risk 2 left two options for
  * how the inline `this._currentTaskRememberAck = ackText` assignment
  * survives the extraction; this card picks **option (b)** — the Host
  * exposes `setRememberAck(ack)` and the agent owns the field. Keeps the
@@ -17,10 +17,10 @@
  * into the Host surface.
  *
  * Tool names, descriptions, Zod input schemas, `rememberMemory` /
- * `recallMemory` invocation shape, the  ack format (`已记
+ * `recallMemory` invocation shape, the an earlier revision ack format (`已记
  * 下：…` + whitespace collapse + 200-char slice), and the
  * `lastActionResult` mutation shape are preserved verbatim from
- * `src/server.ts:1058-1106` (pre-).
+ * `src/server.ts:1058-1106` (pre-an earlier revision).
  */
 
 import { tool } from "ai";
@@ -50,9 +50,9 @@ export interface MemoryToolHost {
     query: string;
     types?: MemoryType[];
     limit?: number;
-  }) => { matches: MemoryRecallMatch[] };
+  }) => { matches: MemoryRecallMatch[] } | Promise<{ matches: MemoryRecallMatch[] }>;
   /**
-   *  ack write-back. The `_currentTaskRememberAck` field
+   * an earlier revision ack write-back. The `_currentTaskRememberAck` field
    * lives on `AgentThursdayAgent` and is read by `submitTask`'s reply fallback
    * when the model produced no assistant text. The Host injects a
    * setter so the field stays owned by the agent.
@@ -72,7 +72,7 @@ export function buildMemoryTools(host: MemoryToolHost) {
   const { rememberMemory, recallMemory, setRememberAck, getAgentThursdayState, setAgentThursdayState } = host;
   return {
     remember: tool({
-      description: "Store a durable memory (fact / instruction / event / task). Use for stable knowledge worth recalling later (e.g. 'project uses GraphQL', 'when X, do Y'). Provide `key` for facts/instructions to enable supersession on update. DO NOT store secrets or transient noise. See ",
+      description: "Store a durable memory (fact / instruction / event / task). Use for stable knowledge worth recalling later (e.g. 'project uses GraphQL', 'when X, do Y'). Provide `key` for facts/instructions to enable supersession on update. DO NOT store secrets or transient noise. See docs/design/agent-memory-v1.md.",
       inputSchema: z.object({
         type: z.enum(["fact", "instruction", "event", "task"]),
         content: z.string().min(1).max(4000),
@@ -82,8 +82,8 @@ export function buildMemoryTools(host: MemoryToolHost) {
       }),
       execute: async (input) => {
         const result = await rememberMemory(input);
-        //  — deterministic ack for tool-only memory round.
-        // SOUL prompt () asks the model to follow up with a
+        // deterministic ack for tool-only memory round.
+        // SOUL prompt  asks the model to follow up with a
         // confirmation, but production showed it's not always reliable.
         // Capture an ack here so submitTask can fall back when the
         // model produced no assistant text, and write the same string
@@ -110,7 +110,7 @@ export function buildMemoryTools(host: MemoryToolHost) {
       },
     }),
     recall: tool({
-      description: "Retrieve durable memories matching a query. Call BEFORE answering questions that depend on prior project context. Returns ranked matches by exact-key > keyword > recency.",
+      description: "Retrieve durable memories matching a query. Call BEFORE answering questions that depend on prior project context. Ranks by semantic similarity (meaning, not keyword overlap) with an exact-key boost — so paraphrased and cross-lingual queries work; you need not match the stored wording.",
       inputSchema: z.object({
         query: z.string().min(1).max(500),
         types: z.array(z.enum(["fact", "instruction", "event", "task"])).max(4).optional(),

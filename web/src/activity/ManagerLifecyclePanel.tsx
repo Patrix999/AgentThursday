@@ -31,7 +31,7 @@ type Props = {
 };
 
 /**
- *  — Activity panel for manager tool lifecycle intents
+ * Activity panel for manager tool lifecycle intents
  * (`type: "tool.lifecycle"`, `component.name: "ManagerLifecyclePanel"`).
  *
  * Renders correlator rows (agent / task / envelope / conversation /

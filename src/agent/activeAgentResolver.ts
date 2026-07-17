@@ -1,8 +1,8 @@
 /**
- *  — pure resolver for the workspace's "active agent".
+ * pure resolver for the workspace's "active agent".
  *
  * The workspace console picks one cloud agent (an `AgentThursdayAgent` DO,
- * keyed on `agent_id` per ) to drive: composer/send/continue
+ * keyed on `agent_id` per an earlier revision) to drive: composer/send/continue
  * and the polled snapshot all route via this id. This module decides
  * which id to use from three sources in priority order:
  *
@@ -10,7 +10,7 @@
  *      localStorage; survives reload; suppresses the canonical-pointer
  *      reconcile in `useWorkspace` so the user's choice isn't undone.
  *   2. `storedAgentId` — last-known `agentthursday.contextId` cache (set by
- *      the  reconcile flow). Used as fallback when no explicit
+ *      the M7.7v3 reconcile flow). Used as fallback when no explicit
  *      pin is present.
  *   3. First agent in `agents` — sensible default when neither prior
  *      key matches anything currently visible.

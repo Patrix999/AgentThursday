@@ -3,7 +3,7 @@ import type { ContextInspectResult } from "../../shared/schema";
 /**
  * Context pressure classifier.
  *
- * Pure helper, no React. Maps 's `inspectContext` payload to a
+ * Pure helper, no React. Maps an earlier revision's `inspectContext` payload to a
  * legible pressure state plus a recommendation. Heuristic — does NOT
  * pretend to know the model's exact context window. Thresholds are
  * centralized here so dogfood tuning is a one-file change.

@@ -18,9 +18,9 @@ const STALE_AFTER_MS = 10_000;
  *
  * Replaces the desktop `TopStatusBar` on the mobile branch of
  * `Workspace.tsx`. Single row, target ≤ 56px height, four signals
- * plus a context indicator chip. operator's non-negotiable for 156b:
+ * plus a context indicator chip. the operator's non-negotiable for 156b:
  * mobile home must show a context indicator and it must be
- * tap-accessible (not hover-driven).  / 173 — the chip
+ * tap-accessible (not hover-driven). an earlier revision — the chip
  * opens the read-only `ContextIndicatorDialog` (which mirrors the
  * desktop ContextRail's information density); it does NOT navigate
  * to `/inspect#context` and is unaffected by `AGENT_THURSDAY_DEBUG_SURFACE_MODE`.
@@ -47,20 +47,20 @@ export function MobileStatusRow({ snapshot, lastRefreshedAt, inspectSnapshot }: 
       className="sticky top-0 z-10 px-3 py-2 bg-slate-900 border-b border-slate-800 lg:hidden"
       data-testid="mobile-status-row"
     >
-      {/*  — context chip lives in its own non-scrolling slot
+      {/* context chip lives in its own non-scrolling slot
           at the leading edge of the row so it is *always* visible at
           360px without horizontal scroll. The remaining pills go into
           a separate `min-w-0 overflow-x-auto` track to its right;
           when they don't fit, that track scrolls — the chip never
-          moves. operator reviewed 156b1 and said "没有看到 context indicator";
+          moves. the operator reviewed 156b1 and said "没有看到 context indicator";
           this restructure fixes the discoverability gap. */}
       <div className="flex items-center gap-2 text-xs">
-        {/*  — active cloud agent selector in the leading
+        {/* active cloud agent selector in the leading
             non-scrolling slot, before the context chip. Same
             semantics as desktop: picking flips composer/snapshot
             routing to the picked agent's DO. */}
         <ActiveAgentSelector variant="mobile" />
-        {/*  — context chip is an always-visible indicator, not debug surface. */}
+        {/* context chip is an always-visible indicator, not debug surface. */}
         <ContextIndicatorChip
           instanceName={session?.instanceName}
           testId="mobile-context-chip"
@@ -82,10 +82,10 @@ export function MobileStatusRow({ snapshot, lastRefreshedAt, inspectSnapshot }: 
             </span>
           )}
         </div>
-        {/*  — unified primary nav in the non-scrolling trailing
+        {/* unified primary nav in the non-scrolling trailing
             slot, alongside GitHub, so it stays tappable on 360px. */}
         <PrimaryNav variant="mobile" />
-        {/*  §D — keep the GitHub link in a non-scrolling
+        {/* an earlier revision §D — keep the GitHub link in a non-scrolling
             trailing slot so it's always tappable on 360px without
             being pushed out by overflowing pills. */}
         <GithubLink className="shrink-0 inline-flex items-center justify-center text-slate-400 hover:text-slate-100 active:text-slate-100 px-1.5 py-1 rounded" />
@@ -141,7 +141,7 @@ function shortModelLabel(modelId: string): string {
   return slash >= 0 ? modelId.slice(slash + 1) : modelId;
 }
 
-//  — `contextChipLabel` / `shortContextId` / `shortInstanceName`
+// `contextChipLabel` / `shortContextId` / `shortInstanceName`
 // moved to `web/src/components/contextChip.ts` for reuse with the
 // desktop `TopStatusBar` chip. Mobile keeps the existing tight 10-char
 // `ctx_<6>…` form by leaving `maxLen` at the helper's default.

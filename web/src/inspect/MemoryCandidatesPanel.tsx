@@ -10,7 +10,7 @@ import { fetchMemoryCandidates } from "../api/memoryCandidates";
  *
  * Shows heuristic candidates derived from conversation_archive,
  * recent dialog, and existing memories. Display-only: no promote /
- * dismiss actions in v1 (those are  territory). Buttons
+ * dismiss actions in v1 (those are an earlier revision territory). Buttons
  * are rendered but `disabled` with a tooltip so the surface is
  * forward-compatible with 154b.
  *
@@ -51,7 +51,7 @@ export function MemoryCandidatesPanel() {
         </span>
         <span
           className="text-[10px] text-slate-500 italic"
-          title="v1 read-only; promote/dismiss in "
+          title="v1 read-only; promote/dismiss in an earlier revision"
         >
           v1: read-only draftbox
         </span>
@@ -131,7 +131,7 @@ function CandidateRow({ item }: { item: MemoryCandidateInspectItem }) {
         <button
           type="button"
           disabled
-          title="v1 read-only; promote in "
+          title="v1 read-only; promote in an earlier revision"
           className="text-[10px] px-2 py-0.5 rounded border border-slate-700 text-slate-500 cursor-not-allowed"
         >
           Promote
@@ -139,7 +139,7 @@ function CandidateRow({ item }: { item: MemoryCandidateInspectItem }) {
         <button
           type="button"
           disabled
-          title="v1 read-only; dismiss in "
+          title="v1 read-only; dismiss in an earlier revision"
           className="text-[10px] px-2 py-0.5 rounded border border-slate-700 text-slate-500 cursor-not-allowed"
         >
           Dismiss

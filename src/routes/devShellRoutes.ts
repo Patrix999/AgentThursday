@@ -3,7 +3,7 @@ import { json } from "../httpUtil";
 import type { AgentThursdayAgent } from "../server";
 
 /**
- *  — `/api/dev-shell/*` HTTP route handling extracted from
+ * `/api/dev-shell/*` HTTP route handling extracted from
  * `server.ts`.
  *
  * Single entry point: `handleDevShell(request, url, deps)`.
@@ -23,14 +23,14 @@ import type { AgentThursdayAgent } from "../server";
  *
  * Routes (all POST):
  *
- *   /api/dev-shell/dispatch              —  read+git dispatcher
- *   /api/dev-shell/gate            (POST)—  async gate start → { job_id }
- *   /api/dev-shell/gate/job         (GET)—  async gate poll  ← ?job_id=
- *   /api/dev-shell/envelope/start        —  envelope start
- *   /api/dev-shell/envelope/add-gate     —  envelope add-gate
- *   /api/dev-shell/envelope/add-tool     —  envelope add-tool
- *   /api/dev-shell/envelope/seal         —  envelope seal
- *   /api/dev-shell/write                 —  write dispatcher
+ *   /api/dev-shell/dispatch              — an earlier revision read+git dispatcher
+ *   /api/dev-shell/gate            (POST)— an earlier revision async gate start → { job_id }
+ *   /api/dev-shell/gate/job         (GET)— an earlier revision async gate poll  ← ?job_id=
+ *   /api/dev-shell/envelope/start        — an earlier revision envelope start
+ *   /api/dev-shell/envelope/add-gate     — an earlier revision envelope add-gate
+ *   /api/dev-shell/envelope/add-tool     — an earlier revision envelope add-tool
+ *   /api/dev-shell/envelope/seal         — an earlier revision envelope seal
+ *   /api/dev-shell/write                 — an earlier revision write dispatcher
  */
 
 type AgentThursdayAgentStub = Awaited<ReturnType<typeof getAgentByName<Env, AgentThursdayAgent>>>;
@@ -44,7 +44,7 @@ export async function handleDevShell(
   url: URL,
   deps: DevShellDeps,
 ): Promise<Response | null> {
-  //  — Developer Shell read + git inspect dispatcher.
+  // Developer Shell read + git inspect dispatcher.
   // POST /api/dev-shell/dispatch with body `{ tool_id, input, traceId? }`.
   // Auth-gated via the global secret check above. Dispatch goes through
   // the canonical active AgentThursdayAgent so events land in the same toolEvents
@@ -65,7 +65,7 @@ export async function handleDevShell(
     return json(result);
   }
 
-  //  — Gate runner endpoint (async).
+  // Gate runner endpoint (async).
   // POST /api/dev-shell/gate with body `{ target }`. target ∈
   // {typecheck, build, test, dry_run}. Returns `{ job_id, target,
   // status:"started", started_at }` immediately; gate runs in the
@@ -82,7 +82,7 @@ export async function handleDevShell(
     return json(result);
   }
 
-  //  — Gate runner poll endpoint.
+  // Gate runner poll endpoint.
   // GET /api/dev-shell/gate/job?job_id=<id>. Returns
   // `{ job_id, status: "in_progress"|"done"|"error"|"unknown",
   //   events: [{ event_type, payload, created_at }] }` ordered
@@ -95,7 +95,7 @@ export async function handleDevShell(
     return json(result);
   }
 
-  //  — Evidence envelope endpoints.
+  // Evidence envelope endpoints.
   if (url.pathname === "/api/dev-shell/envelope/start" && request.method === "POST") {
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const stub = await deps.getActiveStub();
@@ -124,7 +124,7 @@ export async function handleDevShell(
     return json(result);
   }
 
-  //  — non-gate tool execution tracking. Wraps a read-side
+  // non-gate tool execution tracking. Wraps a read-side
   // dispatch (repo.read / repo.glob / repo.grep / git.*) and appends
   // the call into envelope.execution[] so seal can compute
   // fabricated_tools for non-gate tools the agent claims to have run.
@@ -155,7 +155,7 @@ export async function handleDevShell(
     return json(result);
   }
 
-  //  — Developer Shell write dispatcher.
+  // Developer Shell write dispatcher.
   // POST /api/dev-shell/write with body `{ tool_id, input, traceId? }`.
   // tool_id ∈ {repo.write, repo.patch, repo.delete}. Manifest path
   // policy from software-dev v0 enforces allowlist + denylist; global
@@ -174,7 +174,7 @@ export async function handleDevShell(
       ? body.input as Record<string, unknown>
       : {};
     const traceId = typeof body.traceId === "string" ? body.traceId : null;
-    //  — approval payload is forwarded as-is to the DO; the
+    // approval payload is forwarded as-is to the DO; the
     // dispatcher inside the DO is the authority on tier-gating and
     // hash-binding. The route only does shape narrowing.
     let approvalArg: { token_id?: unknown; token?: unknown } | undefined;

@@ -7,8 +7,8 @@ import { runBrowser } from "../browser";
 import { json } from "../httpUtil";
 
 /**
- *  — `POST /api/browser/run` headless-browser smoke route
- * extracted from `src/server.ts` (was  inline body).
+ * `POST /api/browser/run` headless-browser smoke route
+ * extracted from `src/server.ts` (was an earlier revision inline body).
  *
  * Auth: still gated by the composition-root `/api/*` umbrella
  * `requireSecret` check in `src/server.ts` above the delegate. This
@@ -25,7 +25,7 @@ import { json } from "../httpUtil";
  * `pathname === X && method === Y`, so fall-through (not 405) is
  * the preserved semantic.
  *
- * Behavior preservation invariants ():
+ * Behavior preservation invariants :
  *   1. Status-code contract — `request.invalid-json` / `request.invalid-shape`
  *      stay 400; BrowserError mapping stays at the same codes
  *      (400 / 502 / 503 / 504 / 500).
@@ -37,7 +37,7 @@ import { json } from "../httpUtil";
  */
 
 /**
- *  — map `BrowserError` to stable HTTP shapes; same
+ * map `BrowserError` to stable HTTP shapes; same
  * message-prefix reasoning as `workspaceFileError` (DO RPC erases
  * JS class identity). Co-located with the route because it is the
  * route's only consumer.

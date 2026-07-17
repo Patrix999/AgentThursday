@@ -4,14 +4,14 @@ import { strict as assert } from "node:assert";
 import { ChannelRoutePendingResultSchema } from "../schema/channel";
 
 /**
- *  — directed test of the extended `ChannelRoutePendingResultSchema`
+ * directed test of the extended `ChannelRoutePendingResultSchema`
  * shape. The wire contract gains:
  *   - `action: "invalid-binding"` for rows whose binding points to a
  *     missing / archived / un-validatable profile;
  *   - optional `targetKind` and `targetName` per decision so verifier
  *     can prove which DO the row was routed to.
  *
- * Backward compatibility: pre- batches did not populate
+ * Backward compatibility: pre-Card-353 batches did not populate
  * `targetKind` / `targetName`. The schema makes those optional so old
  * payloads still parse.
  */
@@ -24,7 +24,7 @@ const baseDecision = {
   handoffTaskId: "task_1",
 };
 
-describe("ChannelRoutePendingResultSchema ()", () => {
+describe("ChannelRoutePendingResultSchema ", () => {
   it("accepts old-shape decisions without targetKind/targetName", () => {
     const r = ChannelRoutePendingResultSchema.safeParse({
       ok: true,
@@ -53,7 +53,7 @@ describe("ChannelRoutePendingResultSchema ()", () => {
     assert.equal(r.success, true);
   });
 
-  it("accepts new-shape decisions with targetKind=agent_binding ()", () => {
+  it("accepts new-shape decisions with targetKind=agent_binding ", () => {
     const r = ChannelRoutePendingResultSchema.safeParse({
       ok: true,
       scanned: 1,
@@ -83,7 +83,7 @@ describe("ChannelRoutePendingResultSchema ()", () => {
     assert.equal(r.success, true);
   });
 
-  it("accepts action=invalid-binding with  structured reason and null targetName", () => {
+  it("accepts action=invalid-binding with an earlier revision structured reason and null targetName", () => {
     const r = ChannelRoutePendingResultSchema.safeParse({
       ok: true,
       scanned: 1,
@@ -91,7 +91,7 @@ describe("ChannelRoutePendingResultSchema ()", () => {
       decisions: [{
         ...baseDecision,
         action: "invalid-binding",
-        //  — `invalid_binding:agent:<agentId>:<cause>`
+        // `invalid_binding:agent:<agentId>:<cause>`
         reason: "invalid_binding:agent:agent-gone:missing",
         finalStatus: "deferred",
         handoffTaskId: null,

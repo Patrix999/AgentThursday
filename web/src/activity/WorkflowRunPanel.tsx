@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 
 /**
- *  — body panel for `workflow.run` intents: run started /
+ * body panel for `workflow.run` intents: run started /
  * terminal and executor-dispatched subagent terminal events. Links the
  * activity feed to the Workflow Runs page.
  */

@@ -1,12 +1,12 @@
 /**
- *  —  AgentProfile web API client.
+ * M9.0 AgentProfile web API client.
  *
- * Wraps the  backend at `/api/agent-profiles`:
+ * Wraps the an earlier revision backend at `/api/agent-profiles`:
  *   GET    /api/agent-profiles              → list
  *   GET    /api/agent-profiles/options      → closed-list models / skillsets
  *   GET    /api/agent-profiles/<id>         → read
  *   POST   /api/agent-profiles              → create
- *   PATCH  /api/manager/agents/<id>         → update ( status actions)
+ *   PATCH  /api/manager/agents/<id>         → update (an earlier revision status actions)
  *
  * Auth is the umbrella `X-AgentThursday-Secret` (via `authHeaders()`); on 401
  * we clear the secret and notify SecretGate (same pattern as the
@@ -17,7 +17,7 @@ import { authHeaders, clearSecret } from "../auth/secret";
 import { postJson } from "./client";
 
 /**
- *  — lifecycle view attached to list/detail responses.
+ * lifecycle view attached to list/detail responses.
  * Mirrors `AgentLifecycleView` in `src/agent/agentLifecycleView.ts`.
  * Optional on the wire — older servers omit it; UI must degrade
  * gracefully (badge falls back to persisted status only).
@@ -40,6 +40,9 @@ export interface AgentLifecycleView {
 
 export interface AgentProfileListRow extends Omit<AgentProfile, "persona"> {
   persona?: string;
+  // 2026-06-23 — owner email label (summary view only) for the operator console.
+  // owner_user_id is already on AgentProfile; the summary view now includes it.
+  owner_email?: string | null;
 }
 
 export interface AgentProfileWithLifecycle extends AgentProfileListRow {
@@ -47,7 +50,7 @@ export interface AgentProfileWithLifecycle extends AgentProfileListRow {
 }
 
 /**
- *  — server-augmented profile shape returned by
+ * server-augmented profile shape returned by
  * `GET /api/agent-profiles/<id>`. The base `AgentProfile` shape is
  * unchanged (storage carries only `skillset`); the route handler
  * decorates the response with the resolver's view of which skillset
@@ -69,12 +72,14 @@ export interface AgentProfileSkillsetRuntime {
 
 export interface AgentProfileWithRuntime extends AgentProfile {
   skillset_runtime?: AgentProfileSkillsetRuntime;
-  //  — same lifecycle block also attached to detail responses.
+  // same lifecycle block also attached to detail responses.
   lifecycle?: AgentLifecycleView;
+  // 2026-06-23 — owner email label (operator console detail page).
+  owner_email?: string | null;
 }
 
 /**
- *  — structured runtime-model option. Mirrors the server-side
+ * structured runtime-model option. Mirrors the server-side
  * `AgentRuntimeModelOption` in `src/agent/agentModelRuntime.ts`. The
  * executable `target` string is server-side only and intentionally
  * absent here.
@@ -88,7 +93,7 @@ export interface AgentRuntimeModelOption {
 
 export interface AgentProfileOptions {
   /**
-   *  — was `string[]`. The UI uses `runtimeStatus` to disable
+   * was `string[]`. The UI uses `runtimeStatus` to disable
    * non-runnable choices instead of hiding them entirely.
    */
   models: AgentRuntimeModelOption[];
@@ -108,10 +113,10 @@ async function authedGet<T>(url: string): Promise<T | null> {
 }
 
 export async function listAgentProfiles(): Promise<AgentProfileWithLifecycle[] | null> {
-  //  added `agents:` alongside legacy `profiles:`. Prefer the
+  // an earlier revision added `agents:` alongside legacy `profiles:`. Prefer the
   // agent-centric field; fall back to `profiles` if an older server
-  // is in front.  attaches an optional `lifecycle` block per row.
-  //  asks for a list-only summary: no `persona` and no duplicate
+  // is in front. an earlier revision attaches an optional `lifecycle` block per row.
+  // an earlier revision asks for a list-only summary: no `persona` and no duplicate
   // `profiles` array. Older servers ignore the query and still work.
   const data = await authedGet<{
     agents?: AgentProfileWithLifecycle[];
@@ -147,7 +152,7 @@ export interface CreateAgentProfileResult {
 }
 
 /**
- *  — state-action PATCH. Reuses the existing
+ * state-action PATCH. Reuses the existing
  * `PATCH /api/manager/agents/:agent_id` endpoint (no manager-only gate;
  * shares validation with `manager.agent_update` dispatch tool). The UI
  * sends only `{ status }` to scope the call to lifecycle button intent;

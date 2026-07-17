@@ -1,7 +1,7 @@
 /**
- *  —  `getTools()` family extraction step 1: browser family F.
+ * M8.9 `getTools()` family extraction step 1: browser family F.
  *
- * Per  preflight §4, browser is the lowest-risk family — single
+ * Per an earlier revision preflight §4, browser is the lowest-risk family — single
  * tool (`browse`), no SQL, no state mutation, no self-DO. Deps are
  * limited to `env.BROWSER` (Cloudflare Browser Rendering binding) +
  * `runBrowser` / `BrowserError` from `src/browser.ts` + agent `logEvent`.
@@ -9,9 +9,9 @@
  * Tool name, description, input schema, output shape and the three
  * event names (`tool.browse`, `tool.browse.ok`, `tool.browse.error`)
  * are preserved verbatim from the original inline implementation at
- * `src/server.ts:1150-1171` (pre-).
+ * `src/server.ts:1150-1171` (pre-an earlier revision).
  *
- * The narrow Host interface follows the  `{ sql }`-only
+ * The narrow Host interface follows the an earlier revision `{ sql }`-only
  * precedent: it exposes only what `browse` actually references, not
  * the whole `AgentThursdayAgent`. If a future browser-family tool needs more,
  * widen this Host — not all six families' Hosts at once.

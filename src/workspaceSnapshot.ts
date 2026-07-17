@@ -16,7 +16,7 @@ import type {
 } from "./schema";
 
 /**
- *  — pure snapshot builder extracted from `src/server.ts`.
+ * pure snapshot builder extracted from `src/server.ts`.
  *
  * Identity-shaped local types. These mirror the local types in
  * `src/server.ts` so the moved function can be invoked with the
@@ -39,7 +39,7 @@ type DebugTraceShape = {
 
 type PendingMutationRow = { id: number; card_ref: string; mutation_type: string; description: string; diff_hint: string; created_at: number };
 
-//  — patterns that must NEVER appear in `summaryStream`
+// patterns that must NEVER appear in `summaryStream`
 // item text. The first matches the truncation suffix produced by
 // `getLastAssistantText(maxLen)`. The second matches the developer
 // -loop preview line embedded by `getDeveloperLoopReview()`. Both
@@ -58,15 +58,15 @@ export function buildWorkspaceSnapshot(input: {
   deliverableGate: DeliverableConvergence;
   pendingMutations: PendingMutationRow[];
   eventLog: EventLogRow[];
-  //  — latest `context.reset` boundary. 0 means "no reset has
+  // latest `context.reset` boundary. 0 means "no reset has
   // happened on this DO". The route handler queries `getLastResetAt()`
   // separately because `getEventLog` is capped at 20 rows.
   lastResetAt: number;
-  //  — canonical active context id (registry pointer). The
+  // canonical active context id (registry pointer). The
   // route handler queries `getActiveContextId()` on the registry DO
   // and passes the value through. Carries identity only.
   activeContextId: string;
-  //  — historical user-anchored dialog turns from the
+  // historical user-anchored dialog turns from the
   // message log, ordered oldest → newest, capped to last 30. Each
   // entry pairs a user message's aggregated text with the assistant
   // text that followed it (or null if tool-only). The route handler
@@ -75,13 +75,13 @@ export function buildWorkspaceSnapshot(input: {
   // robust to event_log's 20-row cap (153z4 v1 used index-based
   // pairing and misaligned in production).
   dialogTurns: { userText: string; assistantText: string | null }[];
-  //  — independent `task.submitted` event window (60 newest
+  // independent `task.submitted` event window (60 newest
   // by default), used in place of `eventLog.filter(... 'task.submitted')`
   // so older user turns aren't evicted from the 20-row eventLog cap.
   // Optional for backwards compatibility; falls back to eventLog
   // filter when omitted.
   taskSubmittedEvents?: EventLogRow[];
-  //  — newest-first `task.reply.finalized` events. Each one
+  // newest-first `task.reply.finalized` events. Each one
   // carries the bounded user-visible reply (post truthfulness gate /
   // supplier marker / 156g1 ack / 120 pause append) so the Web
   // `summaryStream` can render the same warning-bearing text Discord
@@ -114,13 +114,13 @@ export function buildWorkspaceSnapshot(input: {
       : null;
 
   // summaryStream: only human-readable text. Never include raw event_payload
-  // or tool call JSON — those are inspect-layer responsibilities ().
+  // or tool call JSON — those are inspect-layer responsibilities .
   // v2.5+: include user task submissions derived from `task.submitted`
   // events so the user's own input shows up in the dialog flow and
   // completed task history is preserved across rounds.
   //
-  //  — reset-aware filtering. Reset preserves durable
-  // event_log / currentTaskObject / lastActionResult per /150,
+  // reset-aware filtering. Reset preserves durable
+  // event_log / currentTaskObject / lastActionResult per an earlier revision,
   // so without filtering pre-reset task text + synthetic loop summary
   // would re-appear in the dialog. We anchor every summaryStream item
   // to a real timestamp and drop those at-or-before `lastResetAt`.
@@ -128,7 +128,7 @@ export function buildWorkspaceSnapshot(input: {
   // fallback for synthetic items is preserved.
   const summaryStream: MessageView[] = [];
 
-  // 1+2)  — turn-aware pairing of user task events
+  // 1+2) turn-aware pairing of user task events
   //      against message-log dialog turns.
   //
   //      Why turn-aware (not index): `userTaskEvents` comes from
@@ -140,7 +140,7 @@ export function buildWorkspaceSnapshot(input: {
   //      prior round (or no AGT at all) because the indexes drifted.
   //
   //      How: each user event's payload carries both the clean
-  //      `display` (= `payload.task` after ) and the
+  //      `display` (= `payload.task` after an earlier revision) and the
   //      original `taskPrompt` (only set when display !== task,
   //      i.e. channel-origin messages where `display` was stripped
   //      of metadata). The message log stored the FULL prompt as
@@ -164,7 +164,7 @@ export function buildWorkspaceSnapshot(input: {
   //      149e3 (clean YOU display), 149e3a (multi-text-part
   //      aggregation), 153z2 defensive filter, 156d (no SUM),
   //      149c reset boundary — all preserved.
-  //  — prefer the independent `task.submitted` window when
+  // prefer the independent `task.submitted` window when
   // the route passed it (60 newest), so the dialog isn't capped by
   // the 20-row `eventLog`. Fall back to filtering `eventLog` when
   // the field is omitted (older callers / tests). post-reset filter
@@ -175,7 +175,7 @@ export function buildWorkspaceSnapshot(input: {
     .filter((r) => r.event_type === "task.submitted" && r.created_at > lastResetAt)
     .sort((a, b) => a.created_at - b.created_at)
     .slice(-60);
-  //  — index `task.reply.finalized` events by `taskId` so the
+  // index `task.reply.finalized` events by `taskId` so the
   // pairing loop below can prefer the warning-bearing user-visible
   // reply over the SDK message log's raw assistant text. Keep the
   // newest finalized event per task (multiple submits per task should
@@ -202,7 +202,7 @@ export function buildWorkspaceSnapshot(input: {
     let display: string | null = null;
     let prompt: string | null = null;
     let taskId: string | null = null;
-    //  — `subagentTaskText` is the verbatim text `saveMessages`
+    // `subagentTaskText` is the verbatim text `saveMessages`
     // persisted for this turn (display + task-context / manager-context
     // blocks). It is only emitted by `task.submitted` when it diverges
     // from both `display` and `task`, so it falls back to null on plain
@@ -236,7 +236,7 @@ export function buildWorkspaceSnapshot(input: {
         break;
       }
     }
-    //  — when prompt/display matchKey misses (e.g. manager turns
+    // when prompt/display matchKey misses (e.g. manager turns
     // where `saveMessages` prepended `<task-context>` / `<manager-context>`
     // blocks to the raw caller string), fall back to the verbatim persisted
     // text from `subagentTaskText`. Keeps the happy-path matching identical
@@ -254,7 +254,7 @@ export function buildWorkspaceSnapshot(input: {
     const isLastEvent = i === userTaskEvents.length - 1;
     if (matchIdx >= 0) {
       consumed[matchIdx] = true;
-      //  — prefer the finalized user-visible reply (which
+      // prefer the finalized user-visible reply (which
       // includes truthfulness gate / supplier degradation prepends
       // and the 156g1 ack / 120 pause append) over the SDK message
       // log's raw assistant text. The two are otherwise identical
@@ -303,7 +303,7 @@ export function buildWorkspaceSnapshot(input: {
   //      dialog shows something for the trailing user turn instead
   //      of a blank gap.
   //
-  //       had a 2a→2b chain; 153z4a drops the redundant
+  //      an earlier revision had a 2a→2b chain; 153z4a drops the redundant
   //      pre-2a single-AGT push because the turn-aware loop above
   //      already emits the latest assistant from message log when
   //      one exists.
@@ -319,14 +319,14 @@ export function buildWorkspaceSnapshot(input: {
     }
   }
 
-  // 2c — REMOVED in .
+  // 2c — REMOVED in an earlier revision.
   //
   // Background: 153z added `loopReview.summary` as a final AGT
   // fallback so flows with no real assistant text would still show
   // an agent line. Production then surfaced the developer-loop
   // preview line `[last msg] …(+N chars)` from
   // `getDeveloperLoopReview()` because that string is embedded
-  // inside `loopReview.summary`. operator reviewed and rejected loop
+  // inside `loopReview.summary`. the operator reviewed and rejected loop
   // previews appearing as AGT body. The dialog should reflect real
   // user / assistant turns, not loop status.
   //
@@ -345,7 +345,7 @@ export function buildWorkspaceSnapshot(input: {
 
   // 3) Active interventions only.
   //
-  //  — filter `review-gate-blocked` out of the dialog SYS
+  // filter `review-gate-blocked` out of the dialog SYS
   // rows. It's a loop-internal "no reviewer-acceptable action recorded
   // yet" signal that's true on every fresh DO and on every round
   // until an action result lands; the user can't act on it directly
@@ -367,10 +367,10 @@ export function buildWorkspaceSnapshot(input: {
       });
     }
   }
-  //  — defensive sanitizer. No `summaryStream` item may
+  // defensive sanitizer. No `summaryStream` item may
   // carry a developer-loop preview line (`[last msg] …`) or a
   // server-side truncation suffix (`…(+N chars)`). Both leaked into
-  // production after 's 2c fallback rendered
+  // production after an earlier revision's 2c fallback rendered
   // `loopReview.summary` as AGT. We've removed 2c above, but keep
   // this filter as a hard invariant so any future emitter that
   // accidentally embeds a loop preview gets dropped instead of

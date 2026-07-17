@@ -49,7 +49,7 @@ export function renderTaskContextBlock(ctx: TaskContext): string {
 }
 
 /**
- *  — bounded preview of the rendered `<task-context>` block
+ * bounded preview of the rendered `<task-context>` block
  * for inspect/event evidence. Caps by UTF-8 bytes (not JS string length —
  * see UTF-8 byte cap memo); when truncation is required, preserves both
  * the opening and closing tags so verifier grep `<task-context>` and

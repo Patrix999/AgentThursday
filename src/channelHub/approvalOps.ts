@@ -1,5 +1,5 @@
 /**
- *  — `ChannelHubAgent` approval token lifecycle helpers, extracted
+ * `ChannelHubAgent` approval token lifecycle helpers, extracted
  * from `src/channelHub.ts`.
  *
  * Moves four method bodies behind free functions that take a `Host`-shaped
@@ -8,12 +8,12 @@
  * only the body lives here.
  *
  * Contained:
- *  - `createApprovalRequestImpl`   ( — issue pending approval row)
- *  - `decideApprovalImpl`          ( — pending → granted | denied)
- *  - `consumeApprovalTokenImpl`    ( — granted → consumed, single use)
- *  - `lookupApprovalHashImpl`      (  — legacy `channel_approvals` lookup)
+ *  - `createApprovalRequestImpl`   (issue pending approval row)
+ *  - `decideApprovalImpl`          (pending → granted | denied)
+ *  - `consumeApprovalTokenImpl`    (granted → consumed, single use)
+ *  - `lookupApprovalHashImpl`      (legacy `channel_approvals` lookup)
  *
- * Out of scope per  §Scope:
+ * Out of scope per an earlier revision §Scope:
  *  - `resolveApproval()` STAYS in `channelHub.ts` (depends on `getAgentThursdayStub`
  *    + `lookupSenderRole`, which are ChannelHubAgent-private surfaces).
  *  - No SQL/schema/table-name changes.
@@ -28,8 +28,8 @@
  *  - Failure paths in `consumeApprovalTokenImpl` never mutate row state.
  *
  * Note: `lookupApprovalHashImpl` is the only function here that reads the
- * legacy `channel_approvals` table (). The other three operate on
- * `agent_tool_approvals` (+). Kept together because both surfaces
+ * legacy `channel_approvals` table . The other three operate on
+ * `agent_tool_approvals` . Kept together because both surfaces
  * are "approval token lifecycle" from the callable's point of view; the
  * table split is an implementation detail of the legacy resolve vs. the
  * v2 token state machine.
@@ -53,7 +53,7 @@ import type { Tier } from "../skillset/types";
 export type ChannelHubApprovalOpsHost = Agent<Env, Record<string, never>>;
 
 // ---------------------------------------------------------------------------
-// createApprovalRequest ()
+// createApprovalRequest 
 // ---------------------------------------------------------------------------
 
 export type CreateApprovalRequestInput = {
@@ -144,7 +144,7 @@ export async function createApprovalRequestImpl(
     return { ok: false, error: "ttl_clamp_failed" };
   }
 
-  //  — prefer the dedicated approval HMAC key; fall back to
+  // prefer the dedicated approval HMAC key; fall back to
   // AGENT_THURSDAY_SHARED_SECRET so deployments mid-rotation still issue tokens.
   // The chosen key's id is persisted on the row.
   const resolved = resolveApprovalHmacKey({
@@ -212,7 +212,7 @@ export async function createApprovalRequestImpl(
 }
 
 // ---------------------------------------------------------------------------
-// decideApproval ()
+// decideApproval 
 // ---------------------------------------------------------------------------
 
 export type DecideApprovalInput = {
@@ -354,7 +354,7 @@ export async function decideApprovalImpl(
 }
 
 // ---------------------------------------------------------------------------
-// consumeApprovalToken ()
+// consumeApprovalToken 
 // ---------------------------------------------------------------------------
 
 export type ConsumeApprovalTokenInput = {
@@ -384,7 +384,7 @@ export async function consumeApprovalTokenImpl(
   }
 
   const rawToken = typeof input.token === "string" ? input.token : "";
-  //  issues 32-byte hex (64 chars). Reject anything obviously
+  // an earlier revision issues 32-byte hex (64 chars). Reject anything obviously
   // malformed before HMAC; never echo the raw token in any response.
   if (!/^[a-f0-9]{1,256}$/i.test(rawToken) || rawToken.length === 0) {
     return { ok: false, error: "token_invalid" };
@@ -459,7 +459,7 @@ export async function consumeApprovalTokenImpl(
   // Resolve HMAC key by the key_id the row was ISSUED under.
   // - "v1"            → AGENT_THURSDAY_APPROVAL_HMAC_KEY (must be configured)
   // - "legacy_shared" → AGENT_THURSDAY_SHARED_SECRET (legacy issue path)
-  // - null            → legacy compat per  §C: fall back to
+  // - null            → legacy compat per an earlier revision §C: fall back to
   //                     AGENT_THURSDAY_SHARED_SECRET. This is the pre-212c
   //                     issue path; rotation is deferred to 212f.
   let hmacKey: string;
@@ -520,7 +520,7 @@ export async function consumeApprovalTokenImpl(
   });
 
   if (!verdict.ok) {
-    //  §B: failure paths do not mutate row state.
+    // an earlier revision §B: failure paths do not mutate row state.
     return { ok: false, error: verdict.reason };
   }
 
@@ -583,17 +583,17 @@ export async function consumeApprovalTokenImpl(
 }
 
 // ---------------------------------------------------------------------------
-// lookupApprovalHash ( — legacy `channel_approvals` table)
+// lookupApprovalHash (legacy `channel_approvals` table)
 // ---------------------------------------------------------------------------
 
 /**
- *  — minimal lookup used by the `/discord/interactions` button
+ * minimal lookup used by the `/discord/interactions` button
  * handler to fetch the canonical payload hash for an approval, so the
  * resolve call can echo it back as `payloadHashEcho`. Returns null if the
  * approval row doesn't exist (e.g. expired and pruned in the future).
  *
- * Reads `channel_approvals` (legacy  table), NOT
- * `agent_tool_approvals` (+). Same boundary as `resolveApproval()`
+ * Reads `channel_approvals` (legacy an earlier revision table), NOT
+ * `agent_tool_approvals` . Same boundary as `resolveApproval()`
  * in `channelHub.ts`.
  */
 export function lookupApprovalHashImpl(

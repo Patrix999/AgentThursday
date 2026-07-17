@@ -1,5 +1,5 @@
 /**
- *  — seal() gate-evidence reason coverage.
+ * seal() gate-evidence reason coverage.
  *
  * B: a real `repo.write` / `repo.patch` in the execution ring with an
  *    empty evidence ring (no gate logs) must seal `fail` with the
@@ -10,9 +10,9 @@
  *    promoted (addDiffEvidence is intentionally unwired), so a mutation
  *    that skips gates correctly leaves the ring "missing".
  *
- * Regression guards: the two  C `missing_mutation_evidence`
+ * Regression guards: the two an earlier revision C `missing_mutation_evidence`
  * paths (empty execution; execution present but read-only) and the
- *  failing-gate path are unaffected by the new branch.
+ * an earlier revision failing-gate path are unaffected by the new branch.
  */
 
 import { describe, it } from "node:test";
@@ -69,7 +69,7 @@ function gate(target: "typecheck" | "build", exit_code: number): GateResult {
   };
 }
 
-describe(" seal() missing_gate_evidence", () => {
+describe("an earlier revision seal() missing_gate_evidence", () => {
   it("B: write/patch in execution + no gate evidence → missing_gate_evidence", () => {
     const store = new EnvelopeStore();
     const id = draft(store);

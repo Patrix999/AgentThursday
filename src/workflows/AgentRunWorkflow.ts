@@ -9,9 +9,9 @@ import { DEMO_INSTANCE } from "../demoConstants";
 import type { AgentThursdayAgent } from "../server";
 
 /**
- *  —  `AgentRunWorkflow` multi-step orchestration.
+ * M9.0 `AgentRunWorkflow` multi-step orchestration.
  *
- * Five-step plan (one `waitForEvent` pause max per run;  D-2):
+ * Five-step plan (one `waitForEvent` pause max per run; an earlier revision D-2):
  *
  *   1. step.do("load-profile")   — registry lookup; fail-fast if profile
  *                                  not found.
@@ -29,7 +29,7 @@ import type { AgentThursdayAgent } from "../server";
  *                                  only on step return.
  *   5. step.do("mark-complete")  — durable row → `status: "ok"`.
  *
- * Constraints carried from :
+ * Constraints carried from an earlier revision:
  *  - Idempotency (§D-2): step.do bodies check `readAgentRun(run_id)`
  *    state before mutating; at-least-once semantics across retries.
  *  - Step output cap (§D-3): every step returns refs only
@@ -38,7 +38,7 @@ import type { AgentThursdayAgent } from "../server";
  *    `markAgentRunTimedOut`) before re-throw so the workflow instance
  *    AND the durable row both surface the error context.
  *
- * Awaiting-event trigger ( Q1 (a)): only the test fixture
+ * Awaiting-event trigger (an earlier revision Q1 (a)): only the test fixture
  * `AGENT_THURSDAY_AGENT_RUN_FORCE_PAUSE === "true"` causes `first-turn` to
  * return `"awaiting_event"`. Real AgentThursdayAgent-driven pauses are
  * deferred to the persona-weave card.
@@ -65,7 +65,7 @@ export type AgentRunFinalResult = {
 };
 
 /**
- * Default 24h waitForEvent timeout ( D-1, recommendation (b)).
+ * Default 24h waitForEvent timeout (an earlier revision D-1, recommendation (b)).
  * Overridable at deploy time via `AGENT_THURSDAY_AGENT_RUN_WAIT_TIMEOUT` in
  * `wrangler.toml [vars]` (e.g. "1 hour", "7 days"). Cloudflare's
  * Workflows duration grammar accepts `"<N> <unit>"` strings.
@@ -163,7 +163,7 @@ export class AgentRunWorkflow extends WorkflowEntrypoint<Env, AgentRunWorkflowPa
 
         const envelopeId = turnResult.envelopeId ?? "";
 
-        //  Q1 (a): only env-flag fixture triggers the pause
+        // an earlier revision Q1 (a): only env-flag fixture triggers the pause
         // branch. Real AgentThursdayAgent-driven pause lands in persona-weave.
         if (forcePauseEnabled(env)) {
           await registry.markAgentRunAwaitingEvent({ run_id });
@@ -202,7 +202,7 @@ export class AgentRunWorkflow extends WorkflowEntrypoint<Env, AgentRunWorkflowPa
       await step.do(
         "mark-complete",
         async (): Promise<{ status: "ok" }> => {
-          //  already set status='ok' inside first-turn via
+          // an earlier revision already set status='ok' inside first-turn via
           // markAgentRunComplete; this step is a no-op marker so the
           // workflow describe output shows the full 5-step plan when
           // someone wants to inspect the orchestration shape. Refs-
@@ -284,7 +284,7 @@ export class AgentRunWorkflow extends WorkflowEntrypoint<Env, AgentRunWorkflowPa
         }
 
         const envelopeId = turnResult.envelopeId ?? "";
-        //  D-3 (c): row.turn_id stays = first-turn id; the
+        // an earlier revision D-3 (c): row.turn_id stays = first-turn id; the
         // resume-turn id lives in this step's workflow describe output
         // only. We do NOT overwrite registry.markAgentRunComplete with
         // the resume id.

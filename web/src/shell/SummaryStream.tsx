@@ -7,7 +7,7 @@ type Props = { snapshot: WorkspaceSnapshot | null };
 
 /**
  * Renders `summaryStream[]` — strings already humanized by the worker.
- *  guarantees no `event_payload` / raw tool JSON appears here.
+ * an earlier revision guarantees no `event_payload` / raw tool JSON appears here.
  *
  * Newest at the bottom (the worker emits ascending order) with
  * auto-scroll on new entries so users see the latest line.
@@ -49,7 +49,7 @@ export function SummaryStream({ snapshot }: Props) {
             <span className="shrink-0 text-[10px] text-slate-600 font-mono pt-0.5 tabular-nums">
               {formatMessageTime(m.at)}
             </span>
-            {/*  — safe Markdown rendering. The renderer never
+            {/* safe Markdown rendering. The renderer never
                 uses dangerouslySetInnerHTML, so injected `<script>`
                 tags or other raw HTML render as plain text. URL allowlist
                 blocks `javascript:` / `data:` schemes. `min-w-0` on the

@@ -16,9 +16,9 @@ type State = {
  * indicator rail. 12s interval — slower than workspace (2s) and inspect
  * (5s) since context only changes when a turn completes. `lastN` is
  * fixed at 60 so the rail can show enough segments to be visually
- * meaningful while still bounded by 's 200-cap.
+ * meaningful while still bounded by an earlier revision's 200-cap.
  *
- *  — exposes `refresh()` so the compact action can trigger an
+ * exposes `refresh()` so the compact action can trigger an
  * immediate re-poll instead of waiting up to 12s for the interval to
  * tick. Without this the rail/panel show pre-compact state for up to
  * 12s after a successful compact, which is confusing.

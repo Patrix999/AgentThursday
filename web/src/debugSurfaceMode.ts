@@ -1,5 +1,5 @@
 /**
- *  — Web UI debug surface mode.
+ * Web UI debug surface mode.
  *
  * Three-state selector that controls whether the Inspect entry,
  * context chip / ContextRail, and debug action buttons are visible

@@ -6,8 +6,8 @@ import { DegradationDiagnosticsSchema } from "./degradation";
 /**
  * Unified Object Model Schema and Worker Contract
  *
- * Single source of truth for the data the new Web shell (),
- * Current Task View (), and inspect surface () consume.
+ * Single source of truth for the data the new Web shell ,
+ * Current Task View , and inspect surface  consume.
  * Built so 76 → 77/78 → 79 → 80/81 do not have to invent shapes.
  *
  * Legacy → new mapping (kept here so future readers can navigate):
@@ -16,23 +16,23 @@ import { DegradationDiagnosticsSchema } from "./degradation";
  *   ---------------------------------|------------------------|-------------------------------------
  *   taskObject (TaskObject)          | M2 task lifecycle      | TaskView
  *   cliSession (CliSession)          | M3 cli session         | SessionView
- *   lastActionResult (ActionResult)  |  action result     | ArtifactView (kind="actionResult")
+ *   lastActionResult (ActionResult)  | M1.3 action result     | ArtifactView (kind="actionResult")
  *   developerLoopReview              | M2 reviewer            | summary text → MessageView (kind="summary")
  *                                    |                        | + traces → TraceEvent[] (inspect)
- *   pendingToolApproval              |  tool approval     | ApprovalView (kind="tool")
+ *   pendingToolApproval              | M5.1 tool approval     | ApprovalView (kind="tool")
  *   pendingKanbanMutations[]         | M2 mutation            | ApprovalView (kind="mutation")
- *   debugTrace.recentToolEvents[]    |  trace             | ToolEvent[] (inspect only)
- *   debugTrace.lastLadderTier        |  ladder            | TaskView.ladderTier + .ladderReason
- *   debugTrace.lastAssistantSummary  |                    | MessageView (kind="assistant")
+ *   debugTrace.recentToolEvents[]    | M5.1 trace             | ToolEvent[] (inspect only)
+ *   debugTrace.lastLadderTier        | M6.1 ladder            | TaskView.ladderTier + .ladderReason
+ *   debugTrace.lastAssistantSummary  | M5.1                   | MessageView (kind="assistant")
  *   deliverableGate.deliverable      | M2 deliverable         | ArtifactView (kind="deliverable")
  *
- *  user-layer reads only:
+ * an earlier revision user-layer reads only:
  *   session, currentTask, summaryStream, pendingApproval, replyNeed, latestResult
- *  inspect-layer reads only:
+ * an earlier revision inspect-layer reads only:
  *   inspectEntry (presence flags) + GET /api/inspect (full data)
  *
  * The /cli/* legacy endpoints stay live for TUI; a follow-up cleanup card
- * will retire them after  ships.
+ * will retire them after an earlier revision ships.
  */
 
 export const SessionViewSchema = z.object({
@@ -109,8 +109,8 @@ export const InspectEntrySchema = z.object({
 export type InspectEntry = z.infer<typeof InspectEntrySchema>;
 
 /**
- * Inspect surface shapes — the real data producer arrives in .
- *  only declares the contract and ships a stub returning empty arrays.
+ * Inspect surface shapes — the real data producer arrives in an earlier revision.
+ * an earlier revision only declares the contract and ships a stub returning empty arrays.
  */
 
 export const TraceEventSchema = z.object({
@@ -149,13 +149,13 @@ export const ActionUiIntentSchema = z.object({
   taskId: z.string().nullable(),
   sourceEventType: z.string(),
   sourceEventAt: z.number().int(),
-  //  — added 3 tool-specific intent types alongside 's
+  // added 3 tool-specific intent types alongside an earlier revision's
   // 4 baseline types. The new types upgrade specific tool families
   // (content_search / content_read / execute / sandbox_exec) from the
   // generic chrome to dedicated panels with whitelisted props.
-  //  — added `tool.workspace_mutation` for write/edit-shaped
+  // added `tool.workspace_mutation` for write/edit-shaped
   // events (checkpoint writes and future tool.workspace.* prefix).
-  //  — added `tool.lifecycle` for manager tool dispatch /
+  // added `tool.lifecycle` for manager tool dispatch /
   // result / error rows (agent_list / agent_message / agent_create /
   // agent_update) with whitelisted safe lifecycle fields.
   type: z.enum([
@@ -168,7 +168,7 @@ export const ActionUiIntentSchema = z.object({
     "tool.execution_result",
     "tool.workspace_mutation",
     "tool.lifecycle",
-    //  — workflow-era activity (run started/terminal +
+    // workflow-era activity (run started/terminal +
     // executor-dispatched subagent terminal).
     "workflow.run",
   ]),
@@ -208,27 +208,27 @@ export const InspectSnapshotSchema = z.object({
   trace: z.array(TraceEventSchema),
   toolEvents: z.array(ToolEventSchema),
   debugRaw: z.unknown(),
-  //  — most-recent ContentHub audit events. Newest-first. Empty
+  // most-recent ContentHub audit events. Newest-first. Empty
   // array when ContentHub has not been touched in the visible window.
   contentAudit: z.array(ContentAuditEventSchema).optional(),
-  //  — aggregated evidence-pack view computed by ContentHubAgent
+  // aggregated evidence-pack view computed by ContentHubAgent
   // over the same audit rows. Best-effort: cross-DO fetch failures leave
   // this field undefined without breaking the rest of the snapshot.
   contentEvidence: ContentAuditSummarySchema.optional(),
   // read-only degradation diagnostics. Indexed view of
-  // events Cards 117/119/102 already log into event_log. Optional so a DO
+  // events an earlier revision already log into event_log. Optional so a DO
   // with no degradation events yet returns clean.
   degradationDiagnostics: DegradationDiagnosticsSchema.optional(),
   // Action UI Intent index for Action-aware Gen UI.
   // Derived on read from event_log; capped at 30 newest-first. Optional
-  // so older clients ignore the field;  frontend will consume.
+  // so older clients ignore the field; an earlier revision frontend will consume.
   actionUiIntents: z.array(ActionUiIntentSchema).optional(),
 });
 export type InspectSnapshot = z.infer<typeof InspectSnapshotSchema>;
 
 /**
  * Agent Memory v1.
- * See  for the full design.
+ * See docs/design/agent-memory-v1.md for the full design.
  *
  * Taxonomy mirrors Cloudflare's Agent Memory blog (2026-04-17): facts,
  * instructions, events, tasks. Profile boundary = DO instance (single
@@ -265,7 +265,7 @@ export type MemoryRecallMatch = z.infer<typeof MemoryRecallMatchSchema>;
 /**
  * GET /api/memory snapshot. Compact, leak-free shape for Web user layer.
  * Counts by type + recent active facts/instructions/events/tasks.
- *  §F-18: "show active facts/instructions and recent events/tasks".
+ * an earlier revision §F-18: "show active facts/instructions and recent events/tasks".
  */
 export const MemorySnapshotSchema = z.object({
   counts: z.object({
@@ -282,11 +282,11 @@ export const MemorySnapshotSchema = z.object({
 });
 export type MemorySnapshot = z.infer<typeof MemorySnapshotSchema>;
 
-//  —  AgentProfile shape (per design doc §4). Closed-list
+// M9.0 AgentProfile shape (per design doc §4). Closed-list
 // validation for `model` and `skillset` happens at the route layer
 // (registry / yaml-manifest lookups) — kept out of this schema so it
 // stays import-cycle-free.
-//  —  lifecycle consensus rewrite. Four-layer model:
+// M9.0 lifecycle consensus rewrite. Four-layer model:
 //   lifecycle persisted: initialized | archived | deleted_marker
 //   runtime derived:       healthy | running | stale
 //   policy flags:           accepts_tasks | dispatch_priority | retention_policy
@@ -313,20 +313,26 @@ export const AgentProfileSchema = z.object({
   parent_task_id: z.string().nullable().default(null),
   accepts_tasks: z.boolean().default(true),
   retention_policy: RetentionPolicySchema.default("durable"),
+  // multi-tenancy owner. Optional/additive: only the
+  // registry-DO read path populates it (from the 426a column); it is the
+  // agent's own owner id, returned only to the owner or admin (scoped reads
+  // are owner-filtered in 426b), so it leaks nothing cross-tenant. The
+  // getModel hot path reads it to resolve which credential store to use.
+  owner_user_id: z.string().optional(),
   created_at: z.string(),
   updated_at: z.string(),
 });
 export type AgentProfile = z.infer<typeof AgentProfileSchema>;
 
 /**
- *  —  agent-centric naming correction. The user-facing
+ * M9.0 agent-centric naming correction. The user-facing
  * concept is **Agent** (a cloud agent instance), not "profile". The
  * underlying persisted row schema is unchanged; new code that wants to
  * speak the corrected vocabulary should import `Agent`.
  *
  * Legacy `AgentProfile` remains the persistence schema (column names
  * `agent_profiles.*`, route family `/api/agent-profiles/*`) — see
- * `` for the
+ * `docs/design/2026-05-24-m9.0-agent-centric-correction.md` for the
  * compatibility boundary.
  */
 export type Agent = AgentProfile;

@@ -1,12 +1,12 @@
 /**
- *  — empty-reply visible fallback.
+ * empty-reply visible fallback.
  *
  * When `submitTask` finalizes an assistant turn with empty `replyText`
  * but a draft envelope exists, the prior code wrote only the internal
  * `[envelope: env-…]` marker. `stripDiscordVisibleInternalMarkers` in
  * `src/discordDirect.ts` removes that marker line at the Discord
  * render layer, so the visible reply collapsed to `(empty)` — masking
- * validation failures ( reproduction, task `task-mpal33tl`,
+ * validation failures (an earlier revision reproduction, task `task-mpal33tl`,
  * envelope `env-mpal33tl-gh8k`).
  *
  * `renderEmptyReplyFallback` builds a short structured summary that
@@ -49,12 +49,12 @@ export function renderEmptyReplyFallback(input: EmptyReplyFallbackInput): string
 }
 
 /**
- * -1 — approval-pending visible reply.
+ * 1 — approval-pending visible reply.
  *
  * When a `needsApproval: true` tool (e.g. `advance_kanban_card`) is called,
  * the AI SDK legitimately pauses the round: the tool-call part is left in
  * `state === "approval-requested"`, `execute()` does not run, and the
- * assistant turn finalizes with empty `replyText`. The  empty
+ * assistant turn finalizes with empty `replyText`. The an earlier revision empty
  * fallback then rendered "⚠️ validation failed: no_execution" — which is
  * wrong: the pause is correct, the user just needs to confirm.
  *
@@ -83,15 +83,15 @@ export function renderApprovalPendingReply(input: ApprovalPendingReplyInput): st
 }
 
 /**
- *  — read-intent no-execution visible reply.
+ * read-intent no-execution visible reply.
  *
- *  started sealing envelopes as `read_intent_no_execution`
+ * an earlier revision started sealing envelopes as `read_intent_no_execution`
  * (verdict reason) when the prompt asked for a file read but no
  * envelope-wrapped tool fired. But Case 2 surfaced a second gap: when
  * the model emits a partial progress text like `正在读取文档：` and
  * then `finishReason: "stop"` with **zero tool calls of any kind**
  * (not even an unwrapped ContentHub `content_read`), the existing
- *  empty-fallback path does not run — `replyText.trim().length
+ * an earlier revision empty-fallback path does not run — `replyText.trim().length
  * > 0` — so the dangling progress text reaches Discord with only an
  * `[envelope: …]` marker appended. Production evidence: task
  * `task-mpcpl04p`, envelope `env-mpcpl04p-c11q`, visible reply was
@@ -137,14 +137,14 @@ export function renderReadIntentNoExecutionReply(
 }
 
 /**
- *  — deterministic remember-ack empty-reply fallback.
+ * deterministic remember-ack empty-reply fallback.
  *
  * When `submitTask` finalizes an assistant turn with empty `replyText`
  * but a captured `_currentTaskRememberAck` exists, surface the ack as
  * the visible reply so tool-only memory rounds (model fired `remember`
  * but produced no assistant text) still confirm to the user.
  *
- * Extracted from `src/server.ts` so  directed validation can
+ * Extracted from `src/server.ts` so an earlier revision directed validation can
  * exercise the predicate + replacement deterministically (admin.smoke
  * `remember-ack-empty-fallback`). The predicate and replacement are
  * a verbatim move — do not relax `!replyText || replyText.trim().length === 0`.
@@ -170,7 +170,7 @@ export function applyRememberAckFallback(
 }
 
 /**
- *  — mutation-intent-unwrapped prepend warning.
+ * mutation-intent-unwrapped prepend warning.
  *
  * Case 3 surfaced a third class of envelope drift: the supplier
  * dispatched a Think workspace `write` / `delete` (or `edit`) at the
@@ -181,10 +181,10 @@ export function applyRememberAckFallback(
  * fell to `read_only_no_action_required`. The visible reply then
  * unconditionally declared the mutation done with no audit trail.
  *
- * Unlike `renderReadIntentNoExecutionReply` (), the model
+ * Unlike `renderReadIntentNoExecutionReply` , the model
  * narrative here is factually accurate (the mutation really did
  * happen), so we PREPEND a warning rather than override the body
- * (per  hard requirement 2026-05-19): warning must be at the
+ * (per agentP hard requirement 2026-05-19): warning must be at the
  * very top, narrative is retained as "model claim / supplier
  * unwrapped tool output" — not as system-validated success.
  *
@@ -224,9 +224,9 @@ export function renderMutationUnwrappedPrependWarning(
 }
 
 /**
- *  — prompt-mutation-intent no-execution full-override reply.
+ * prompt-mutation-intent no-execution full-override reply.
  *
- *  (prepend) treats the model narrative as advisory because
+ * an earlier revision (prepend) treats the model narrative as advisory because
  * the supplier really did dispatch a tool, even if unwrapped. 295e is
  * different: `totalToolCalls === 0` means the narrative is fabricated
  * end-to-end — the model announced 创建/删除/修改 on a real path, then

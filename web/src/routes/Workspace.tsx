@@ -108,7 +108,7 @@ export function Workspace() {
 function WorkspaceShell() {
   const { data, error, lastRefreshedAt } = useWorkspace();
   const inspect = useInspect(true);
-  //  — gate Inspect entry / context chip / context rail on the
+  // gate Inspect entry / context chip / context rail on the
   // resolved debug surface mode. `null` while the first /api/config
   // fetch is in flight; treat as "show nothing inspect-related yet"
   // so deployments shipped with `disable` never flash Inspect UI on
@@ -123,11 +123,11 @@ function WorkspaceShell() {
   );
 
   return (
-    //  — ContextInspectProvider wraps both desktop and mobile
+    // ContextInspectProvider wraps both desktop and mobile
     // trees so the read-only ContextIndicatorDialog (mounted from
     // `MobileStatusRow` and `TopStatusBar` chips) can read the same
     // shared `inspectContext` poll the Rail / Drawer use. Single HTTP
-    // loop preserved per  — no extra mobile-side poll.
+    // loop preserved per no extra mobile-side poll.
     <ContextInspectProvider>
       {/* Desktop — context rail + two-column main area + right activity accordion. */}
       <div className="hidden lg:flex h-full">
@@ -161,8 +161,8 @@ function WorkspaceShell() {
 
       {/* mobile-first IA pass.
           - `MobileStatusRow` replaces `TopStatusBar` so the header is
-            one compact row (≤ 56px target) and includes operator's
-            non-negotiable context indicator chip.  makes it
+            one compact row (≤ 56px target) and includes the operator's
+            non-negotiable context indicator chip. an earlier revision makes it
             open a read-only context indicator dialog instead of Inspect.
           - `MobileSummaryStream` collapses older turns by default,
             so latest 1–3 stay above the fold at 360×780.
@@ -170,8 +170,8 @@ function WorkspaceShell() {
             primary scroll. Operators reach activity / inspect / archive
             via `InspectEntry → /inspect`. The desktop right-aside
             `ActivityFeed` is unchanged.
-           — when `debugSurfaceMode === "disable"` the mobile inspect
-          entry is hidden.  keeps the context chip visible. */}
+          when `debugSurfaceMode === "disable"` the mobile inspect
+          entry is hidden. an earlier revision keeps the context chip visible. */}
       <ThumbReachLayout
         top={
           <>
@@ -187,7 +187,7 @@ function WorkspaceShell() {
           <>
             <MainCardsArea snapshot={data} hideApprovalActions />
             <MobileSummaryStream snapshot={data} />
-            {/*  — mobile finally gets the same activity
+            {/* mobile finally gets the same activity
                 accordion (previously desktop-only; mobile had to
                 detour to /inspect). Collapsed by default so it never
                 crowds the conversation; same data, same component. */}

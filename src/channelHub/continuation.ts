@@ -1,5 +1,5 @@
 /**
- *  — ChannelHub multipart continuation merge.
+ * ChannelHub multipart continuation merge.
  *
  * When Discord splits an addressed instruction into multiple messages, only
  * the first carries the `<@bot>` mention. Continuation chunks fail the
@@ -67,7 +67,7 @@ export type ChannelHubContinuationHost = {
 
 export const CHANNEL_CONTINUATION_WINDOW_MS_DEFAULT = 5_000;
 /**
- *  — `applyDirectFilters` reject reasons that the route handler
+ * `applyDirectFilters` reject reasons that the route handler
  * should treat as "maybe-a-continuation-chunk; consult the merge path
  * before deciding to drop". The route handler calls `classifyFilterRejection`
  * with `filterRes.reason` to get a structured outcome; eligible reasons
@@ -108,7 +108,7 @@ export function classifyFilterRejection(reason: string): FilterRejectionClassifi
 }
 
 /**
- *  v2 — first-chunk auto-route is debounced by this many ms when
+ * an earlier revision v2 — first-chunk auto-route is debounced by this many ms when
  * the inserted anchor row is a guild-channel addressed Discord message.
  * The wait gives continuation chunks a window to land into the still-
  * `received` anchor; after the delay fires, `routePending` builds one
@@ -120,7 +120,7 @@ export const CONTINUATION_SIGNAL = "continuation";
 const MERGE_DELIMITER = "\n\n---continuation---\n";
 
 /**
- *  v2 — pure decision for whether the first-chunk's `routePending`
+ * an earlier revision v2 — pure decision for whether the first-chunk's `routePending`
  * call should be deferred. Only guild-channel addressed Discord messages
  * are vulnerable to the multipart drop, so we limit the wait to that
  * shape; DMs accept all chunks (no mention requirement) and non-Discord

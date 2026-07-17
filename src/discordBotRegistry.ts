@@ -1,5 +1,5 @@
 /**
- *  — BYO Discord bot helpers. Pure parsing + the server-side
+ * BYO Discord bot helpers. Pure parsing + the server-side
  * token validation call (`GET /users/@me`). The token never appears in
  * any return value other than `validateDiscordBotToken`'s pass-through
  * caller; errors carry Discord's status, never the token.

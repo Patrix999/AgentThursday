@@ -10,9 +10,9 @@ type Props = {
 };
 
 /**
- *  — unified primary navigation component.
+ * unified primary navigation component.
  *
- * 2026-06-15 (operator) — collapsed by default to save header space. A
+ * 2026-06-15 (the operator) — collapsed by default to save header space. A
  * single toggle button shows the current surface; opening it reveals
  * a dropdown of all nav entries. Picking one (or clicking away)
  * closes it. The same collapsed behaviour is used for every variant;

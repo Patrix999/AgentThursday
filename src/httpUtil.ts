@@ -2,7 +2,7 @@ import { CORS_HEADERS } from "./auth";
 
 /**
  * Standard JSON response helper. Extracted from `server.ts` as part of
- *  so the new `src/routes/*` modules can share it without
+ * an earlier revision so the new `src/routes/*` modules can share it without
  * pulling in the rest of `server.ts`'s compilation unit.
  *
  * Behavior must stay byte-identical to the original `server.ts` `json`:

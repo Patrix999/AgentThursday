@@ -1,5 +1,5 @@
 /**
- *  — per-turn inference step cap tests.
+ * per-turn inference step cap tests.
  */
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";

@@ -1,9 +1,9 @@
 /**
- *  — subagent summary aggregation pure-helper tests.
+ * subagent summary aggregation pure-helper tests.
  *
  * Three layers:
  *   1. UTF-8 byte cap for `reply_excerpt` (multi-byte char must not
- *      slip past a JS `.length` cap —  memo).
+ *      slip past a JS `.length` cap — an earlier revision memo).
  *   2. `buildSubagentSummary` shape: passes through all fields,
  *      defaults `artifact_refs` to [], applies the byte cap.
  *   3. `filterSubagentSummariesForReader` permission boundary +

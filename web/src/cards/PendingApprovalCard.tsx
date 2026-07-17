@@ -8,7 +8,7 @@ export function PendingApprovalCard({
 }: {
   approval: ApprovalView | null;
   /**
-   * : when true (mobile), suppress in-card Approve/Reject buttons —
+   * an earlier revision: when true (mobile), suppress in-card Approve/Reject buttons —
    * `MobileComposer` hoists them into the bottom action bar so they sit
    * in thumb-reach with the home indicator inset.
    */

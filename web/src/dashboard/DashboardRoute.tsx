@@ -19,6 +19,8 @@ import {
 import type { ActiveContext, ContextHistoryList } from "../../shared/schema";
 import { setActiveAgentPin } from "../auth/secret";
 import { LifecycleBadge, relativeTime } from "../agents/LifecycleBadge";
+import { OwnerBadge } from "../agents/OwnerBadge";
+import { listUsers, type AppUser } from "../api/users";
 
 type DashboardData = {
   agents: AgentProfileWithLifecycle[];
@@ -26,6 +28,7 @@ type DashboardData = {
   options: AgentProfileOptions;
   activeContext: ActiveContext | null;
   contextHistory: ContextHistoryList;
+  users: AppUser[];
 };
 
 type LoadState =
@@ -44,12 +47,13 @@ export function DashboardRoute() {
     let cancelled = false;
     async function load() {
       try {
-        const [agents, runs, options, activeContext, contextHistory] = await Promise.all([
+        const [agents, runs, options, activeContext, contextHistory, users] = await Promise.all([
           listAgentProfiles(),
           listAgentRuns({ limit: 100 }),
           getAgentProfileOptions(),
           fetchActiveContext(),
           fetchContextHistory(),
+          listUsers().catch(() => null), // fail-soft: dashboard still loads without the users metric
         ]);
         if (cancelled) return;
         if (agents === null || runs === null || options === null || contextHistory === null) {
@@ -68,6 +72,7 @@ export function DashboardRoute() {
             options,
             activeContext,
             contextHistory,
+            users: users ?? [],
           },
           error: null,
         });
@@ -108,8 +113,9 @@ function DashboardContent({ data }: { data: DashboardData }) {
 
   return (
     <div className="space-y-5">
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Metric label="agents" value={String(data.agents.length)} detail={`${vm.ranAgents.length} ran`} />
+        <Metric label="users" value={String(data.users.length)} detail={`${data.users.filter((u) => u.status === "approved").length} approved · ${data.users.filter((u) => u.status !== "approved").length} pending`} to="/users" />
         <Metric label="skillsets in use" value={String(vm.usedSkillsets.length)} detail={`${vm.totalAssignedAgents} assigned agents`} />
         <Metric label="agent runs" value={String(data.runs.length)} detail="latest 100 loaded" />
         <Metric label="workspaces" value={String(vm.contexts.length)} detail={vm.activeContextId ? "1 active" : "no active pointer"} />
@@ -127,13 +133,21 @@ function DashboardContent({ data }: { data: DashboardData }) {
   );
 }
 
-function Metric(props: { label: string; value: string; detail: string }) {
-  return (
-    <div className="rounded border border-slate-800 bg-slate-900/50 px-4 py-3">
+function Metric(props: { label: string; value: string; detail: string; to?: string }) {
+  const body = (
+    <>
       <div className="text-xs uppercase text-slate-500">{props.label}</div>
       <div className="mt-1 text-2xl font-semibold text-slate-100">{props.value}</div>
       <div className="mt-1 text-xs text-slate-400">{props.detail}</div>
-    </div>
+    </>
+  );
+  const cls = "rounded border border-slate-800 bg-slate-900/50 px-4 py-3";
+  return props.to ? (
+    <Link to={props.to} className={`${cls} block hover:border-slate-600`}>
+      {body}
+    </Link>
+  ) : (
+    <div className={cls}>{body}</div>
   );
 }
 
@@ -167,6 +181,7 @@ function RanAgentsSection(props: {
                 {row.agent.name}
               </Link>
               <LifecycleBadge lifecycle={row.agent.lifecycle} persistedFallback={row.agent.status} />
+              <OwnerBadge ownerUserId={row.agent.owner_user_id} ownerEmail={row.agent.owner_email} />
               <RunStatus status={row.latestRun.status} />
               <span className="text-xs text-slate-500">
                 last run {relativeTime(row.latestRun.updated_at)}

@@ -4,13 +4,13 @@
  * Pure heuristic module that flags whether a user query is "history-
  * shaped" — i.e. asks about something the agent or user said earlier
  * (Chinese "之前 / 历史 / 记得 / 会议 / 说过" + English equivalents).
- * 178 §7 commits  to either deterministic firing **or** a clear
+ * 178 §7 commits M8.1 to either deterministic firing **or** a clear
  * reason; this module owns the "clear reason" half: callers (inspect
  * surface, QA harness) compare the classifier's verdict against the
  * task's actual tool events and surface a `conversation_search.missed`
  * warning when a history-shaped query did not trigger the tool.
  *
- * 实际的 dispatch 修复（让模型必触发 search）属  truthfulness
+ * 实际的 dispatch 修复（让模型必触发 search）属 M8.3 truthfulness
  * scope refinement / SOUL hardening 范畴，不在本卡。
  */
 

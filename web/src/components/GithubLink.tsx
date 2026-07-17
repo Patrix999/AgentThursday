@@ -1,5 +1,5 @@
 /**
- *  §D — GitHub icon link shown in the top status bar (desktop)
+ * an earlier revision §D — GitHub icon link shown in the top status bar (desktop)
  * and mobile status row. The href is configurable via build-time env
  * `VITE_GITHUB_URL`; the default points at the public source repo for
  * the deployed worker so the link is correct without per-deployment

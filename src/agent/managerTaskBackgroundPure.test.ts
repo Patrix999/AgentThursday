@@ -1,5 +1,5 @@
 /**
- *  — tests for `runManagerTaskBackgroundPure`.
+ * tests for `runManagerTaskBackgroundPure`.
  *
  * Targets the pure dispatch helper, NOT the DO callable. The whole
  * point of 359a is that the terminal `manager.task.replied` event is
@@ -16,7 +16,7 @@
  *     args, and the worker does NOT double-emit `manager.task.replied`
  *     (the DO is responsible for that).
  *   - perAgent throw with a timeout-shaped message is classified
- *     `agent_loop_timeout` ( contract preservation).
+ *     `agent_loop_timeout` (an earlier revision contract preservation).
  *   - perAgent throw with a generic message is classified `internal`.
  *
  * Pure node:test — no `agents` / `partyserver` / `cloudflare:workers`
@@ -91,7 +91,7 @@ function makePerAgent(
   };
 }
 
-describe("runManagerTaskBackgroundPure — success path ()", () => {
+describe("runManagerTaskBackgroundPure — success path ", () => {
   it("emits started, invokes submitManagerTask, does NOT double-emit replied", async () => {
     const reg = makeRegistry({ id: "agent-X" });
     const per = makePerAgent({

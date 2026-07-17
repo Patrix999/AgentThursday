@@ -1,49 +1,43 @@
 /**
- *  —  `getTools()` family extraction step 2: conversation
+ * M8.9 `getTools()` family extraction step 2: conversation
  * family H (`conversation_search`).
  *
- * Per  preflight §4 split order this is the second-lowest-risk
- * family — single tool, but with one delicate semantic: the self-DO
- * call routes through `getAgentByName(env.AgentThursdayAgent, DEMO_INSTANCE)`
- * to the *registry* agent (where the `conversation_archive` table
- * lives,  Cards 151/152), and the *caller* agent's `name` must be
- * passed through as `callerContextId` for audit attribution.
- *
- * Two safety patterns inherited from existing code:
- *
- *   1. `callerContextId` is captured at Host construction time (i.e.
- *      when `AgentThursdayAgent.getTools()` builds this Host) so that
- *      audit-side attribution can NEVER end up pointing at the
- *      callee DO.  §6 risk 4.
- *
- *   2. The cross-DO type boundary is crossed via a local *structural*
- *      `ConversationSearchAgentStub` rather than importing `AgentThursdayAgent`
- *      from `server.ts`. This mirrors the  precedent
- *      (`DemoAgentStub`) and keeps the tool module out of the
- *      composition-root type graph.
+ * M9.4 Track A (per-agent archive drain-to-self): the archive
+ * search now reads the caller's OWN per-agent DO instead of RPC-ing the
+ * registry (DEMO_INSTANCE). Each agent's `conversation_archive` lives on
+ * its own DO (drain-to-self), so the DO injects `searchArchive` bound to its
+ * local `conversationSearch` callable (which reads `this.sql`). For the
+ * operator/registry DO, local == the registry table it always read, so its
+ * behavior is unchanged. `callerContextId` is still forwarded for the audit
+ * row (it now equals the executing DO, so attribution is trivially correct).
  *
  * Tool name, description, Zod input schema, the single dispatch event
- * (`tool.conversation_search`), and the cross-DO call payload shape
- * are preserved verbatim from `src/server.ts:1324-1361` (pre-).
+ * (`tool.conversation_search`), and the call payload shape are preserved
+ * verbatim from the pre-449 registry-RPC implementation — only the search
+ * destination (registry stub → injected local `searchArchive`) changed.
  */
 
 import { tool } from "ai";
 import { z } from "zod";
-import { getAgentByName } from "agents";
-import { DEMO_INSTANCE } from "../../demoConstants";
 import type { ConversationSearchInput, ConversationSearchResult } from "../../schema/archive";
-
-type ConversationSearchAgentStub = {
-  conversationSearch(input: ConversationSearchInput): Promise<ConversationSearchResult>;
-};
+import { scopeOwnerIdFor, type RequestIdentity } from "../requestIdentity";
+import { emptyConversationSearchResult } from "../archiveOps";
 
 export interface ConversationToolHost {
-  env: Env;
+  /**
+   * LOCAL archive search on THIS agent's own DO. Track A moved
+   * each agent's `conversation_archive` onto its own per-agent DO
+   * (drain-to-self), so the tool reads local instead of RPC-ing the registry.
+   * The DO injects its own `conversationSearch` callable (which reads
+   * `this.sql`). For the operator/registry DO (DEMO_INSTANCE) local == the
+   * registry table it always searched, so its behavior is unchanged.
+   */
+  searchArchive: (input: ConversationSearchInput, scopeOwnerId?: string) => Promise<ConversationSearchResult>;
   /**
    * Value of `AgentThursdayAgent.name` captured at the time `getTools()` ran.
-   * Forwarded into the registry-side audit row so a search invoked
-   * from agent X is attributed to X, not to the registry DO that
-   * actually executes the query.
+   * Forwarded into the archive audit row so a search invoked from agent X is
+   * attributed to X. Post-449 the search runs on X's own DO, so this equals
+   * the executing DO.
    */
   callerContextId: string;
   /**
@@ -53,32 +47,27 @@ export interface ConversationToolHost {
    */
   getTraceId: () => string | undefined;
   logEvent: (type: string, payload: unknown) => void;
-}
-
-async function resolveRegistryStub(env: Env): Promise<ConversationSearchAgentStub> {
-  // Same `as unknown as` cast pattern as  `demoRoutes.ts`:
-  // we don't want to pull `AgentNamespace<AgentThursdayAgent>` into the tool
-  // module's type graph, but `getAgentByName`'s generic still needs to
-  // resolve. Routing through a `unknown`-typed resolver fence keeps
-  // both sides honest at the boundary.
-  const resolveByName = getAgentByName as unknown as (
-    namespace: unknown,
-    name: string,
-  ) => Promise<ConversationSearchAgentStub>;
-  return resolveByName(env.AgentThursdayAgent, DEMO_INSTANCE);
+  /**
+   * Multi-tenancy — resolve THIS caller's owner identity for owner-scoping the
+   * local archive search. Returns `null` when the owner can't be resolved (the
+   * tool then FAILS CLOSED to empty results). The DO injects an impl that
+   * special-cases `this.name === DEMO_INSTANCE` (the registry / operator agent
+   * has no profile of its own) to admin, so the operator's cross-context
+   * search is never starved.
+   */
+  resolveOwner: () => Promise<RequestIdentity | null>;
 }
 
 export function buildConversationTools(host: ConversationToolHost) {
-  const { env, callerContextId, getTraceId, logEvent } = host;
+  const { searchArchive, callerContextId, getTraceId, logEvent, resolveOwner } = host;
   return {
     // ── agent-facing conversation archive search ────
     // The `conversationSearch()` callable + `/cli/context/conversation/search`
-    // route already exist (Cards 151/152) and live on the registry DO
-    // (DEMO_INSTANCE) where the `conversation_archive` table lives. This
-    // wrapper exposes the same retrieval to the model so user questions
-    // like "4 月 28 那天我们聊了什么" or "之前 Kimi 模型那段最后怎么定的"
-    // can be answered against archive instead of bouncing off `recall`
-    // (which only sees `agent_memories`).
+    // route already exist (an earlier revision). Post-449 they read the agent's own
+    // per-agent DO (Track A). This wrapper exposes the same retrieval to the
+    // model so user questions like "4 月 28 那天我们聊了什么" or "之前 Kimi 模型
+    // 那段最后怎么定的" can be answered against archive instead of bouncing off
+    // `recall` (which only sees `agent_memories`).
     conversation_search: tool({
       description: "Search this agent's conversation archive (prior sessions / cross-context dialog). Use when the user asks about historical conversation that isn't in the visible dialog or in agent_memories — e.g. \"what did we discuss on 4/28\", \"that Kimi debugging from before\", \"上次/之前/上周聊过 X 吗\". Returns up to `topK` snippets with provenance (chunkId, contextId, archivedAt, role). Distinct from `recall` (which searches `agent_memories`) and `content_search` (which searches external Content Sources). If no hits, say so honestly — do not equate `recall` empty with archive empty.",
       inputSchema: z.object({
@@ -98,8 +87,25 @@ export function buildConversationTools(host: ConversationToolHost) {
           contextId: input.contextId ?? null,
           role: input.role ?? null,
         });
-        const stub = await resolveRegistryStub(env);
-        return await stub.conversationSearch({
+        // Multi-tenancy — resolve THIS caller's owner and owner-scope the
+        // local archive search. Three states (the fail-open trap is
+        // collapsing `null` → unscoped):
+        //   · null (owner resolution failed) → return EMPTY directly. Do NOT
+        //     pass through scopeOwnerIdFor (undefined = unfiltered = all
+        //     tenants). This is the fail-closed point.
+        //   · admin → scopeOwnerId undefined (unfiltered; operator unchanged).
+        //   · user → scopeOwnerId = own userId (own archives only).
+        //
+        // The injected `resolveOwner` thunk special-cases the registry/operator
+        // agent (DEMO_INSTANCE has no profile of its own) to admin, so the
+        // operator's cross-context search is never starved (precedent:
+        // `_resolveOwnerKind`'s `this.name === DEMO_INSTANCE → operator`).
+        const ownerIdentity = await resolveOwner();
+        if (ownerIdentity === null) {
+          return emptyConversationSearchResult(input);
+        }
+        const scopeOwnerId = scopeOwnerIdFor(ownerIdentity);
+        return await searchArchive({
           query: input.query,
           topK: input.topK,
           contextId: input.contextId,
@@ -110,7 +116,7 @@ export function buildConversationTools(host: ConversationToolHost) {
           callerContextId,
           callerTaskId: traceId,
           traceId,
-        });
+        }, scopeOwnerId);
       },
     }),
   };

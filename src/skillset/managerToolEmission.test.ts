@@ -1,5 +1,5 @@
 /**
- *  — manager tool emission enrichment tests.
+ * manager tool emission enrichment tests.
  *
  * Targets `enrichManagerInputSummary` / `enrichManagerResultSummary`.
  * These run inside `agentDynamicTools.ts` `execute` and widen the
@@ -256,8 +256,8 @@ describe("enrichManagerResultSummary — other families", () => {
 describe("enrichManager* — unknown tool ids", () => {
   it("does nothing for non-manager canonical ids", () => {
     const t = emit();
-    enrichManagerInputSummary("localdoc.convert_text", { content: "x" }, t);
-    enrichManagerResultSummary("localdoc.convert_text", { status: "ok" }, t);
+    enrichManagerInputSummary("fyimd.convert_text", { content: "x" }, t);
+    enrichManagerResultSummary("fyimd.convert_text", { status: "ok" }, t);
     // only the seeded marker survives
     assert.deepEqual(Object.keys(t).sort(), ["tool"]);
   });

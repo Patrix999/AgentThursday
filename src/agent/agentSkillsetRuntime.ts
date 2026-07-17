@@ -1,4 +1,4 @@
-//  —  AgentProfile.skillset runtime resolution.
+// M9.0 AgentProfile.skillset runtime resolution.
 //
 // Pure helper that turns the per-profile `AgentProfile.skillset`
 // selection into the effective set of skillset ids whose tools the
@@ -16,16 +16,16 @@
 //   * Strict fallback. Unknown, rejected, or disabled selection
 //     returns an empty `effectiveIds` plus a structured `reason`. We
 //     deliberately do NOT silently broaden to "all loaded" the way
-//      falls back from a missing model to Kimi: a model
+//     an earlier revision falls back from a missing model to Kimi: a model
 //     fallback is still dispatchable, but a skillset fallback would
 //     silently widen the callable tool surface — which is exactly
-//     what §Acceptance of  forbids ("the selected skillset
+//     what §Acceptance of an earlier revision forbids ("the selected skillset
 //     **controls** the runtime dynamic tool palette").
 //
 //   * Operator-disable wins. If the selected skillset or any of its
 //     dependencies is operator-disabled (`skillset_disabled` SQL row,
-//     ), the resolver intersects only with `loaded`, never
-//     with `loaded ∪ disabled`. This preserves the
+//     an earlier revision), the resolver intersects only with `loaded`, never
+//     with `loaded ∪ disabled`. This preserves the an earlier revision
 //     invariant that operator disable hides tools regardless of any
 //     per-profile selection.
 //

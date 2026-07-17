@@ -1,5 +1,5 @@
 /**
- *  — manager-authored custom skillset validation.
+ * manager-authored custom skillset validation.
  *
  * Sits between the HTTP/dispatch route layer and the SQLite ops in
  * `customSkillsetOps.ts`. Enforces the constraints the route can't
@@ -8,7 +8,7 @@
  *
  * v1 input shape: a structured manifest object (matches
  * `SkillsetManifest` from `../skillset/types`). YAML text input is
- * out of scope for v1 —  test doc records the deferred
+ * out of scope for v1 — an earlier revision test doc records the deferred
  * surface and the operator-facing copy.
  */
 import type { SkillsetManifest, SkillDescriptor } from "../skillset/types";
@@ -64,7 +64,7 @@ function readStringArray(obj: Record<string, unknown>, key: string): string[] | 
 }
 
 /**
- * Minimum-shape validator.  v1 enforces the load-bearing
+ * Minimum-shape validator. an earlier revision v1 enforces the load-bearing
  * subset of `SkillsetManifest` that the loader actually inspects:
  * id, name, description, version, purpose, tools[], skills[]
  * (with tier 1-5 + tools[]), workflow_patterns[], reasoning_protocol,
@@ -262,12 +262,18 @@ export function validateCustomSkillset(
   if (manifest.id.length === 0) {
     return { ok: false, error: { code: "missing_id", message: "manifest.id is required" } };
   }
-  if (EMBEDDED_IDS.has(manifest.id)) {
+  // Stage 2 — embedded/system ids are blocked on CREATE (no shadowing a baseline
+  // id) but ALLOWED on UPDATE (`expectedId` set): baseline skillsets are now
+  // editable system DB rows. The write authority is then owner-scoping — system
+  // rows are owned by `user-system`, so only an admin (undefined write scope)
+  // updates them; a scoped manager's update reads as not_found.
+  const isUpdate = typeof options.expectedId === "string" && options.expectedId.length > 0;
+  if (EMBEDDED_IDS.has(manifest.id) && !isUpdate) {
     return {
       ok: false,
       error: {
         code: "embedded_skillset_readonly",
-        message: `cannot shadow or modify embedded skillset id: ${manifest.id}`,
+        message: `cannot shadow embedded skillset id on create: ${manifest.id}`,
         id: manifest.id,
       },
     };

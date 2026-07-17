@@ -14,16 +14,16 @@ type NewContextStage =
 const DEFAULT_NEW_CONTEXT_REASON = "manual-ui-new";
 
 /**
- *   — confirmation-gated `new context` action. UI copy
+ * M7.7v3 confirmation-gated `new context` action. UI copy
  * deliberately distinguishes this from `<ResetAction>`: reset KEEPS the
  * same context identity and only clears messages; new opens a fresh
  * `contextId` and audit-links the previous one. v1 still clears
- * messages in the same DO (per  spec; full multi-DO routing is
- * deferred to ) — the confirmation copy and result view say so
+ * messages in the same DO (per an earlier revision spec; full multi-DO routing is
+ * deferred to an earlier revision) — the confirmation copy and result view say so
  * explicitly via `rawMessagesPreservedInOldContext: false` so the
  * operator does not mistake this for a true multi-context switch yet.
  *
- *  (2026-05-21) — extracted from ContextPanel.tsx; behavior
+ * an earlier revision (2026-05-21) — extracted from ContextPanel.tsx; behavior
  * unchanged (same API call, same events, same result UI).
  */
 export function NewContextAction({ totalMessageCount, actionsEnabled }: { totalMessageCount: number; actionsEnabled: boolean }) {
@@ -65,7 +65,7 @@ export function NewContextAction({ totalMessageCount, actionsEnabled }: { totalM
       <div className="flex items-center gap-2 text-[11px] text-slate-300">
         <span className="font-semibold">New context (audit-linked)</span>
         <span className="text-[10px] text-violet-400/80 italic">
-           — fresh contextId · v1 fallback (clears in same DO)
+          M7.7v3 — fresh contextId · v1 fallback (clears in same DO)
         </span>
       </div>
       <p className="mt-1 text-[10px] text-slate-500">
@@ -74,7 +74,7 @@ export function NewContextAction({ totalMessageCount, actionsEnabled }: { totalM
         <span className="font-mono">context.new</span> audit row that links{" "}
         <span className="font-mono">previousContextId → newContextId</span>. v1 still clears
         transient messages (reset-style) in the same Durable Object — true multi-DO context
-        switching is deferred to . Durable memory, checkpoints, workspace artifacts,
+        switching is deferred to an earlier revision. Durable memory, checkpoints, workspace artifacts,
         and event_log are preserved.
       </p>
 
@@ -158,7 +158,7 @@ function NewContextConfirm({
         <li>
           <span className="font-semibold text-amber-200">v1 fallback:</span> raw transcripts of
           the old context are NOT preserved — they are cleared in the same Durable Object.
-          Only the audit trail and per-context event_log entries survive.  (deferred)
+          Only the audit trail and per-context event_log entries survive. an earlier revision (deferred)
           will add per-context DO routing for true multi-context switching.
         </li>
         <li>
@@ -173,7 +173,7 @@ function NewContextConfirm({
           value={reason}
           maxLength={200}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="e.g. switching from  work to M8 planning"
+          placeholder="e.g. switching from M7.7 work to M8 planning"
           className="mt-0.5 w-full rounded bg-slate-950/70 border border-slate-700 px-2 py-1 text-[11px] text-slate-200 placeholder-slate-600 focus:outline-none focus:border-violet-500"
         />
       </label>

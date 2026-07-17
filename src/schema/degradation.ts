@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // degradation diagnostics surface compact view schemas.
-// These mirror the JSON payloads emitted by Cards 117/119/102 events.
+// These mirror the JSON payloads emitted by an earlier revision events.
 // `.passthrough()` lets the panel ride forward when those payloads grow;
 // it does NOT promote unknown fields into the typed view, just keeps them
 // for the raw `trace` consumer that already lives in `InspectSnapshot`.

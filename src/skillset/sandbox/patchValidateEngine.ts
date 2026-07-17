@@ -1,5 +1,5 @@
 /**
- *  — Worker-side validate-only patch engine.
+ * Worker-side validate-only patch engine.
  *
  * Runs the same 248 closed loop the Node-local validator runs, but
  * routed through `SandboxExec` so the agent (Worker / DO) can invoke

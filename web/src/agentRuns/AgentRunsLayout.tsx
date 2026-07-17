@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { PageHeader } from "../nav/PageHeader";
 
 /**
- *  — shared layout shell for the `/agent-runs/*` surface.
+ * shared layout shell for the `/agent-runs/*` surface.
  * Header is the unified `PageHeader` (2026-06-15) — this also adds the
  * collapsible menu the runtime pages were previously missing.
  */

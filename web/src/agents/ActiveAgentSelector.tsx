@@ -9,14 +9,15 @@ import {
 } from "../auth/secret";
 import { listAgentProfiles } from "../api/agentProfiles";
 import type { AgentProfileWithLifecycle } from "../api/agentProfiles";
+import { ownerLabel } from "./OwnerBadge";
 
 const POLL_MS = 10_000;
 
 /**
- *  — workspace active cloud-agent selector.
+ * workspace active cloud-agent selector.
  *
  * Lives in `TopStatusBar`. Reads the cloud agents list from
- * `/api/agent-profiles` ( `agents:` alias) and lets the user
+ * `/api/agent-profiles` (an earlier revision `agents:` alias) and lets the user
  * pick which agent the workspace console addresses. The pick is
  * sticky (`setActiveAgentPin`) so reload preserves it and the
  * canonical-pointer reconcile in `useWorkspace` doesn't revert it.
@@ -24,7 +25,7 @@ const POLL_MS = 10_000;
  * On pick we update both `agentthursday.activeAgentPin.id` and
  * `agentthursday.contextId` (same value): the latter is what
  * `authHeaders()` ships as `X-AgentThursday-Context-Id`, which the server
- * resolves into the per-agent `AgentThursdayAgent` DO ( guarantees
+ * resolves into the per-agent `AgentThursdayAgent` DO (an earlier revision guarantees
  * DO name == agent_id). The next `useWorkspace` poll lands on the
  * new agent's snapshot.
  *
@@ -86,7 +87,7 @@ export function ActiveAgentSelector({ variant = "desktop" }: { variant?: "deskto
     };
   }, []);
 
-  //  — promote the soft "first" default to a real pin once the
+  // promote the soft "first" default to a real pin once the
   // agents list resolves. Without this, a fresh user with no pin and an
   // empty `agentthursday.contextId` lands here showing agent A (the list head),
   // while `authHeaders()` ships no `X-AgentThursday-Context-Id` so the server
@@ -96,7 +97,7 @@ export function ActiveAgentSelector({ variant = "desktop" }: { variant?: "deskto
   // agents list, so the selector permanently displays A while the
   // console talks to DEMO_INSTANCE. Pinning on mount makes the
   // displayed agent the routed agent by construction, mirroring the
-  // create-flow auto-pin in `AgentNewRoute` ( §5).
+  // create-flow auto-pin in `AgentNewRoute` (an earlier revision §5).
   useEffect(() => {
     if (
       resolved.source === "first"
@@ -132,7 +133,11 @@ export function ActiveAgentSelector({ variant = "desktop" }: { variant?: "deskto
     <label
       data-testid={`${variant}-active-agent-selector`}
       className="inline-flex items-center gap-1.5 shrink-0"
-      title={current ? `Active cloud agent: ${current.name} (${current.id})` : "Active cloud agent"}
+      title={
+        current
+          ? `Active cloud agent: ${current.name} · owner ${ownerLabel(current.owner_user_id, current.owner_email)} (${current.id})`
+          : "Active cloud agent"
+      }
     >
       <span className={`uppercase tracking-wide text-slate-500 ${variant === "mobile" ? "text-[10px]" : "text-xs"}`}>
         agent
@@ -156,7 +161,7 @@ export function ActiveAgentSelector({ variant = "desktop" }: { variant?: "deskto
         {agents !== null &&
           agents.map((a) => (
             <option key={a.id} value={a.id}>
-              {a.name}
+              {a.name} · {ownerLabel(a.owner_user_id, a.owner_email)}
             </option>
           ))}
       </select>

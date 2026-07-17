@@ -54,7 +54,7 @@ describe("shouldPauseForNeedsHuman", () => {
     assert.equal(shouldPauseForNeedsHuman(false, mkSummary(), "task-A"), false);
   });
 
-  it("returns false on stale task-id (task-local scope invariant — )", () => {
+  it("returns false on stale task-id (task-local scope invariant — an earlier revision)", () => {
     assert.equal(shouldPauseForNeedsHuman(true, mkSummary({ taskId: "task-B" }), "task-A"), false);
   });
 

@@ -2,10 +2,10 @@ import { getSandbox } from "@cloudflare/sandbox";
 import { json } from "../httpUtil";
 
 /**
- *  — `POST /api/sandbox/exec` admin-smoke route extracted
+ * `POST /api/sandbox/exec` admin-smoke route extracted
  * from `src/server.ts`.
  *
- * Body lifted verbatim from the original inline branch (was ):
+ * Body lifted verbatim from the original inline branch (was an earlier revision):
  * admin smoke endpoint so verifier / operators can call
  * `getSandbox().exec()` directly without going through the model
  * loop, the agent's tool-routing, or the AgentThursdayAgent DO. Mirrors the

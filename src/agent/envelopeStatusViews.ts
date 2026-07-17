@@ -1,22 +1,22 @@
 /**
- *  — envelope read-only projections extracted from
+ * envelope read-only projections extracted from
  * `src/server.ts`. Free-helper layer mirroring `statusViews` /
  * `inspectViews` / `recoveryViews`: the `@callable()` / private
  * surface stays on `AgentThursdayAgent`; bodies live here and reach DO
  * state through a narrow `EnvelopeStatusViewsHost`.
  *
- *  preflight §2.1–2.4 records the 8-dim analysis and the
+ * an earlier revision preflight §2.1–2.4 records the 8-dim analysis and the
  * Host shape: only `sql` + `ensureEnvelopeStoreSync` are required.
  * No mutable per-instance refs are passed through — these helpers
  * are pure reads over the in-memory envelope store ∪
  * `envelope_snapshots` table and the `event_log` table.
  *
- * Behavior preservation invariants ():
+ * Behavior preservation invariants :
  *   1. newest-envelope selection ordering + tie-break
  *      (`started_at DESC` ISO-8601 lex order).
- *   2. sealed-pass binding to the current-turn envelope ( /
+ *   2. sealed-pass binding to the current-turn envelope (an earlier revision /
  *      199a — no historical sibling leak).
- *   3. Handled no-tool gate-intent fail predicate () —
+ *   3. Handled no-tool gate-intent fail predicate  —
  *      verdict_reason literal `"envelope missing required ring(s)"`
  *      must remain a literal at the read site
  *      (`src/skillset/evidenceEnvelope.ts:320`).
@@ -41,7 +41,7 @@ export interface EnvelopeStatusViewsHost {
 }
 
 /**
- *  — pick the newest envelope for `taskId`, unioning the
+ * pick the newest envelope for `taskId`, unioning the
  * in-memory `EnvelopeStore` and durable `envelope_snapshots`. Used
  * by the status/review-gate derivations to bind on **current/latest
  * turn** envelope instead of "any historical sealed pass envelope
@@ -91,7 +91,7 @@ export function getNewestEnvelopeForTaskView(
 }
 
 /**
- *  / 199a — true iff the **newest** envelope for the
+ * an earlier revision — true iff the **newest** envelope for the
  * current task is `sealed && verdict=pass`. Used by status and
  * review-gate derivation to short-circuit "task-active" /
  * "review-gate-blocked" / "no deliverable" once the verifiable
@@ -116,12 +116,12 @@ export function hasSealedPassEnvelopeForCurrentTaskView(
 }
 
 /**
- *  — true iff the newest envelope for `taskId` is a
- * *handled* no-tool gate-intent failure:  body replacement
+ * true iff the newest envelope for `taskId` is a
+ * *handled* no-tool gate-intent failure: an earlier revision body replacement
  * fired and the envelope sealed `failed/fail` with
  * `verdict_reason = "envelope missing required ring(s)"`. This is a
  * terminal, expected outcome — `/cli/status` and review-gate should
- * NOT keep blocking on it ( readiness contract). Strictly
+ * NOT keep blocking on it (an earlier revision readiness contract). Strictly
  * orthogonal to `hasSealedPassEnvelopeForCurrentTaskView`: callers
  * OR the two together so a handled fail opens the gate without
  * flipping the envelope into the "accepted as pass" path
@@ -156,15 +156,15 @@ export function isHandledNoToolGateIntentFailView(
 }
 
 /**
- *  — return the current task's finalized reply text (the
+ * return the current task's finalized reply text (the
  * authoritative `task.reply.finalized.replyText` for `taskId`),
  * truncated to `maxLen` with a `…(+N chars)` suffix the same way
  * `getLastAssistantText` does. Returns `null` when no finalized
  * event exists for `taskId` yet (mid-round, or task hasn't reached
  * finalize) — callers MUST omit any "[last msg]"-style line in that
  * case rather than falling back to a global last-assistant lookup,
- * which can leak previous-task text (the  verifier FAIL
- * symptom: a  server-side autodispatch round produced
+ * which can leak previous-task text (the an earlier revision verifier FAIL
+ * symptom: a an earlier revision server-side autodispatch round produced
  * little/no fresh assistant text in the SDK message log, so
  * `getLastAssistantText` resolved to the prior 208a-no-tool round).
  *

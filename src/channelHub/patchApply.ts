@@ -1,5 +1,5 @@
 /**
- *  — `ChannelHubAgent` patch-apply inspect helpers, extracted
+ * `ChannelHubAgent` patch-apply inspect helpers, extracted
  * from `src/channelHub.ts`.
  *
  * Pure SELECT + row-map for the three read-only inspect surfaces over
@@ -13,7 +13,7 @@
  *
  * Write surfaces (`applyPatchDryRun`, `writePatchApplyOutbox`) are NOT
  * extracted in this card — they touch env / sandbox / multi-site write
- * paths and stay inline for behavior-preserving safety.  is
+ * paths and stay inline for behavior-preserving safety. an earlier revision is
  * read-side only on the apply boundary; the only write extracted here
  * is `proposePatchArtifactImpl` in `patchArtifacts.ts`, which is its
  * own self-contained INSERT.

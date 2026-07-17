@@ -19,15 +19,16 @@ import { setActiveAgentPin } from "../auth/secret";
 import { MergePanel } from "../manager/MergePanel";
 import { AgentsLayout } from "./AgentsLayout";
 import { LifecycleBadge, relativeTime, humanizeLifecycleReason } from "./LifecycleBadge";
+import { OwnerBadge } from "./OwnerBadge";
 import { useRuntimeModelLookup } from "./useRuntimeModelLookup";
 
 /**
- *  — detail view at `/agents/:id`.
- *  — UI copy reads "cloud agent". Read-only view of one cloud
+ * detail view at `/agents/:id`.
+ * UI copy reads "cloud agent". Read-only view of one cloud
  * agent's runtime config; backing API is still `/api/agent-profiles/:id`
  * (legacy persistence; see
- * ). No PATCH
- * controls yet ( §6 — those are later cards).
+ * docs/design/2026-05-24-m9.0-agent-centric-correction.md). No PATCH
+ * controls yet (an earlier revision §6 — those are later cards).
  */
 export function AgentDetailRoute() {
   const { id = "" } = useParams<{ id: string }>();
@@ -64,7 +65,7 @@ export function AgentDetailRoute() {
     };
   }, [id, fetchProfile]);
 
-  //  — state-button click handler. PATCHes via the manager
+  // state-button click handler. PATCHes via the manager
   // surface, then re-fetches the profile so the badge / active task
   // strip / button row all reflect the new persisted state.
   const onAction = useCallback(
@@ -105,11 +106,12 @@ export function AgentDetailRoute() {
                   persistedFallback={profile.status}
                   size="md"
                 />
+                <OwnerBadge ownerUserId={profile.owner_user_id} ownerEmail={profile.owner_email} />
               </div>
               <div className="text-xs text-slate-500 font-mono break-all">{profile.id}</div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              {/*  / 368 — primary path into the workspace console
+              {/* an earlier revision — primary path into the workspace console
                   for this cloud agent. Pin + navigate to "/workspace" so the
                   console loads with this agent active. AgentRun
                   remains the secondary task/job UX. */}
@@ -131,16 +133,16 @@ export function AgentDetailRoute() {
               </Link>
             </div>
           </header>
-          {/*  — active task strip. Shows summary + last activity
+          {/* active task strip. Shows summary + last activity
               when present; quiet empty state when idle / no task. */}
           <ActiveTaskStrip lifecycle={profile.lifecycle} fallbackUpdatedAt={profile.updated_at} />
-          {/*  — merge audit panel. Auto-targets the active
+          {/* merge audit panel. Auto-targets the active
               task when present; operators paste a task_id for
               post-mortem inspection (merge audit is most useful
               after `manager.task.replied` lands, which clears
               current_task_id). */}
           <MergePanel defaultTaskId={profile.lifecycle?.current_task_id ?? null} />
-          {/*  — state action buttons. Calls PATCH /api/manager/agents/:id
+          {/* state action buttons. Calls PATCH /api/manager/agents/:id
               and refreshes the profile (which re-derives lifecycle on the
               server side). Disabled while a PATCH is in flight. */}
           <LifecycleActions
@@ -184,7 +186,7 @@ export function AgentDetailRoute() {
 }
 
 /**
- *  (UX W4) — inline "send a message" box so the agent detail
+ * an earlier revision (UX W4) — inline "send a message" box so the agent detail
  * page is a usable hub, not just a read-only config view. POSTs to the
  * manager message endpoint (async accept) and surfaces the task id +
  * a link into the runs view.
@@ -246,7 +248,7 @@ function SendMessageSection(props: { agentId: string }) {
 }
 
 /**
- *  — channel binding management. Lists the recent conversations
+ * channel binding management. Lists the recent conversations
  * bound to this agent and lets the operator bind/unbind. One agent per
  * conversation; binding replaces the current owner (warned inline).
  * Data is the ChannelHub recent-conversations snapshot (top 10 by
@@ -356,7 +358,7 @@ function ChannelBindingsSection(props: { agentId: string }) {
 }
 
 /**
- *  — active task strip. Reads from the lifecycle block when
+ * active task strip. Reads from the lifecycle block when
  * present; otherwise falls back to "no active task" + the profile's
  * `updated_at` so the user never sees a blank section. Never surfaces
  * `current_task_id` directly — operators can find that via /agent-runs.
@@ -391,13 +393,13 @@ function ActiveTaskStrip(props: {
 }
 
 /**
- *  — state action buttons. Mapping per  ADR §3.2 / §6.1:
+ * state action buttons. Mapping per an earlier revision ADR §3.2 / §6.1:
  *   draft    → Activate (→ ready)
  *   ready    → Disable (→ disabled) / Archive (→ archived)
  *   disabled → Enable (→ ready) / Archive (→ archived)
  *   archived → Restore (→ draft, NOT ready — ADR requires re-confirm
  *              before an archived agent re-enters a dispatchable state;
- *              fixed in  after  verifier flagged
+ *              fixed in an earlier revision after an earlier revision verifier flagged
  *              archived→ready as a product-safety regression).
  *
  * All buttons route through `PATCH /api/manager/agents/:id` with a
@@ -412,7 +414,7 @@ function LifecycleActions(props: {
 }) {
   const actions: Array<{ label: string; next: AgentLifecyclePersistedStatus; tone: "primary" | "secondary" | "danger" }> = [];
   if (props.persisted === "initialized") {
-    //  — Pause/Resume (accepts_tasks toggle) not yet wired;
+    // Pause/Resume (accepts_tasks toggle) not yet wired;
     // Archive is the only lifecycle transition available from initialized.
     actions.push({ label: "Archive", next: "archived", tone: "danger" });
   } else if (props.persisted === "archived") {
@@ -443,7 +445,7 @@ function LifecycleActions(props: {
 }
 
 /**
- *  — cross-link into the read-only Skillset UI so operators
+ * cross-link into the read-only Skillset UI so operators
  * can jump from "this agent is configured to use X" to the loaded /
  * disabled / rejected view for X without leaving the keyboard.
  */
@@ -473,7 +475,7 @@ function Row(props: { label: string; value: string; mono?: boolean }) {
 }
 
 /**
- *  — shows the resolver's view of which skillset ids will
+ * shows the resolver's view of which skillset ids will
  * actually contribute callable dynamic tools to the next session/run.
  * Mirrors `/agent-runs/:id` SkillsetRuntimeRow. See
  * `src/agent/agentSkillsetRuntime.ts` for the resolver semantics.
@@ -510,11 +512,11 @@ function SkillsetRuntimeRow(props: {
 }
 
 /**
- *  — shows runtime provider + availability for the profile's
+ * shows runtime provider + availability for the profile's
  * `model`. Says "—" until the options API resolves; once loaded, an
  * unknown id renders "unknown (not in runtime registry)". This is the
  * "actual runtime provider / target model when known" surface
- * required by  §Required 5.
+ * required by an earlier revision §Required 5.
  */
 function ModelRuntimeRow(props: {
   modelId: string;
@@ -530,7 +532,7 @@ function ModelRuntimeRow(props: {
     value = `${entry.provider} → ${entry.id}`;
     tone = "text-emerald-300";
   } else {
-    //  — POST gate now rejects this state for NEW agents,
+    // POST gate now rejects this state for NEW agents,
     // but legacy / pre-flip rows may still carry a not_configured id.
     // getModel() fail-softs to the workers-ai Kimi default in that
     // case (see `_resolveWorkersAITargetWithFallback`), and emits

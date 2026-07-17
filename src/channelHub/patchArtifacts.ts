@@ -1,5 +1,5 @@
 /**
- *  — `ChannelHubAgent` propose-patch artifact helpers, extracted
+ * `ChannelHubAgent` propose-patch artifact helpers, extracted
  * from `src/channelHub.ts`.
  *
  * `proposePatchArtifactImpl(agent, input)` and
@@ -125,7 +125,7 @@ export async function proposePatchArtifactImpl(
     return { ok: false, error: "conversation_id_invalid" };
   }
 
-  //  — optional caller-supplied 40-hex git SHA. Stored as the
+  // optional caller-supplied 40-hex git SHA. Stored as the
   // pinned base tree the patch was authored against; `applyPatchDryRun`
   // compares it (case-insensitively) to the sandbox-resolved
   // `head_sha` and fails closed on mismatch without consuming the

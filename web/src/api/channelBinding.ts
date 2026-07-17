@@ -1,11 +1,11 @@
 /**
- *  —  channel conversation → agent binding client.
- *  — agent-centric naming. Client surfaces both `activeAgentId`
+ * M9.0 channel conversation → agent binding client.
+ * agent-centric naming. Client surfaces both `activeAgentId`
  * (preferred) and `activeProfileId` (legacy alias, same value); POST
  * accepts an agent id and is sent over the wire under both `agent_id`
  * and `profile_id` so server can validate either alias path. The
  * underlying column is still `active_profile_id` — see the design
- * note ``.
+ * note `docs/design/2026-05-24-m9.0-agent-centric-correction.md`.
  *
  * Wraps the new ChannelHub routes:
  *   GET  /api/channel/conversation-binding?conversation_id=<id>
@@ -20,7 +20,7 @@ import { postJson } from "./client";
 export interface ConversationBinding {
   conversationId: string;
   activeAgentId: string | null;
-  /**  — legacy alias of `activeAgentId`; same value. */
+  /** legacy alias of `activeAgentId`; same value. */
   activeProfileId: string | null;
 }
 
@@ -36,7 +36,7 @@ interface ConversationBindingWire {
 }
 
 function normalizeBinding(wire: ConversationBindingWire): ConversationBinding {
-  //  — server returns both fields. Older servers may only set
+  // server returns both fields. Older servers may only set
   // `activeProfileId`; coerce to the new shape so callers can read either.
   const bound =
     wire.activeAgentId !== undefined && wire.activeAgentId !== null

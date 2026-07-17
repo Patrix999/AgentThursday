@@ -9,7 +9,7 @@ import {
 } from "../demoConstants";
 
 /**
- *  — `/demo/*` routes extracted from `server.ts`.
+ * `/demo/*` routes extracted from `server.ts`.
  *
  * Each handler is the exact body of the original `server.ts` branch,
  * lifted into its own function. No behavior changes:
@@ -188,7 +188,7 @@ export async function handleDemoConfirmMutation(request: Request, env: Env): Pro
 }
 
 /**
- *  — `/demo/*` path/method dispatch facade.
+ * `/demo/*` path/method dispatch facade.
  *
  * Single entry point used by `server.ts` instead of seven inline
  * `if (pathname === X && method === Y)` branches. The seven per-handler

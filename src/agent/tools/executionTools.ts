@@ -1,39 +1,39 @@
 /**
- *  —  `getTools()` family extraction step 6 (final): execute
+ * M8.9 `getTools()` family extraction step 6 (final): execute
  * family D (`execute`).
  *
- * Per  preflight §4 split order this is the sixth and last step
+ * Per an earlier revision preflight §4 split order this is the sixth and last step
  * — the codemode `execute` tool plus the per-workspace-tool
- * instrumentation that lives inside its IIFE.  §6 flagged this
+ * instrumentation that lives inside its IIFE. an earlier revision §6 flagged this
  * as the highest-risk family because three previously-shipped wrappers
  * must travel together byte-equal:
  *
- *   -  **inner** wrap — instruments every workspace tool
+ *   - an earlier revision **inner** wrap — instruments every workspace tool
  *     (`read` / `write` / `list` / `edit` / `glob` / ...) so each inner
  *     call emits `tool.<id>.{dispatch,result,error}`. Without this,
  *     the 187b scan flagged `missingInToolEvents=['write']` because
  *     codemode's outer `tool.execute` was the only event seen.
- *   -  **outer** wrap — instruments `execute` itself so its
+ *   - an earlier revision **outer** wrap — instruments `execute` itself so its
  *     own success / failure emits `tool.execute.{result,error}`
  *     mirroring the inner pattern. Without this, codemode's
  *     `execute` throw (e.g. Workers Loader sandbox refusing
  *     `require('fs')`) became an AI-SDK tool-error part only, leaving
  *     inspect / RCA blind. Re-throw preserves the AI SDK tool-error
  *     contract that downstream supplierSignal (2a) keys off.
- *   -  bundled-modules cast — `DynamicWorkerExecutor`'s TS
+ *   - an earlier revision bundled-modules cast — `DynamicWorkerExecutor`'s TS
  *     signature is narrowed to `Record<string,string>` but at runtime
  *     it forwards the map straight to `loader.get(...).modules`,
  *     which accepts the wider `{ js: string }` Module shape. Cast
  *     through `unknown` to bridge the gap.
  *
- *  §3 sketched `ExecutionToolHost = { workspace, env, logEvent,
+ * an earlier revision §3 sketched `ExecutionToolHost = { workspace, env, logEvent,
  * getBundledModules }`. Implementation narrows `env` to the single
  * `loader` (= `env.LOADER`) the IIFE actually uses — passing the full
  * `env` would widen the Host surface unnecessarily.
  *
- *  — agent-facing `sandbox_exec` tool removed for the  demo
+ * agent-facing `sandbox_exec` tool removed for the M8.3 demo
  * surface. The agent runtime is read/verify only: read/git workspace
- * tools + fixed `gate.build` / `gate.typecheck` via the  dispatcher.
+ * tools + fixed `gate.build` / `gate.typecheck` via the M8.1 dispatcher.
  * Arbitrary shell (pwd / ls / git clone / find /, /opt/agentthursday/prewarm-*
  * probes) was leaking into demo envelopes and breaking the showcase
  * contract. The admin `/api/sandbox/exec` endpoint in `server.ts` stays
@@ -43,7 +43,7 @@
  * `createExecuteTool` from `@cloudflare/think`), event names + payload
  * shapes, the bundled-modules cast, the tier-1/tier-2 codePreview
  * logic, and the re-throw-on-error contract are preserved verbatim
- * from `src/server.ts:945-1049` (pre-).
+ * from `src/server.ts:945-1049` (pre-an earlier revision).
  */
 
 import { createExecuteTool } from "@cloudflare/think/tools/execute";
@@ -53,7 +53,7 @@ import type { Workspace } from "@cloudflare/shell";
 
 export interface ExecutionToolHost {
   /**
-   * Live agent workspace ( auto-spread base). Passed straight
+   * Live agent workspace (an earlier revision auto-spread base). Passed straight
    * into `createWorkspaceTools(...)` — identity preserved.
    */
   workspace: Workspace;
@@ -64,7 +64,7 @@ export interface ExecutionToolHost {
    */
   loader: Env["LOADER"];
   /**
-   * Lazy getter for `_bundledModules` ( Module-object form
+   * Lazy getter for `_bundledModules` (an earlier revision Module-object form
    * `{ js: string }`). The field can be `null` before
    * `_initBundledModules()` resolves; the getter is invoked once
    * at executor-construction time (for the `modules` option) and
@@ -79,7 +79,7 @@ export interface ExecutionToolHost {
 
 export function buildExecutionTool(host: ExecutionToolHost) {
   const { workspace, loader, getBundledModules, logEvent } = host;
-  //  — instrument the legacy workspace tool surface so
+  // instrument the legacy workspace tool surface so
   // each inner read/write/list/edit/glob emits a `tool.<id>.{dispatch
   // |result|error}` row into event_log. These tools are called from
   // INSIDE codemode (`execute`), so without this wrapper the outer
@@ -138,7 +138,7 @@ export function buildExecutionTool(host: ExecutionToolHost) {
     tools: instrumented as any,
     executor: new DynamicWorkerExecutor({
       loader,
-      // : bundledModules uses Module-object form `{ js: ... }`
+      // an earlier revision: bundledModules uses Module-object form `{ js: ... }`
       // (the explicit-type form Workers Loader requires for keys without
       // `.js`/`.py` extension). DynamicWorkerExecutor's TS signature is
       // narrowed to `Record<string,string>`, but at runtime it forwards
@@ -151,7 +151,7 @@ export function buildExecutionTool(host: ExecutionToolHost) {
   const execute = { ...base, execute: async (input: any, opts: any) => {
     const bundled = getBundledModules();
     const tier = (bundled && Object.keys(bundled).length > 0) ? 2 : 1;
-    //  Track B-3 — capped code preview for trace analysis.
+    // an earlier revision Track B-3 — capped code preview for trace analysis.
     // CodeInput shape is `{ code: string }` per `@cloudflare/codemode/shared`.
     const codePreview = typeof input?.code === "string" ? (input.code as string).slice(0, 200) : null;
     logEvent("tool.execute", {
@@ -159,7 +159,7 @@ export function buildExecutionTool(host: ExecutionToolHost) {
       reason: tier === 2 ? "codemode + bundled npm deps" : "codemode JS/TS",
       codePreview,
     });
-    //  (2b) — emit structured .result / .error events
+    // an earlier revision (2b) — emit structured .result / .error events
     // mirroring the workspace-tool `instrumented` pattern above.
     // Without this, codemode's `execute` throw (e.g. Workers Loader
     // sandbox refusing Node-only APIs like `require('fs')` /

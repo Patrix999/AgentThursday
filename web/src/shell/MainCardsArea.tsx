@@ -10,7 +10,7 @@ type Props = {
 };
 
 /**
- * v2.5 ( v2.5): renders only the two action-bearing cards —
+ * v2.5 (an earlier revision v2.5): renders only the two action-bearing cards —
  * `PendingApprovalCard` (when an approval is waiting) and
  * `NeedReplyCard` (when the agent is waiting on the user). The current
  * task title is now part of `SummaryStream` as a user message, and its

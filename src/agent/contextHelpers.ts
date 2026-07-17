@@ -1,4 +1,4 @@
-//  — pure context-lifecycle helpers moved from `src/server.ts`
+// pure context-lifecycle helpers moved from `src/server.ts`
 // (pre-edit lines 177-181, 185-204, 211-234, 482-507). Each helper is
 // module-level, side-effect-free, and does not touch `AgentThursdayAgent` state
 // or DO storage; relocation cannot change runtime behavior.
@@ -20,7 +20,7 @@ import {
   DIALOG_FALLBACK_PER_MSG_CHAR_CAP,
 } from "./agentConstants";
 
-//   — fresh context id. Crypto-random when available
+// M7.7v3 fresh context id. Crypto-random when available
 // (Cloudflare Workers expose `crypto.randomUUID`); falls back to a
 // time + random base-36 hash for the unlikely no-crypto path so the id
 // remains unique for audit purposes.
@@ -51,7 +51,7 @@ export function storedCompactionView(stored: {
   };
 }
 
-//  — recompute medium-tier "preserved important points" from a
+// recompute medium-tier "preserved important points" from a
 // FRESH snapshot/anchors taken immediately before each apply step.
 // Using the original plan's `summaryPreservedAnchors` would risk
 // drifting into a stale view of which messages still classify as

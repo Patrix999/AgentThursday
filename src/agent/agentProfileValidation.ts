@@ -1,5 +1,5 @@
 /**
- *  — shared AgentProfile input validation. Extracted from
+ * shared AgentProfile input validation. Extracted from
  * `src/routes/agentProfileRoutes.ts` so the manager surface
  * (`src/routes/managerRoutes.ts` + `src/skillset/adapters/manager*.ts`
  * via `src/agent/managerOps.ts`) shares the exact same validation
@@ -19,6 +19,8 @@ import {
   resolveAgentRuntimeModel,
 } from "./agentModelRuntime";
 import { EMBEDDED_MANIFESTS, type EmbeddedManifest } from "../skillset/manifests";
+import { assembleEffectiveManifests } from "../skillset/loader";
+import { STUB_KNOWN_TOOL_IDS } from "../skillset/contractRegistry";
 import { manifestFromWire, type CustomSkillsetWireRecord } from "./customSkillsetOps";
 
 /**
@@ -27,7 +29,7 @@ import { manifestFromWire, type CustomSkillsetWireRecord } from "./customSkillse
  * importing the full AgentThursdayAgent type.
  */
 export interface SkillsetRegistryStub {
-  listCustomSkillsets(): Promise<CustomSkillsetWireRecord[]>;
+  listCustomSkillsets(scopeOwnerId?: string): Promise<CustomSkillsetWireRecord[]>;
 }
 
 export type AgentProfileValidationError =
@@ -47,10 +49,15 @@ export type AgentProfileValidationResult =
  */
 export async function knownSkillsetIds(
   stub: SkillsetRegistryStub,
+  // Owner scope (the writing tenant). A scoped caller may only assign embedded
+  // skillsets or its OWN custom ones — so another tenant's custom skillset id
+  // is not "known" and create/update is rejected. This is the assignment-time
+  // chokepoint that lets the per-agent custom cache stay unscoped.
+  scopeOwnerId?: string,
 ): Promise<ReadonlySet<string>> {
   const ids = new Set(EMBEDDED_MANIFESTS.map((m) => m.id));
   try {
-    const customs = await stub.listCustomSkillsets();
+    const customs = await stub.listCustomSkillsets(scopeOwnerId);
     for (const c of customs) ids.add(c.id);
   } catch (err) {
     console.warn(
@@ -69,16 +76,20 @@ export async function knownSkillsetIds(
  */
 export async function loadMergedManifests(
   stub: SkillsetRegistryStub,
+  scopeOwnerId?: string,
 ): Promise<EmbeddedManifest[]> {
   try {
-    const customs = await stub.listCustomSkillsets();
+    const customs = await stub.listCustomSkillsets(scopeOwnerId);
     if (customs.length === 0) return [...EMBEDDED_MANIFESTS];
     const custom: EmbeddedManifest[] = customs.map((c) => ({
       id: c.id,
       source_yaml: c.source_yaml,
       manifest: manifestFromWire(c),
     }));
-    return [...EMBEDDED_MANIFESTS, ...custom];
+    // Stage 2 — same usability-keyed assembler as the getTools path: DB-sourced
+    // system skillsets (seeded embedded ids) override code if they load clean,
+    // deduped one-per-id; user custom appended. Never drifts from getTools.
+    return assembleEffectiveManifests(EMBEDDED_MANIFESTS, custom, { knownToolIds: STUB_KNOWN_TOOL_IDS });
   } catch (err) {
     console.warn(
       `[agent-profile-validation] listCustomSkillsets failed during runtime probe; embedded only: ${
@@ -100,12 +111,15 @@ export async function loadMergedManifests(
 export async function validateAgentProfileInput(
   input: { model: string; skillset: string },
   stub: SkillsetRegistryStub,
-  // /412/413 — runnability env: which external providers have a
+  // runnability env: which external providers have a
   // stored credential, plus `dynamicModelOk` for a model a configured
-  // provider's list-models returned () that isn't in the static
+  // provider's list-models returned  that isn't in the static
   // registry. When set, the model checks are skipped; the skillset
   // rules below still run.
   runtimeEnv?: { configuredProviders?: string[]; anthropicKeyPresent?: boolean; dynamicModelOk?: boolean },
+  // Owner scope (the writing tenant) — gates which custom skillsets are
+  // assignable. Undefined = admin (any). See `knownSkillsetIds`.
+  scopeOwnerId?: string,
 ): Promise<AgentProfileValidationResult> {
   const dynamicModelOk = runtimeEnv?.dynamicModelOk === true;
   const runtimeEntry = resolveAgentRuntimeModel(input.model);
@@ -130,7 +144,7 @@ export async function validateAgentProfileInput(
       },
     };
   }
-  const known = await knownSkillsetIds(stub);
+  const known = await knownSkillsetIds(stub, scopeOwnerId);
   if (!known.has(input.skillset)) {
     return {
       ok: false,

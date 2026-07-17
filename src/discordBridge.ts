@@ -1,15 +1,15 @@
 /**
- * Discord/Bridge bridge inbound adapter.
+ * Discord/OpenClaw bridge inbound adapter.
  *
- * Accepts a narrow, Bridge-friendly Discord payload (NOT raw Discord JSON
+ * Accepts a narrow, OpenClaw-friendly Discord payload (NOT raw Discord JSON
  * as our canonical schema), normalizes it into `ChannelMessageEnvelope`, and
- * computes addressed signals before persistence. Per  §A-3, raw
+ * computes addressed signals before persistence. Per an earlier revision §A-3, raw
  * Discord JSON is not the contract — only this documented shape.
  *
  * What this file does NOT do:
- *  - direct Discord gateway / webhook signature verification ( §F)
- *  - routing to AgentThursdayAgent ()
- *  - outbound delivery ()
+ *  - direct Discord gateway / webhook signature verification (an earlier revision §F)
+ *  - routing to AgentThursdayAgent 
+ *  - outbound delivery 
  */
 
 import { z } from "zod";
@@ -26,10 +26,10 @@ import type {
 } from "./schema";
 
 /**
- * The contract Bridge must produce. Documented + zod-validated so a drift
- * on the bridge side is visible at the agentthursday boundary, not silently swallowed.
+ * The contract OpenClaw must produce. Documented + zod-validated so a drift
+ * on the bridge side is visible at the AgentThursday boundary, not silently swallowed.
  */
-export const BridgeDiscordInboundSchema = z.object({
+export const OpenClawDiscordInboundSchema = z.object({
   // Identity (Discord ids — keep as opaque strings)
   guildId: z.string().nullable().optional(),
   channelId: z.string().min(1),
@@ -52,7 +52,7 @@ export const BridgeDiscordInboundSchema = z.object({
     size: z.number().int().optional(),
   })).optional(),
 
-  // Bridge-supplied addressing hints (avoid agentthursday doing Discord-specific
+  // Bridge-supplied addressing hints (avoid AgentThursday doing Discord-specific
   // mention parsing where the bridge already knows). All optional.
   isDm: z.boolean().optional(),
   chatType: z.enum(["dm", "group", "channel"]).optional(),
@@ -62,18 +62,18 @@ export const BridgeDiscordInboundSchema = z.object({
   // Optional debug pointer; clamped to RAW_REF_MAX before storage.
   rawSnippet: z.string().optional(),
 });
-export type BridgeDiscordInbound = z.infer<typeof BridgeDiscordInboundSchema>;
+export type OpenClawDiscordInbound = z.infer<typeof OpenClawDiscordInboundSchema>;
 
 /**
  * Pick the chat type, preferring an explicit bridge value, then `isDm`,
  * then guild presence. Group is not auto-detected — bridge must mark it.
  */
-function deriveChatType(input: BridgeDiscordInbound): ChannelChatType {
+function deriveChatType(input: OpenClawDiscordInbound): ChannelChatType {
   if (input.chatType === "dm") return "dm";
   if (input.chatType === "group") return "group";
   if (input.chatType === "channel") return "channel";
   if (input.isDm === true) return "dm";
-  //  — honour explicit `isDm: false` BEFORE the
+  // honour explicit `isDm: false` BEFORE the
   // `guildId == null` heuristic. Polling REST omits `guild_id`,
   // so the heuristic alone would mis-tag polling-sourced guild
   // messages as DM, which then leaks `signals: ["dm"]` into the
@@ -84,7 +84,7 @@ function deriveChatType(input: BridgeDiscordInbound): ChannelChatType {
 }
 
 async function deriveConversationId(
-  input: BridgeDiscordInbound,
+  input: OpenClawDiscordInbound,
   chatType: ChannelChatType,
   botId: string | null,
 ): Promise<string> {
@@ -112,7 +112,7 @@ async function deriveConversationId(
  * Casual chatter without any of the above ⇒ addressedToAgent:false.
  */
 function deriveAddressing(
-  input: BridgeDiscordInbound,
+  input: OpenClawDiscordInbound,
   chatType: ChannelChatType,
   botId: string | null,
 ): { addressedToAgent: boolean; addressedSignals: string[] } {
@@ -135,7 +135,7 @@ function deriveAddressing(
   return { addressedToAgent: signals.length > 0, addressedSignals: signals };
 }
 
-function normalizeAttachments(input: BridgeDiscordInbound): ChannelAttachment[] {
+function normalizeAttachments(input: OpenClawDiscordInbound): ChannelAttachment[] {
   return (input.attachments ?? []).map((a) => ({
     id: a.id,
     kind: classifyAttachmentKind(a.contentType, a.name),
@@ -166,11 +166,11 @@ function classifyAttachmentKind(
 }
 
 /**
- * Normalize an Bridge Discord payload into the  envelope.
+ * Normalize an OpenClaw Discord payload into the an earlier revision envelope.
  * Bot id may be null (env unset); §D-19 guarantees graceful behavior.
  */
-export async function normalizeBridgePayload(
-  input: BridgeDiscordInbound,
+export async function normalizeOpenClawPayload(
+  input: OpenClawDiscordInbound,
   env: { AGENT_THURSDAY_DISCORD_BOT_ID?: string },
 ): Promise<ChannelMessageEnvelope> {
   const botId = env.AGENT_THURSDAY_DISCORD_BOT_ID && env.AGENT_THURSDAY_DISCORD_BOT_ID.length > 0

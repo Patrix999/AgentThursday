@@ -10,7 +10,7 @@ type State = {
 
 /**
  * full ChannelHub snapshot for the inspect tab.
- * `enabled=false` → no polling (mirrors `useInspect` lazy pattern from ).
+ * `enabled=false` → no polling (mirrors `useInspect` lazy pattern from an earlier revision).
  * 5s interval — channel events arrive via webhook, faster polling buys little.
  */
 export function useChannelSnapshot(enabled: boolean, intervalMs = 5000): State {

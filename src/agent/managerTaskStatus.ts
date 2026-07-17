@@ -1,5 +1,5 @@
 /**
- *  — pure status-derivation helper for the manager async
+ * pure status-derivation helper for the manager async
  * task/status API.
  *
  * Lives in its own module (NOT inside `managerOps.ts`) so the test
@@ -16,7 +16,7 @@
  *   - manager.task.failed                            -> "failed"
  *   - started but no terminal and > threshold        -> "timed_out"
  *
- *  — additive `terminal_conflict` evidence field. The derived
+ * additive `terminal_conflict` evidence field. The derived
  * `status` enum is NOT changed (existing UI keeps working). When a
  * later event contradicts the first terminal, the helper exposes
  * evidence so operators don't only see the first terminal's truth.
@@ -25,7 +25,7 @@
  *   - first terminal = `failed`, later `replied` or `merged` ⇒ conflict.
  *   - first terminal = `replied`, later `failed` ⇒ conflict.
  *   - first terminal = `replied`, later `merged` ⇒ NOT conflict
- *     ( §4.5 — audit-grade merge is the by-design follow-up
+ *     (an earlier revision §4.5 — audit-grade merge is the by-design follow-up
  *     to a successful replied terminal).
  *
  * Per-terminal payloads (reply/envelope_id/submit_task_id/error) are
@@ -45,13 +45,13 @@ export const MANAGER_TASK_EVENT_NAMES = {
   waiting: "manager.task.waiting",
   replied: "manager.task.replied",
   failed: "manager.task.failed",
-  //  — audit-grade merge marker. Coexists with `replied`;
+  // audit-grade merge marker. Coexists with `replied`;
   // does NOT participate in terminal status derivation (ADR §4.5:
   // presence of merged event is the audit discriminator, not the
   // lifecycle terminal). Derivation switch below has an explicit
   // no-op case so this is intentional, not a missed type.
   merged: "manager.task.merged",
-  //  — manager completion report event. Report/archive
+  // manager completion report event. Report/archive
   // evidence ONLY; does NOT participate in terminal status
   // derivation (replied / failed remain the terminal classes). Unlike
   // `merged` (which IS treated as conflict evidence when it follows
@@ -79,7 +79,7 @@ export interface ManagerTaskEventRow {
   payload?: Record<string, unknown> | null;
 }
 
-//  — terminal conflict evidence. Always present in the
+// terminal conflict evidence. Always present in the
 // `DerivedManagerTaskStatus` shape so consumers see a stable contract;
 // `has_conflict: false` is the no-conflict case (other fields omitted).
 export interface TerminalConflictEvidence {
@@ -89,13 +89,13 @@ export interface TerminalConflictEvidence {
   message?: string;
 }
 
-//  — stale warning evidence. Additive, always present.
+// stale warning evidence. Additive, always present.
 // A started-without-terminal task that has run past the SOFT timeout
 // (`MANAGER_TASK_TIMEOUT_MS`) keeps a non-terminal primary status
 // (`in_progress`) but carries `stale: true` so operators/UI see "this
 // has been running a while" WITHOUT it reading as a final `timed_out`.
 // Only the HARD ceiling (`MANAGER_TASK_HARD_TIMEOUT_MS`) flips primary
-// status to `timed_out`. This stops a legitimate long gate (
+// status to `timed_out`. This stops a legitimate long gate (an earlier revision
 // observed ~21 min) from being shown as terminal-timed-out at 10 min,
 // while still surfacing genuinely dead runs at the hard ceiling.
 export interface StaleWarningEvidence {
@@ -111,36 +111,36 @@ export interface DerivedManagerTaskStatus {
   completed_at: string | null;
   reply: string | null;
   envelope_id: string | null;
-  //  — inner per-agent task id surfaced from the
+  // inner per-agent task id surfaced from the
   // `manager.task.replied` payload so operators / UI can correlate
   // the outer manager_task_id to the inner submitTask id without
   // grepping event payloads. `null` for unknown / non-terminal /
   // failed tasks.
   submit_task_id: string | null;
   error: { reason: string; message: string; failure_class?: string } | null;
-  //  — additive. Status enum is unchanged; this surfaces the
+  // additive. Status enum is unchanged; this surfaces the
   // existence of a later event that contradicts the first terminal.
   terminal_conflict: TerminalConflictEvidence;
-  //  — additive. `stale: true` when started-without-terminal
+  // additive. `stale: true` when started-without-terminal
   // has passed the SOFT timeout but not the HARD ceiling (primary
   // status stays `in_progress`). `stale: false` otherwise.
   stale_warning: StaleWarningEvidence;
 }
 
-//  — SOFT warning threshold. Started-without-terminal past this
+// SOFT warning threshold. Started-without-terminal past this
 // keeps primary status `in_progress` but raises `stale_warning.stale`.
 // 10 min — the prior `timed_out` threshold; now demoted to a warning so
 // a long-but-legitimate gate is not prematurely shown as terminal.
 export const MANAGER_TASK_TIMEOUT_MS = 10 * 60 * 1000;
 
-//  — HARD timeout ceiling. Only past this does primary status
-// become `timed_out`. Sized from observed durations:  saw a
+// HARD timeout ceiling. Only past this does primary status
+// become `timed_out`. Sized from observed durations: an earlier revision saw a
 // legitimate software-dev run reach ~21 min (dominated by the full-repo
-// typecheck timeout that 's scoped fast path removes). Even a
+// typecheck timeout that an earlier revision's scoped fast path removes). Even a
 // src-change run that still hits the `root` phase plus a full
 // `gate.build` is ~18-21 min worst case; 30 min gives headroom over
 // that while still catching genuinely dead runs (no terminal + no
-// further progress) at the ceiling. Not unbounded — see  /
+// further progress) at the ceiling. Not unbounded — see an earlier revision /
 // 193d for why bumping past a qualitative "low tens of minutes" budget
 // would instead call for gate-progress heartbeats (the named follow-up).
 export const MANAGER_TASK_HARD_TIMEOUT_MS = 30 * 60 * 1000;
@@ -182,7 +182,7 @@ export function deriveManagerTaskStatus(
   let received = false;
   let started = false;
   let lastWaitingAfterStart = false;
-  //  — track first terminal + any later contradicting events
+  // track first terminal + any later contradicting events
   // without short-circuiting on the first terminal. The first
   // terminal's payload is captured ONCE and never overwritten.
   let firstTerminal: "replied" | "failed" | null = null;
@@ -214,7 +214,7 @@ export function deriveManagerTaskStatus(
             result.submit_task_id = asString(payload.submit_task_id);
           }
         } else {
-          //  — later replied is a terminal-flip conflict
+          // later replied is a terminal-flip conflict
           // when the first terminal was `failed`. (A second replied
           // after the first replied is also tracked — duplicated
           // terminals are still evidence of an inconsistent state.)
@@ -229,15 +229,15 @@ export function deriveManagerTaskStatus(
           result.completed_at = e.ts;
           result.error = asErrorPayload(e.payload ?? null);
         } else {
-          //  — later failed after a replied terminal is the
+          // later failed after a replied terminal is the
           // canonical replied→failed conflict shape.
           laterEvents.push(e.type);
         }
         break;
       }
       case MANAGER_TASK_EVENT_NAMES.merged:
-        // : audit-grade merge event. Non-terminal by design.
-        // : counts as conflict-evidence ONLY when it follows
+        // an earlier revision: audit-grade merge event. Non-terminal by design.
+        // an earlier revision: counts as conflict-evidence ONLY when it follows
         // a `failed` terminal. After a `replied` terminal the merged
         // event is the by-design audit follow-up and is NOT flagged.
         if (firstTerminal === "failed") {
@@ -245,13 +245,13 @@ export function deriveManagerTaskStatus(
         }
         break;
       case MANAGER_TASK_EVENT_NAMES.completed:
-        // : manager completion report. Pure report/archive
+        // an earlier revision: manager completion report. Pure report/archive
         // evidence — NEVER pushed to `laterEvents` even after a
         // `failed` terminal (unlike `merged`). A completion record
         // that disagrees with the terminal is operator-visible via
         // the additive `completion` side field on the status
         // endpoint; it is intentionally NOT flagged as a terminal
-        // conflict.  spec §"Completion event 与
+        // conflict. an earlier revision spec §"Completion event 与
         // manager.task.replied 并存；它是 report/归档 evidence,
         // 不是 lifecycle terminal".
         break;
@@ -260,7 +260,7 @@ export function deriveManagerTaskStatus(
     }
   }
 
-  //  — emit conflict evidence when a terminal had later events.
+  // emit conflict evidence when a terminal had later events.
   if (firstTerminal !== null && laterEvents.length > 0) {
     result.terminal_conflict = {
       has_conflict: true,
@@ -281,7 +281,7 @@ export function deriveManagerTaskStatus(
       const startedMs = Date.parse(result.started_at);
       if (Number.isFinite(startedMs)) {
         const elapsed = now.getTime() - startedMs;
-        //  — HARD ceiling: genuinely stuck (no terminal, no
+        // HARD ceiling: genuinely stuck (no terminal, no
         // progress, past the ceiling) → terminal `timed_out`. Preserves
         // dead-run observability.
         if (elapsed > MANAGER_TASK_HARD_TIMEOUT_MS) {
@@ -293,7 +293,7 @@ export function deriveManagerTaskStatus(
           };
           return result;
         }
-        //  — SOFT window: past the old 10-min threshold but not
+        // SOFT window: past the old 10-min threshold but not
         // the hard ceiling. Keep primary status `in_progress` (a long
         // gate may still be legitimately running) and only raise a
         // stale warning so operators/UI don't read it as terminal.

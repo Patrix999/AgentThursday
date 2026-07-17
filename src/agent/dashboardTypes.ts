@@ -1,4 +1,4 @@
-//  — dashboard type declarations moved from `src/server.ts`
+// dashboard type declarations moved from `src/server.ts`
 // (pre-edit lines 552-625, leading comments preserved verbatim). All
 // `type` (compile-time only) — relocation is byte-equivalent at runtime.
 //
@@ -8,7 +8,7 @@
 // import path stays valid (`export type { DashboardCore, DashboardSection }
 // from "./agent/dashboardTypes"`).
 
-//  — daily dogfood observability dashboard v1.
+// daily dogfood observability dashboard v1.
 //
 // Inline section returned by /cli/status. Read-only, auth-gated by the
 // global `requireSecret` on /cli/*. Composes the DO-side core
@@ -20,7 +20,7 @@
 // Drift flags appended here (route layer): `outbox_missing`,
 // `outbox_provider_error`, `patch_apply_outbox_unknown`. The DO core
 // handles the four envelope-side flags. Combined whitelist size = 7
-// ( baseline of 6 +  patch-apply outbox unknown).
+// (an earlier revision baseline of 6 + an earlier revision patch-apply outbox unknown).
 //
 // Fail-soft: if ChannelHub is unavailable, `latest_outbox` becomes
 // `"unknown"` and no outbox-derived drift flag is emitted. Likewise,
@@ -60,7 +60,7 @@ export type DashboardOutboxRow = {
 export type DashboardVersion = {
   instance_name: string;
   service_version: string;
-  //  — Cloudflare Workers `[version_metadata]` binding.
+  // Cloudflare Workers `[version_metadata]` binding.
   // Auto-populated by the Workers runtime in production. Each field is
   // independently fail-soft: any missing or non-string value becomes
   // `null` rather than 500-ing the most-polled endpoint. Local
@@ -72,7 +72,7 @@ export type DashboardVersion = {
   worker_version_timestamp: string | null;
 };
 
-//  — redaction-safe latest patch-apply outbox summary surfaced
+// redaction-safe latest patch-apply outbox summary surfaced
 // on `/cli/status.dashboard`. Read-only mirror of the most recent
 // `patch_apply_outbox` row plus a `matches_event` cross-check. Field
 // set is identical to ChannelHub `getLatestPatchApplyOutboxSummary`

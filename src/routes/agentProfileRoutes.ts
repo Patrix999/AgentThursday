@@ -16,9 +16,10 @@ import {
   type LifecycleTaskEvidence,
 } from "../agent/agentLifecycleView";
 import type { AgentThursdayAgent } from "../server";
+import { scopeOwnerIdFor, type RequestIdentity } from "../agent/requestIdentity";
 
 /**
- *  —  AgentProfile create / list / read routes.
+ * M9.0 AgentProfile create / list / read routes.
  *
  * Storage is on the DEMO_INSTANCE registry DO (global config); the
  * composition root resolves it via `deps.getRegistryStub()` so this
@@ -30,7 +31,7 @@ import type { AgentThursdayAgent } from "../server";
  *   POST /api/agent-profiles            create — body validated by Zod,
  *                                       model must resolve to an
  *                                       `available` runtime entry
- *                                       (; see
+ *                                       (an earlier revision; see
  *                                       `src/agent/agentModelRuntime.ts`),
  *                                       skillset ∈ EMBEDDED_MANIFESTS.
  *                                       409 on duplicate name.
@@ -43,7 +44,7 @@ import type { AgentThursdayAgent } from "../server";
  *                                       states alongside live rows.
  *   GET  /api/agent-profiles/options    closed-list options for the
  *                                       create form: `{models, skillsets}`.
- *                                        UI source — avoids
+ *                                       an earlier revision UI source — avoids
  *                                       bundling YAML manifests in the
  *                                       browser bundle.
  *   GET  /api/agent-profiles/<id>       read — 404 if not found.
@@ -56,6 +57,8 @@ type AgentThursdayAgentStub = Awaited<ReturnType<typeof getAgentByName<Env, Agen
 
 export interface AgentProfileRoutesDeps {
   getRegistryStub: () => Promise<AgentThursdayAgentStub>;
+  /** gateway-verified tenant identity (admin when header absent). */
+  identity: RequestIdentity;
 }
 
 const ROUTE_PREFIX = "/api/agent-profiles";
@@ -68,7 +71,7 @@ function mintId(): string {
   return `agent-${crypto.randomUUID()}`;
 }
 
-//  — fail-soft lifecycle attachment. A failure to fetch
+// fail-soft lifecycle attachment. A failure to fetch
 // per-agent task evidence (cold DO, transient binding) must not break
 // the profile list/detail read. The UI treats `lifecycle` as optional;
 // missing block degrades to a `Draft`/`Active` badge with no derived
@@ -134,29 +137,30 @@ export async function handleAgentProfileRoutes(
       );
     }
     const input = parsed.data;
-    //  / 357 — model + skillset validation extracted to
+    // an earlier revision — model + skillset validation extracted to
     // `agentProfileValidation.ts` so the manager surface
     // (`/api/manager/agents` + `manager.agent_create` dispatch tool)
     // shares the same path; error codes line up 1:1 with the YAML
     // tool contracts. UI also disables unrunnable models, but the
     // API gate is the source of truth.
     const stub = await deps.getRegistryStub();
-    //  — same credential/dynamic-model awareness as
-    // managerCreateAgent (Cards 412/413). Without this, the dropdown
+    // same credential/dynamic-model awareness as
+    // managerCreateAgent (an earlier revision). Without this, the dropdown
     // offers a live-discovered model (e.g. deepseek-v4-pro) that this
     // route then rejects as unknown_model. Fail-soft: registry errors
     // leave both empty → static-registry behavior.
     let configuredProviders: string[] = [];
     let dynamicModelOk = false;
     try {
-      configuredProviders = await stub.listConfiguredProviders();
-      const dyn = await stub.resolveProviderForModel({ model: input.model });
+      configuredProviders = await stub.listConfiguredProviders(deps.identity);
+      const dyn = await stub.resolveProviderForModel({ model: input.model }, deps.identity);
       dynamicModelOk = dyn !== null && configuredProviders.includes(dyn.provider);
     } catch { /* static behavior */ }
     const validation = await validateAgentProfileInput(
       { model: input.model, skillset: input.skillset },
       stub,
       { configuredProviders, dynamicModelOk },
+      scopeOwnerIdFor(deps.identity),
     );
     if (!validation.ok) {
       return json({ code: validation.error.code, message: validation.error.message }, 400);
@@ -172,14 +176,14 @@ export async function handleAgentProfileRoutes(
       status: input.status,
       createdAt: now,
       updatedAt: now,
-    });
+    }, deps.identity);
     if (!result.ok) {
       if (result.error.code === "name_conflict") {
         return json({ code: "name_conflict", message: result.error.message }, 409);
       }
       return json({ code: "internal", message: result.error.message }, 500);
     }
-    //  — surface `agent_id` alongside the legacy `id` so new
+    // surface `agent_id` alongside the legacy `id` so new
     // clients can speak the corrected vocabulary. Same value.
     return json({ ...result.profile, agent_id: result.profile.id }, 201);
   }
@@ -189,22 +193,40 @@ export async function handleAgentProfileRoutes(
     const includeArchived = url.searchParams.get("includeArchived") === "1";
     const view = url.searchParams.get("view");
     const stub = await deps.getRegistryStub();
-    const profiles = await stub.listAgentProfiles({ includeArchived });
-    //  — per-row lifecycle resolution (advisor: one callable
+    const profiles = await stub.listAgentProfiles({ includeArchived }, deps.identity);
+    // per-row lifecycle resolution (advisor: one callable
     // shape, called N times via Promise.all). Fail-soft per row so a
     // single bad agent doesn't take down the whole list.
     const lifecycles = await Promise.all(
       profiles.map(p => resolveLifecycleForProfile(p, stub)),
     );
-    //  — summary view for list/select/dashboard surfaces.
+    // summary view for list/select/dashboard surfaces.
     // It intentionally omits persona and the legacy duplicate
     // `profiles` array. Detail reads still return the full profile.
     if (view === "summary") {
+      // 2026-06-23 — owner labels for the operator console (multi-tenant
+      // visibility: tell whose agent each row is). Join app_user emails;
+      // fail-soft so a registry hiccup still returns owner_user_id.
+      const emailByOwner: Record<string, string> = {};
+      try {
+        for (const u of await stub.appUserListAll()) {
+          if (u.email) emailByOwner[u.user_id] = u.email;
+        }
+      } catch {
+        /* no emails — the UI falls back to the owner id / "operator" label */
+      }
       return json({
-        agents: profiles.map((p, i) => summarizeAgentProfile(p, lifecycles[i])),
+        agents: profiles.map((p, i) => {
+          const owner = (p as { owner_user_id?: string }).owner_user_id ?? null;
+          return {
+            ...summarizeAgentProfile(p, lifecycles[i]),
+            owner_user_id: owner,
+            owner_email: owner ? emailByOwner[owner] ?? null : null,
+          };
+        }),
       });
     }
-    //  — surface `agent_id` alias on every row. Also include
+    // surface `agent_id` alias on every row. Also include
     // top-level `agents` field so new clients don't have to remap. Both
     // arrays point at the same rows; backward-compat field `profiles`
     // stays for legacy callers.
@@ -221,13 +243,13 @@ export async function handleAgentProfileRoutes(
   // otherwise `pathname.startsWith("${ROUTE_PREFIX}/")` swallows "options"
   // and the registry rejects it as an unknown id.
   if (pathname === `${ROUTE_PREFIX}/options` && request.method === "GET") {
-    //  — structured options. `models` items now carry
+    // structured options. `models` items now carry
     // `runtimeStatus` so `/agents/new` can render not_configured
-    // entries disabled instead of misleading operator that they are
+    // entries disabled instead of misleading the operator that they are
     // runnable. The executable `target` string is intentionally not
     // included — server-side only.
     //
-    //  — merge in live-discovered provider models (and flip
+    // merge in live-discovered provider models (and flip
     // credential-gated static entries to available) so the dropdown
     // matches what create actually accepts. Fail-soft: a registry
     // hiccup falls back to the static list rather than 500ing options.
@@ -235,12 +257,20 @@ export async function handleAgentProfileRoutes(
     try {
       const stub = await deps.getRegistryStub();
       const [configuredProviders, discovered] = await Promise.all([
-        stub.listConfiguredProviders(),
-        stub.listDiscoveredModels(),
+        stub.listConfiguredProviders(deps.identity),
+        stub.listDiscoveredModels(deps.identity),
       ]);
       models = mergeRuntimeModelOptions(models, configuredProviders, discovered);
     } catch { /* static list */ }
-    const skillsets = EMBEDDED_MANIFESTS.map(m => ({
+    // Create-agent picker options = embedded ∪ the viewer's OWN custom
+    // skillsets (owner-scoped; admin sees all custom). Fail-soft to embedded
+    // if the registry is unreachable.
+    let skillsetManifests = [...EMBEDDED_MANIFESTS];
+    try {
+      const stub = await deps.getRegistryStub();
+      skillsetManifests = await loadMergedManifests(stub, scopeOwnerIdFor(deps.identity));
+    } catch { /* embedded only */ }
+    const skillsets = skillsetManifests.map(m => ({
       id: m.id,
       name: m.manifest.name,
       description: m.manifest.description,
@@ -255,11 +285,22 @@ export async function handleAgentProfileRoutes(
       return json({ code: "invalid_id", message: "agent profile id required" }, 400);
     }
     const stub = await deps.getRegistryStub();
-    const profile = await stub.readAgentProfile(id);
+    const profile = await stub.readAgentProfile(id, deps.identity);
     if (profile === null) {
       return json({ code: "not_found", message: `agent profile not found: ${id}` }, 404);
     }
-    //  — runtime-truth view of `AgentProfile.skillset`. Pure
+    // 2026-06-23 — owner email label for the operator console detail page
+    // (mirrors the summary view). Fail-soft: a registry hiccup leaves the
+    // UI to label off the owner id / "operator".
+    let ownerEmail: string | null = null;
+    const ownerId = (profile as { owner_user_id?: string }).owner_user_id ?? null;
+    if (ownerId) {
+      try {
+        const u = (await stub.appUserListAll()).find(x => x.user_id === ownerId);
+        ownerEmail = u?.email ?? null;
+      } catch { /* label off id */ }
+    }
+    // runtime-truth view of `AgentProfile.skillset`. Pure
     // resolver over a fresh LoaderState + the registry DO's
     // operator-disabled set. We use the registry DO's disabled set
     // because that's the only DO this route already speaks to;
@@ -274,12 +315,12 @@ export async function handleAgentProfileRoutes(
     // undefined). If RPC / loader throws (e.g. DO cold start, registry
     // DO eviction, transient binding), log a warning and return the
     // bare profile.
-    //  — lifecycle resolved in parallel with skillset runtime
+    // lifecycle resolved in parallel with skillset runtime
     // so cold-start latency doesn't compound. Both are fail-soft.
     const lifecyclePromise = resolveLifecycleForProfile(profile, stub);
     try {
       const runtimeSummary = await stub.getSkillsetRuntimeSummary();
-      const merged = await loadMergedManifests(stub);
+      const merged = await loadMergedManifests(stub, scopeOwnerIdFor(deps.identity));
       const state = loadSkillsets(merged, { knownToolIds: STUB_KNOWN_TOOL_IDS });
       const manifestsById = new Map(merged.map(m => [m.id, m.manifest] as const));
       const disabledMap = new Map<string, true>(
@@ -292,10 +333,11 @@ export async function handleAgentProfileRoutes(
         disabledMap,
       });
       const lifecycle = await lifecyclePromise;
-      //  — `agent_id` alias on the augmented row too.
+      // `agent_id` alias on the augmented row too.
       return json({
         ...profile,
         agent_id: profile.id,
+        owner_email: ownerEmail,
         skillset_runtime: {
           status: resolved.status,
           effective_ids: resolved.effectiveIds,
@@ -308,10 +350,11 @@ export async function handleAgentProfileRoutes(
         `[agent-profiles] skillset_runtime augmentation failed for ${id}: ${err instanceof Error ? err.message : String(err)}`,
       );
       const lifecycle = await lifecyclePromise;
-      //  — `agent_id` alias on the bare-profile fallback too.
+      // `agent_id` alias on the bare-profile fallback too.
       return json({
         ...profile,
         agent_id: profile.id,
+        owner_email: ownerEmail,
         ...(lifecycle === undefined ? {} : { lifecycle }),
       });
     }

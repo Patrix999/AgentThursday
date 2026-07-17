@@ -4,7 +4,7 @@ import { strict as assert } from "node:assert";
 import { validateCustomSkillset } from "./customSkillsetValidation";
 
 /**
- *  — custom skillset validation unit tests.
+ * custom skillset validation unit tests.
  *
  * The validator is the boundary that keeps manager-authored manifests
  * from shadowing embedded ids and from referencing tool_ids that the
@@ -97,7 +97,7 @@ describe("validateCustomSkillset — id rules", () => {
 
 describe("validateCustomSkillset — embedded readonly", () => {
   it("rejects an embedded skillset id (uses real EMBEDDED_MANIFESTS)", () => {
-    // 'manager' is the embedded id  ships.
+    // 'manager' is the embedded id an earlier revision ships.
     const m = baseManifest({ id: "manager" });
     const r = validateCustomSkillset({ manifest: m }, { knownToolIds: KNOWN_TOOL_IDS });
     assert.equal(r.ok, false);

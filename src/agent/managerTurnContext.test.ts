@@ -1,8 +1,8 @@
 /**
- *  — concurrency-isolation tests for the manager turn
+ * concurrency-isolation tests for the manager turn
  * context AsyncLocalStorage.
  *
- *  stored the in-flight outer `manager_task_id` on DO
+ * an earlier revision stored the in-flight outer `manager_task_id` on DO
  * instance fields and verifier FAILed because async manager tasks
  * can interleave inside the same DO during `await` of LLM/tool/RPC
  * work. Task B's `submitManagerTask` overwrote Task A's fields; when
@@ -75,7 +75,7 @@ describe("managerTurnContext — AsyncLocalStorage isolation", () => {
     async () => {
       // Force the event loop to interleave: Task A yields a tick,
       // Task B advances to completion in between, then Task A resumes
-      // and re-reads its store. With the  instance-field
+      // and re-reads its store. With the an earlier revision instance-field
       // implementation, A's re-read would return B's context (or
       // null, if B's finally already cleared it). With ALS, A's chain
       // keeps its own store.
@@ -133,7 +133,7 @@ describe("managerTurnContext — AsyncLocalStorage isolation", () => {
   it(
     "one branch ending (analog of `submitManagerTask` finally) does not clear the still-running branch",
     async () => {
-      //  bug second mode: Task A's `finally` cleared the
+      // an earlier revision bug second mode: Task A's `finally` cleared the
       // instance fields while Task B was still mid-await. ALS scope
       // termination is per-promise-chain; A returning cannot affect
       // B's store. Encode that as: A completes first, then B reads.

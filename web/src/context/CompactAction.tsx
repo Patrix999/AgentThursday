@@ -12,12 +12,12 @@ type CompactStage =
   | { kind: "error"; message: string };
 
 /**
- *  v1 — selective compaction action. Folds the oldest `lastN`
+ * M7.7 v1 — selective compaction action. Folds the oldest `lastN`
  * messages into a deterministic summary overlay via the SDK's
  * `addCompaction`. Audit events `context.compact.requested` +
  * `context.compact.completed` are logged.
  *
- *  (2026-05-21) — extracted from ContextPanel.tsx; behavior
+ * an earlier revision (2026-05-21) — extracted from ContextPanel.tsx; behavior
  * unchanged (same API call, same event, same confirmation copy).
  */
 export function CompactAction({ totalMessageCount, actionsEnabled }: { totalMessageCount: number; actionsEnabled: boolean }) {
@@ -62,7 +62,7 @@ export function CompactAction({ totalMessageCount, actionsEnabled }: { totalMess
     <div>
       <div className="flex items-center gap-2 text-[11px] text-slate-300">
         <span className="font-semibold">Compact (selective range)</span>
-        <span className="text-[10px] text-amber-400/80 italic"> v1 — explicit, audit-logged</span>
+        <span className="text-[10px] text-amber-400/80 italic">M7.7 v1 — explicit, audit-logged</span>
       </div>
       <p className="mt-1 text-[10px] text-slate-500">
         Folds the oldest <span className="font-mono">lastN</span> messages into a deterministic summary overlay via the SDK's <span className="font-mono">addCompaction</span>. The model sees the summary in place of the original messages on next turn; the underlying message tree is preserved. Durable state (memory, checkpoints, workspace, event log) is untouched.

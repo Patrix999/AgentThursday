@@ -1,18 +1,18 @@
 /**
- *  — ChannelHub fallback reply helper extracted from
+ * ChannelHub fallback reply helper extracted from
  * `src/server.ts`. Free-helper layer with a narrow Host: only
  * `getChannelStub` (Promise<stub-like with `enqueueFallbackReplyForTask`>)
  * and `logEvent`. The DO namespace + instance name resolution stays at
  * the composition root; this module never imports `Env`,
  * `AgentNamespace`, or `ChannelHubAgent`.
  *
- *  preflight §2.5 records the 8-dim analysis. Two thin
+ * an earlier revision preflight §2.5 records the 8-dim analysis. Two thin
  * delegate call sites in `server.ts` (lazy sweeper line 2982 and
  * alarm sweeper line 3090) — both already guarded by
  * `result.sealed && !result.idempotentNoop` so dedupe ownership
  * stays on the ChannelHub side (preflight §7 invariant 4).
  *
- * Behavior preservation invariants ():
+ * Behavior preservation invariants :
  *   1. fallback reply enqueue success event payload shape
  *      (`evidence.envelope.fallback_reply.enqueued`).
  *   2. fallback reply enqueue error event payload shape

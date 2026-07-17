@@ -5,7 +5,7 @@ import {
 } from "../api/agentProfiles";
 
 /**
- *  — fetch the runtime-model option list once and expose a
+ * fetch the runtime-model option list once and expose a
  * `lookup(modelId)` for the read-only surfaces (`/agents`,
  * `/agents/:id`, `/agent-runs/:id`).
  *

@@ -1,21 +1,21 @@
 /**
- *  — Skillset-runtime READ surface extracted from
+ * Skillset-runtime READ surface extracted from
  * `src/server.ts:AgentThursdayAgent`. Free functions over a HostShape so the
  * DO class body is shorter and the read path is independently
  * testable without spinning up a Durable Object.
  *
  * Read-only in this card. Mutation surface (reload / disable /
- * enable) stays on `AgentThursdayAgent` here;  will extract it with
+ * enable) stays on `AgentThursdayAgent` here; an earlier revision will extract it with
  * a `SkillsetRuntimeMutationHost` that extends `SkillsetRuntimeReadHost`.
  *
- * Invariants preserved (see  preflight §3):
- * - SQL is the source of truth for the disabled set ().
+ * Invariants preserved (see an earlier revision preflight §3):
+ * - SQL is the source of truth for the disabled set .
  *   No in-host snapshot cache.
- * - : agent-surface inspect routes through `AgentThursdayAgent`'s
+ * - an earlier revision: agent-surface inspect routes through `AgentThursdayAgent`'s
  *   public `getSkillsetRuntimeSummary()`; this module supplies the
  *   delegate body, not a substitute path.
  * - `reload_count` is read-only here; write authority belongs to
- *   the mutation surface ().
+ *   the mutation surface .
  */
 import {
   buildSkillsetRuntimeSnapshot,
@@ -24,6 +24,8 @@ import {
   type SkillsetRuntimeSummary,
 } from "../skillset/runtimeSnapshot";
 import { EMBEDDED_MANIFESTS, type EmbeddedManifest } from "../skillset/manifests";
+import { assembleEffectiveManifests } from "../skillset/loader";
+import { STUB_KNOWN_TOOL_IDS } from "../skillset/contractRegistry";
 import type { SkillsetManifest } from "../skillset/types";
 
 export type SkillsetSqlFn = <T = Record<string, string | number | boolean | null>>(
@@ -41,7 +43,7 @@ export interface SkillsetRuntimeReadHost {
   sql: SkillsetSqlFn;
   getReloadCount(): number;
   /**
-   *  — optional accessor that returns custom manifests the
+   * optional accessor that returns custom manifests the
    * host has cached from an external authority (e.g. per-agent DO
    * caches the registry DO's custom-skillset list). Returned manifests
    * are merged into the loader input alongside local-SQL customs.
@@ -78,12 +80,12 @@ export function readDisabledSkillsetsFromSQL(
 }
 
 /**
- *  — merge any custom skillsets the host DO has authored
+ * merge any custom skillsets the host DO has authored
  * (via the manager API) into the loader input set. Read is local
  * to the calling DO: registry DO (DEMO_INSTANCE) is the data owner
  * and sees its full custom set here; per-context DOs see an empty
  * set until the test-doc-documented session-reload flow plumbs
- * cross-DO custom-manifest sync (out of scope for  v1).
+ * cross-DO custom-manifest sync (out of scope for an earlier revision v1).
  *
  * Defensive: PRAGMA-style failure to read the table (e.g. migration
  * not yet applied during a hot-deploy window) drops to []; never
@@ -127,10 +129,16 @@ export function buildSkillsetSnapshotNow(
   for (const m of localCustom) customById.set(m.id, m);
   for (const m of extraCustom) customById.set(m.id, m);
   const customManifests = Array.from(customById.values());
-  const merged: EmbeddedManifest[] =
-    customManifests.length === 0
-      ? [...EMBEDDED_MANIFESTS]
-      : [...EMBEDDED_MANIFESTS, ...customManifests];
+  // Stage 2 — DB-sourced system skillsets (seeded embedded ids) may appear in
+  // `customManifests`; assemble to one-per-id (DB wins if it loads clean, else
+  // the code embedded manifest) so a seeded duplicate id never trips
+  // v5_id_conflict and drops tools for every agent. Same helper + options as
+  // `loadMergedManifests`, so the two paths can't drift.
+  const merged: EmbeddedManifest[] = assembleEffectiveManifests(
+    EMBEDDED_MANIFESTS,
+    customManifests,
+    { knownToolIds: STUB_KNOWN_TOOL_IDS },
+  );
   return buildSkillsetRuntimeSnapshot({
     env: host.env,
     envLookup: (b) => skillsetEnvLookup(host, b),
@@ -147,7 +155,7 @@ export function getSkillsetRuntimeSummary(
 }
 
 // ───────────────────────────────────────────────────────────────────
-//  — Mutation surface.
+// Mutation surface.
 //
 // Extends the read HostShape with two new capabilities: a write
 // authority for `reload_count` (kept private as a field on
@@ -167,7 +175,7 @@ export interface SkillsetRuntimeMutationHost extends SkillsetRuntimeReadHost {
 }
 
 /**
- *  — explicit reload action. Increments `reload_count`,
+ * explicit reload action. Increments `reload_count`,
  * rebuilds the snapshot, emits `skillset.reload`, returns the
  * non-sensitive summary.
  */
@@ -182,7 +190,7 @@ export function runReloadSkillsetRuntime(
 }
 
 /**
- * /c1 — operator disable. Validates id against the current
+ * an earlier revision/c1 — operator disable. Validates id against the current
  * loader-accepted set, writes the disable record to SQL (source of
  * truth), emits `skillset.disable`. Returns `{ ok: false, error }`
  * with literal error union for HTTP 400/404/409 mapping.
@@ -222,7 +230,7 @@ export function runDisableSkillset(
 }
 
 /**
- * /c1 — operator enable. Symmetric to disable. Idempotent
+ * an earlier revision/c1 — operator enable. Symmetric to disable. Idempotent
  * enable on a non-disabled id returns `changed=false` and emits no
  * event.
  */

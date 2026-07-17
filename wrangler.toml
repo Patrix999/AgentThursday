@@ -110,6 +110,18 @@ binding = "VERSION_METADATA"
 [ai]
 binding = "AI"
 
+# R2 bucket backing user document upload (markdown-only storage, owner-keyed).
+# Create the bucket in your account before deploying: `wrangler r2 bucket create <name>`.
+[[r2_buckets]]
+binding = "DOCS_BUCKET"
+bucket_name = "agentthursday-user-docs"
+
+# Cloudflare Email Service send binding for the account-approval welcome email
+# (src/agent/welcomeEmail.ts). Requires a verified sender domain on your
+# account; the feature fails soft when the binding is absent.
+[[send_email]]
+name = "EMAIL"
+
 # Discord direct adapter production config.
 # Secrets still must be set with `wrangler secret put` and are intentionally
 # not written here: AGENT_THURSDAY_SHARED_SECRET, DISCORD_BOT_TOKEN.

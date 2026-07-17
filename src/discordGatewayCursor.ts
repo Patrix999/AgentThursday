@@ -1,5 +1,5 @@
 /**
- *  — Discord gateway polling cursor advance decision.
+ * Discord gateway polling cursor advance decision.
  *
  * Pure helper extracted from `DiscordGatewayAgent.pollChannel` so the
  * "don't advance past a failed forward" rule can be unit-tested
@@ -26,7 +26,7 @@
  *
  * No retry queue, no per-message scheduling: the next polling tick
  * re-fetches `after=<lastPersisted>` and re-forwards. That satisfies
- *  §1 with the smallest possible delta.
+ * an earlier revision §1 with the smallest possible delta.
  */
 
 export type ForwardOutcome =

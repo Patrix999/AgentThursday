@@ -1,5 +1,5 @@
 /**
- *  — `ChannelHubAgent.ingestInbound` body extracted from
+ * `ChannelHubAgent.ingestInbound` body extracted from
  * `src/channelHub.ts`.
  *
  * `ingestInboundImpl(agent, envelopeRaw, agentthursdayDiscordBotId)` carries the
@@ -14,7 +14,7 @@
  * Behavior preserved verbatim: idempotent INSERT OR IGNORE on
  * `(provider, provider_message_id)`, per-conversation pending cap →
  * `deferred`, text/attachments byte clamps, identity / conversation
- * touch UPSERTs,  `is_self` policy.
+ * touch UPSERTs, an earlier revision `is_self` policy.
  */
 
 import type { Agent } from "agents";
@@ -56,7 +56,7 @@ export async function ingestInboundImpl(
   const candidateId = parsed.id ?? crypto.randomUUID();
   const senderUid = parsed.sender.providerUserId;
   const signalsJson = JSON.stringify(parsed.addressedSignals);
-  //  — cap inbound text and attachments JSON before persist.
+  // cap inbound text and attachments JSON before persist.
   // Prevents a pathological large payload from later memory-resetting
   // any DO that reads the row (snapshot, route, dialog).
   const text = parsed.text.length > INBOX_TEXT_MAX
@@ -114,13 +114,25 @@ export async function ingestInboundImpl(
       ${now}, ${now}
     )
   `;
+  // 2026-06-26 — backfill the provider/channel placeholders on a row that was
+  // SEEDED ahead of its first inbound (setConversationBinding UPSERTs a row with
+  // provider='unknown', provider_channel_id=NULL so a binding can be set before any
+  // message arrives). Without this, that pre-bound row never learns which Discord
+  // channel it maps to, and every outbound reply fails with
+  // `discord:no-target-channel-on-conversation`. COALESCE / CASE only FILL missing
+  // placeholders — they never overwrite a value the conversation already has.
   agent.sql`
-    UPDATE channel_conversations SET last_seen_at = ${now}
+    UPDATE channel_conversations
+    SET last_seen_at = ${now},
+        provider = CASE WHEN provider IS NULL OR provider = 'unknown' THEN ${parsed.provider} ELSE provider END,
+        chat_type = CASE WHEN chat_type IS NULL OR chat_type = 'unknown' THEN ${parsed.chatType} ELSE chat_type END,
+        provider_channel_id = COALESCE(provider_channel_id, ${parsed.providerChannelId ?? null}),
+        provider_thread_id = COALESCE(provider_thread_id, ${parsed.providerThreadId ?? null})
     WHERE conversation_id = ${parsed.conversationId}
   `;
 
-  //  — `is_self=1` only for agentthursday bot itself (small d / AGENT_THURSDAY_DISCORD_BOT_ID),
-  // not for any author with `isBot=true`. Other bots (verifier , helper , future
+  // `is_self=1` only for AgentThursday bot itself (small d / AGENT_THURSDAY_DISCORD_BOT_ID),
+  // not for any author with `isBot=true`. Other bots (verifier agentP, helper agentC, future
   // bots) are gated by direct filter (DISCORD_ALLOWED_USERS) + DISCORD_ALLOW_BOTS,
   // not by self-loopback.
   const selfProviderUserId = parsed.provider === "discord"
@@ -137,7 +149,7 @@ export async function ingestInboundImpl(
       'unknown', ${isSelfSender ? 1 : 0}, ${now}
     )
   `;
-  //  — repair already-existing rows that may have been mis-marked
+  // repair already-existing rows that may have been mis-marked
   // by the previous `parsed.sender.isBot` heuristic. Bounded to the current
   // sender; the broader Discord-wide repair runs once in onStart below.
   agent.sql`

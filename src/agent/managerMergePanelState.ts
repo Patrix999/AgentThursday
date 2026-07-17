@@ -1,7 +1,7 @@
 /**
- *  — pure state derivation for the manager merge UI panel.
+ * pure state derivation for the manager merge UI panel.
  *
- * The frontend has no test runner; mirroring 's pattern, all
+ * The frontend has no test runner; mirroring an earlier revision's pattern, all
  * non-trivial logic lives in `src/agent/` as a pure helper so it can
  * be covered by node:test, and the React component (`MergePanel.tsx`)
  * only renders the discriminated state.
@@ -23,7 +23,7 @@
  *                    state
  *   - `merged`     — bounded merged view + refs[]
  *
- * Defensive on the reader payload:  §5.1 documents a silent
+ * Defensive on the reader payload: an earlier revision §5.1 documents a silent
  * `latest_merged_at` fallback when payloads are malformed. The panel
  * keeps that contract — a row with a null payload still counts toward
  * `merge_count`, refs[] is the latest row's refs (best-effort, capped

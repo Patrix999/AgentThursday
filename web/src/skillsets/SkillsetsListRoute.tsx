@@ -17,7 +17,7 @@ import { ActiveAgentContextStrip } from "./ActiveAgentContextStrip";
 import { SkillsetsLayout } from "./SkillsetsLayout";
 
 /**
- *  — `/skillsets` list view.
+ * `/skillsets` list view.
  *
  * Three independent fetches (options / runtime / loader detail) each
  * track their own `[data, error]` tuple so one failure cannot blank

@@ -70,14 +70,14 @@ export type AgentThursdayState = {
   currentTaskObject: TaskObject | null;
   lastCheckpoint: string | null;
   modelProfile: ModelProfile;
-  //  — last model id observed by an actual inference step.
+  // last model id observed by an actual inference step.
   // Distinct from `modelProfile` (configured / user-intended): this is
   // populated by the onStepFinish hook and persisted so the
   // resolver survives DO hibernation / isolate resets without
   // dropping back to the configured fallback. Never written by
   // `setModelProfile()`; the two fields stay semantically separate.
   lastObservedModel?: ModelProfile | null;
-  //  — resolved executable runtime target for `getModel()`.
+  // resolved executable runtime target for `getModel()`.
   // Set during per-profile session init by looking up the agent's
   // AgentProfile.model in the runtime registry. Persisted so the
   // resolver survives DO hibernation without re-fetching the profile
@@ -85,11 +85,11 @@ export type AgentThursdayState = {
   // `defaultAgentRuntimeModel()` (current safe default: Workers AI
   // Kimi K2.6).
   runtimeModelTarget?: string | null;
-  //  — provider for the resolved target so `getModel()` picks
+  // provider for the resolved target so `getModel()` picks
   // the right adapter (workers-ai-provider vs @ai-sdk/anthropic).
   // Absent/null ⇒ workers-ai (back-compat with pre-411 persisted state).
-  runtimeModelProvider?: "workers-ai" | "anthropic" | "deepseek" | null;
-  //  — effective skillset closure for the active AgentProfile.
+  runtimeModelProvider?: "workers-ai" | "anthropic" | "deepseek" | "openai" | "google" | "zhipu" | "grok" | null;
+  // effective skillset closure for the active AgentProfile.
   // Set during per-profile session init by `resolveEffectiveSkillset`
   // over the profile's selected skillset + manifest dependencies
   // (intersected with currently loaded ∧ not-operator-disabled).
@@ -101,7 +101,7 @@ export type AgentThursdayState = {
   // (unknown / rejected / disabled selection); the dynamic tool
   // surface is empty for this profile.
   effectiveSkillsetIds?: string[] | null;
-  //  — paired structured reason for the resolver result.
+  // paired structured reason for the resolver result.
   // Matches `EffectiveSkillsetResult.reason` strings emitted by
   // `src/agent/agentSkillsetRuntime.ts`. `null` / unset means: no
   // fallback (status was `"ok"` or no profile loaded yet). UI /

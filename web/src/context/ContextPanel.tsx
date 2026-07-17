@@ -21,13 +21,13 @@ import { CompactAction } from "./CompactAction";
 /**
  * Context Inspect Web Tab.
  *
- * Deep-view complement to 's always-visible left rail. Lives
- * inside the Inspect drawer's tab strip; consumes 's
+ * Deep-view complement to an earlier revision's always-visible left rail. Lives
+ * inside the Inspect drawer's tab strip; consumes an earlier revision's
  * `inspectContext` data via the same `useContextInspect` hook (the
  * panel only mounts when the tab is active, so polling is implicitly
  * lazy via React lifecycle — no explicit `enabled` flag needed).
  *
- * Sections (per  UX requirements):
+ * Sections (per an earlier revision UX requirements):
  *   1. Context summary / pressure
  *   2. Token availability
  *   3. Visible messages / turns
@@ -37,12 +37,12 @@ import { CompactAction } from "./CompactAction";
  * Red lines:
  *   - no actual compact mutation
  *   - no in-UI reset button (CLI reference only; reset stays manual
- *     until  / a dedicated confirmation flow lands)
+ *     until an earlier revision / a dedicated confirmation flow lands)
  *   - no system/SOUL/reasoning content displayed
  *   - tool input/output never rendered (not even server's truncated
  *     preview); only `toolName` surfaces
  *
- *  (2026-05-21) — split workflow components out into
+ * an earlier revision (2026-05-21) — split workflow components out into
  * `CompactionHistory`, `ContextIdentity`, `NewContextAction`,
  * `ResetAction`, `CompactAction`. This file stays as the composition
  * root with the four local layout helpers (`SectionHeader`,

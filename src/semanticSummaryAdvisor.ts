@@ -1,14 +1,14 @@
 /**
- *  v2  — Semantic Summary Advisor scaffold.
+ * M7.7 v2 Semantic Summary Advisor scaffold.
  *
  * Optional model-assisted layer that runs ON TOP of the deterministic
- *  compact summary. The advisor never replaces the deterministic
- * substrate —  stays the default, fallback-safe path; this
+ * an earlier revision compact summary. The advisor never replaces the deterministic
+ * substrate — an earlier revision stays the default, fallback-safe path; this
  * module produces an enriched summary text + audit metadata, with
  * automatic fallback whenever the model is unavailable, errors, times
  * out, or returns output that fails the deterministic validator.
  *
- * Harness research lessons applied (see  spec):
+ * Harness research lessons applied (see an earlier revision spec):
  *   1. Harness state is ground truth — advisor input includes
  *      sanitized audit evidence, never raw tool payloads / reasoning.
  *   2. Fallback-safe — null client / failure / validation breach all
@@ -286,7 +286,7 @@ export function validateSemanticSummary(
     };
   }
   // Anchor preservation: every preserved-point preview must appear in
-  // the model output verbatim after whitespace normalization.
+  // the model output verbatim after whitespace normalization. an earlier revision
   // is an advisor scaffold, so keep the validator strict: if the model
   // cannot repeat the preserved point, the deterministic summary wins.
   const normalizedOutput = modelOutput.replace(/\s+/g, " ");
@@ -334,7 +334,7 @@ export function spliceSemanticBlockIntoSummary(
   }
   const header = lines[0];
   // Keep preserved points as the first high-priority body section when
-  // present, matching the /145 safety ordering. If there is no
+  // present, matching the an earlier revision safety ordering. If there is no
   // preserved-points block, insert immediately after the header.
   const preservedIdx = lines.findIndex((line) => line === "Important preserved points from compacted range:");
   if (preservedIdx >= 0) {

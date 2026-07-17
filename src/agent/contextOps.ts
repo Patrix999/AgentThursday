@@ -1,5 +1,5 @@
 /**
- *  —  Step 6 contextOps pointer/history extraction.
+ * M8.9 Step 6 contextOps pointer/history extraction.
  *
  * Six active-pointer / context-history helpers pulled verbatim from
  * `AgentThursdayAgent` (`src/server.ts` lines ~4672–4783). No SQL strings,
@@ -31,7 +31,6 @@ import {
 import type {
   ActiveContext,
   ArchiveChunkInput,
-  ArchiveChunksInput,
   ArchiveFlushResult,
   ArchiveTrigger,
   CompactPlanApplyResult,
@@ -75,7 +74,7 @@ export interface ContextPointerHost {
   sql: ContextOpsSqlTag;
 }
 
-// ──  — read-side Host ───────────────────────────────────────
+// ── read-side Host ───────────────────────────────────────
 // Adds the four agent-instance accessors the resolver / budget /
 // inspect surfaces consume beyond the pointer Host. `getLastStepModel`
 // returns the in-memory `_lastStepModel` field (shape preserved); the
@@ -89,7 +88,7 @@ export interface ContextReadHost extends ContextPointerHost {
   logEvent: (type: string, payload: unknown) => void;
 }
 
-// ──  — write-side Host ──────────────────────────────────────
+// ── write-side Host ──────────────────────────────────────
 // Adds env/namespace-free capability methods composed at the server
 // composition root. `archiveChunksRemote` / `drainForArchiveRemote`
 // encapsulate the cross-DO RPC the helper functions never see
@@ -102,13 +101,14 @@ export interface ContextWriteHost extends ContextReadHost {
   clearMessages: () => void;
   resetSessionTokens: () => void;
   resetTaskTokens: () => void;
+  // Track A: archive writes go to THIS DO (drain-to-self). Async
+  // because the host resolves + stamps this DO's own owner before writing.
   writeArchiveFlushLocal: (input: {
     contextId: string;
     trigger: ArchiveTrigger | string;
     chunks: readonly ArchiveChunkInput[];
     reason: string | null;
-  }) => ArchiveFlushResult;
-  archiveChunksRemote: (contextId: string, input: ArchiveChunksInput) => Promise<ArchiveFlushResult>;
+  }) => Promise<ArchiveFlushResult>;
   drainForArchiveRemote: (contextId: string) => Promise<DrainForArchiveResult>;
   compactPlan: (input?: CompactPlanInput) => CompactPlanResult;
   applyCompactPlan: (input: { plan: CompactPlanResult }) => Promise<CompactPlanApplyResult>;
@@ -154,6 +154,26 @@ export function writeActivePointerFree(
     INSERT OR REPLACE INTO context_active (id, active_context_id, activated_at)
     VALUES (1, ${contextId}, ${activatedAt})
   `;
+}
+
+// register a context id as switch-routable. `switchContextFree`
+// (correctly) refuses ids absent from `context_history`; the operator routing
+// cutover makes OPERATOR_INSTANCE routable by inserting its history row first.
+// INSERT OR IGNORE — idempotent, never touches an existing row.
+export function ensureContextHistoryRowFree(
+  host: ContextPointerHost,
+  input: { contextId: string; reason?: string | null },
+): { ok: true; contextId: string } {
+  const contextId = String(input?.contextId ?? "").trim();
+  if (contextId.length === 0) throw new Error("ensureContextHistoryRow: missing contextId");
+  const reason = (typeof input?.reason === "string" && input.reason.trim().length > 0)
+    ? input.reason.trim().slice(0, 200)
+    : null;
+  host.sql`
+    INSERT OR IGNORE INTO context_history (context_id, reason, created_at)
+    VALUES (${contextId}, ${reason}, ${Date.now()})
+  `;
+  return { ok: true, contextId };
 }
 
 export function ensureActiveContextFree(
@@ -237,9 +257,9 @@ export function listContextHistoryFree(host: ContextPointerHost): ContextHistory
   };
 }
 
-// ──  — model resolution / budget / inspect ───────────────────
-// Verbatim ports of the   resolver,  budget, and
-//  inspect surfaces from `AgentThursdayAgent`. Selection invariants
+// ── model resolution / budget / inspect ───────────────────
+// Verbatim ports of the M7.9 an earlier revision resolver, an earlier revision budget, and
+// an earlier revision inspect surfaces from `AgentThursdayAgent`. Selection invariants
 // (configured vs lastObserved, conservative budget on mismatch,
 // placeholder gating, awareness preferring observed) preserved.
 export function resolveCurrentModelProfileFree(host: ContextReadHost): CurrentModelResolution {
@@ -249,7 +269,7 @@ export function resolveCurrentModelProfileFree(host: ContextReadHost): CurrentMo
     ? { provider: configuredRaw.provider ?? null, modelId: configuredRaw.model }
     : null;
 
-  // Persisted observation () survives hibernate; in-memory
+  // Persisted observation  survives hibernate; in-memory
   // cache wins when present (cheaper) but they should match within
   // the same isolate.
   const stepObsRaw = host.getLastStepModel();
@@ -267,7 +287,7 @@ export function resolveCurrentModelProfileFree(host: ContextReadHost): CurrentMo
 
   // budgetModel — conservative on configured/observed mismatch, but
   // ONLY when `configured` represents a real user-intended model.
-  // : the default `stub-concise` / `stub-verbose` placeholders
+  // an earlier revision: the default `stub-concise` / `stub-verbose` placeholders
   // (and any model id that doesn't resolve to a real registry entry)
   // must NOT trigger the conservative smaller-window path — otherwise
   // an observed Kimi 256K gets clipped back to the stub's DEFAULT 128K
@@ -394,7 +414,7 @@ export function inspectContextFree(
   return { ...view, tokenSession, tokenTask, contextBudget, currentModelResolution };
 }
 
-// ──  — lifecycle: resetContext / newContext / switchContext ──
+// ── lifecycle: resetContext / newContext / switchContext ──
 // Verbatim ports preserving:
 //   - resetContext archive-before-clear + abort-on-failure semantics,
 //     `archive.flush.failed` payload `{contextId, trigger, reason,
@@ -423,7 +443,6 @@ export async function resetContextFree(
   if (beforeMessageCount > 0) {
     const messages = host.getMessages();
     const chunks = buildArchiveChunks(messages);
-    const isRegistryReset = routedContextId === DEMO_INSTANCE;
     let contextIdGuess: string;
     if (routedContextId !== null) {
       contextIdGuess = routedContextId;
@@ -435,22 +454,15 @@ export async function resetContextFree(
       }
     }
     try {
-      let flush: ArchiveFlushResult;
-      if (isRegistryReset) {
-        flush = host.writeArchiveFlushLocal({
-          contextId: contextIdGuess,
-          trigger: "context.reset",
-          chunks,
-          reason,
-        });
-      } else {
-        flush = await host.archiveChunksRemote(DEMO_INSTANCE, {
-          contextId: contextIdGuess,
-          trigger: "context.reset",
-          chunks,
-          reason,
-        });
-      }
+      // Track A: always archive to THIS DO (drain-to-self). The host
+      // stamps this DO's own owner (registry/operator → admin), so the agent's
+      // owner-scoped conversation_search matches its own rows.
+      const flush = await host.writeArchiveFlushLocal({
+        contextId: contextIdGuess,
+        trigger: "context.reset",
+        chunks,
+        reason,
+      });
       if (flush.status !== "ok" && flush.status !== "skipped") {
         throw new Error(
           `resetContext: archive flush returned status=${flush.status} error=${flush.error ?? "unknown"}`,
@@ -520,10 +532,19 @@ export async function newContextFree(
         totalMessageCount: messages.length,
       };
     } else {
+      // an earlier revision review (agentX) invariant: `previous.context_id` always belongs to
+      // THIS DO's own `context_history` — the only writers are the bootstrap and
+      // `newContextFree` (which inserts `ctx_<uuid>` ids), and `switchContextFree`
+      // rejects any target not already in this DO's history. So a non-registry
+      // `previous` here is one of this DO's own `ctx_` contexts, never another
+      // agent's — the subsequent `writeArchiveFlushLocal` (stamped with THIS DO's
+      // owner) never mislabels or cross-tenants a foreign transcript.
       drained = await host.drainForArchiveRemote(previous.context_id);
     }
     beforeMessageCount = drained.totalMessageCount;
-    const flush = host.writeArchiveFlushLocal({
+    // Track A: await the local write (now async — the host stamps
+    // this DO's own owner, fixing the prior ADMIN mis-stamp for scoped agents).
+    const flush = await host.writeArchiveFlushLocal({
       contextId: previous.context_id,
       trigger: "context.new",
       chunks: drained.chunks,
@@ -647,7 +668,7 @@ export function switchContextFree(
   };
 }
 
-// ──  — runContextHygiene ─────────────────────────────────────
+// ── runContextHygiene ─────────────────────────────────────
 // Verbatim port preserving:
 //   - manual-check trigger guard + error string
 //   - risk condition push order
@@ -667,7 +688,7 @@ export async function runContextHygieneFree(
   if (trigger !== "manual-check") {
     throw new Error(
       `runContextHygiene v1: only trigger="manual-check" is allowed; received "${trigger}". ` +
-      `Scheduled triggers require explicit operator config (out of scope for  v1).`,
+      `Scheduled triggers require explicit the operator config (out of scope for an earlier revision v1).`,
     );
   }
   const pressureThreshold = Math.max(1, Math.min(500, Math.floor(input?.pressureThreshold ?? 50)));
@@ -748,23 +769,15 @@ export async function runContextHygieneFree(
       }
       try {
         const chunks = buildArchiveChunks(messages);
-        if (host.isRegistry(contextIdGuess)) {
-          const flush = host.writeArchiveFlushLocal({
-            contextId: contextIdGuess,
-            trigger: "manual",
-            chunks,
-            reason: `hygiene-precompact:${runId}`,
-          });
-          archiveFlushId = flush.flushId;
-        } else {
-          const flush = await host.archiveChunksRemote(DEMO_INSTANCE, {
-            contextId: contextIdGuess,
-            trigger: "manual",
-            chunks,
-            reason: `hygiene-precompact:${runId}`,
-          });
-          archiveFlushId = flush.flushId;
-        }
+        // Track A: archive to THIS DO (drain-to-self); host stamps
+        // this DO's own owner (registry/operator → admin).
+        const flush = await host.writeArchiveFlushLocal({
+          contextId: contextIdGuess,
+          trigger: "manual",
+          chunks,
+          reason: `hygiene-precompact:${runId}`,
+        });
+        archiveFlushId = flush.flushId;
       } catch (e) {
         decision = "failed";
         reason = `archive-before-compact failed: ${(e instanceof Error ? e.message : String(e)).slice(0, 240)}`;

@@ -55,19 +55,18 @@ describe("agentModelRuntime — resolver", () => {
     assert.equal(resolveAgentRuntimeModel(undefined), null);
   });
 
-  it("non-anthropic external providers are listed but not runnable", () => {
-    //  — anthropic models are now key-gated (see the dedicated
-    // Anthropic runnability test); openai/google remain unwired.
+  it("openai/google have no static entries (discover→enable only)", () => {
+    // 2026-06-22 — openai/google (like deepseek) have NO static entries: their
+    // models reach the picker via discover→enable, dispatched by their @ai-sdk
+    // provider. An unresolved static lookup is null (not a not_configured stub
+    // that would shadow the discovered id).
     for (const id of ["gpt-4.1", "gpt-4o", "gemini-2.5-pro", "gemini-2.5-flash"]) {
-      const entry = resolveAgentRuntimeModel(id);
-      assert.ok(entry, `${id} must appear in the runtime registry`);
-      assert.equal(entry?.runtimeStatus, "not_configured", `${id} must be not_configured`);
-      assert.equal(entry?.target, null, `${id} must have null target`);
-      assert.equal(isRunnableAgentRuntimeModel(id, { anthropicKeyPresent: true }), false, `${id} must not be runnable`);
+      assert.equal(resolveAgentRuntimeModel(id), null, `${id} should have no static entry`);
+      assert.equal(isRunnableAgentRuntimeModel(id, { anthropicKeyPresent: true }), false, `${id} not runnable without discovery`);
     }
   });
 
-  it(" — anthropic models are key-gated, not statically runnable", () => {
+  it("anthropic models are key-gated, not statically runnable", () => {
     for (const id of ["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"]) {
       assert.equal(isRunnableAgentRuntimeModel(id), false, `${id} not runnable without key`);
       assert.equal(isRunnableAgentRuntimeModel(id, { anthropicKeyPresent: true }), true, `${id} runnable with key`);

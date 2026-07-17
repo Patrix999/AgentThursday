@@ -9,7 +9,7 @@ import { listAgentRuntimeModelOptions } from "./agentModelRuntime";
 import { EMBEDDED_MANIFESTS } from "../skillset/manifests";
 
 /**
- *  — shared agent-profile validation unit tests.
+ * shared agent-profile validation unit tests.
  *
  * `validateAgentProfileInput` is what both `/api/agent-profiles`
  * (create) and `/api/manager/*` (create + update) go through. If this

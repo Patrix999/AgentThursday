@@ -1,5 +1,5 @@
 /**
- *  — pure fan-out helper for custom-skillset content updates.
+ * pure fan-out helper for custom-skillset content updates.
  *
  * Lives in its own module (NOT inside `managerOps.ts`) so the test
  * suite can `node --import tsx --test` it without triggering the
@@ -21,7 +21,7 @@
  *
  * Scope: direct profile.skillset binding only. Transitive composition
  * (a custom skillset whose closure pulls another patched custom
- * skillset) is out of scope for .
+ * skillset) is out of scope for an earlier revision.
  */
 import type { AgentProfile } from "../schema/agent";
 

@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { authHeaders } from "../auth/secret";
 
 /**
- * /413 — BYO-key provider credentials + live model discovery.
- * Extracted from ModelsRoute by the UX renovation (W1, ) so it
+ * BYO-key provider credentials + live model discovery.
+ * Extracted from ModelsRoute by the UX renovation (W1, an earlier revision) so it
  * can live on /settings. Keys are write-only: the list shows only the
  * last-4 hint, never the raw key.
  */

@@ -4,10 +4,10 @@ import { MemorySnapshotSchema } from "../schema";
 import type { AgentThursdayAgent } from "../server";
 
 /**
- *  — `GET /api/memory` route extracted from `src/server.ts`.
+ * `GET /api/memory` route extracted from `src/server.ts`.
  *
- * Body lifted verbatim from the original inline branch (was  +
- * ):
+ * Body lifted verbatim from the original inline branch (was an earlier revision +
+ * an earlier revision):
  *   - Agent Memory v1 read-only snapshot, routed through the canonical
  *     active context DO (not DEMO_INSTANCE) so the Memory tab reflects
  *     the active session's `agent_memories` / `memory_knowledge`.
@@ -27,7 +27,7 @@ import type { AgentThursdayAgent } from "../server";
  * lazily via `deps.getActiveStub()` so this module never imports
  * `getCanonicalActiveAgentThursdayAgentStub` or `DEMO_INSTANCE`. Preserves the
  * rule that `server.ts` only exports DO classes + the default fetch
- * handler ( v2 runtime fix).
+ * handler (an earlier revision v2 runtime fix).
  */
 
 type AgentThursdayAgentStub = Awaited<ReturnType<typeof getAgentByName<Env, AgentThursdayAgent>>>;

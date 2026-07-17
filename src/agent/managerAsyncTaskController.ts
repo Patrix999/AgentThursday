@@ -1,5 +1,5 @@
 /**
- *  — pure controller for the async / sync manager message +
+ * pure controller for the async / sync manager message +
  * status routes.
  *
  * Lives in its own module so the test suite can `node --import tsx
@@ -40,9 +40,11 @@ import {
 } from "./managerTaskCompleteReaderOps";
 import { TaskContextSchema, type TaskContext } from "./taskContext";
 import { looksLikeAgentId } from "./managerAgentIdShape";
+import type { RequestIdentity } from "./requestIdentity";
 
 export interface AsyncMessageRegistryStub {
-  readAgentProfile(id: string): Promise<{ id: string } | null>;
+  // optional identity scopes the target lookup to the caller.
+  readAgentProfile(id: string, identity?: RequestIdentity): Promise<{ id: string } | null>;
   recordManagerTaskEvent(
     type: string,
     payload: unknown,
@@ -55,7 +57,7 @@ export interface AsyncMessageInput {
   text: string;
   conversation_id?: string;
   source?: string;
-  //  — optional structured TaskContext (ADR §5). Validated in
+  // optional structured TaskContext (ADR §5). Validated in
   // preflight BEFORE any `manager.task.received` event is recorded.
   task_context?: TaskContext;
 }
@@ -88,7 +90,7 @@ export type PreflightAccepted = {
 async function preflightManagerMessage(
   registry: AsyncMessageRegistryStub,
   input: AsyncMessageInput,
-  deps: { mintTaskId: () => string; now: () => Date },
+  deps: { mintTaskId: () => string; now: () => Date; identity?: RequestIdentity },
 ): Promise<PreflightRejected | PreflightAccepted> {
   if (typeof input.agent_id !== "string" || input.agent_id.length === 0) {
     return {
@@ -117,7 +119,7 @@ async function preflightManagerMessage(
       },
     };
   }
-  //  — validate optional task_context BEFORE recording the
+  // validate optional task_context BEFORE recording the
   // received bracket event. Reject with field hint per Req §2.
   if (input.task_context !== undefined) {
     const parsed = TaskContextSchema.safeParse(input.task_context);
@@ -140,9 +142,11 @@ async function preflightManagerMessage(
       };
     }
   }
-  const target = await registry.readAgentProfile(input.agent_id);
+  // identity-scoped: a scoped user that does not own this agent
+  // gets target_not_found here, before any per-agent DO dispatch.
+  const target = await registry.readAgentProfile(input.agent_id, deps.identity);
   if (target === null) {
-    //  D — split missing-target on shape. Display-name-shaped
+    // an earlier revision D — split missing-target on shape. Display-name-shaped
     // inputs (no `agent-<uuid>` prefix) surface as `agent_not_found`
     // so the manager LLM gets a clearer signal it skipped
     // `manager.agent_list` resolution. Correctly-shaped but missing
@@ -177,7 +181,7 @@ async function preflightManagerMessage(
         ...(input.conversation_id !== undefined
           ? { conversation_id: input.conversation_id }
           : {}),
-        //  — record full structured task_context on received
+        // record full structured task_context on received
         // bracket event so inspect/event payloads expose it.
         ...(input.task_context !== undefined
           ? { task_context: input.task_context }
@@ -236,6 +240,7 @@ export async function handleAsyncManagerMessage(
     mintTaskId: () => string;
     now: () => Date;
     spawnBackground: (managerTaskId: string) => () => void;
+    identity?: RequestIdentity;
   },
 ): Promise<AsyncMessageOutcome> {
   const pre = await preflightManagerMessage(registry, input, deps);
@@ -291,12 +296,12 @@ export type SyncMessageOutcome =
  * bracket events fire on the inline path too. The route layer maps
  * the returned `result` to an HTTP status by inspecting
  * `result.ok` / `result.error.code` (same mapping it already uses
- * for the pre- sync path).
+ * for the pre-Card-359 sync path).
  */
 export async function handleSyncManagerMessage(
   registry: AsyncMessageRegistryStub,
   input: AsyncMessageInput,
-  deps: { mintTaskId: () => string; now: () => Date },
+  deps: { mintTaskId: () => string; now: () => Date; identity?: RequestIdentity },
   runInline: (managerTaskId: string) => Promise<SyncInlineResult>,
 ): Promise<SyncMessageOutcome> {
   const pre = await preflightManagerMessage(registry, input, deps);
@@ -312,13 +317,13 @@ export async function handleSyncManagerMessage(
 
 export interface ReadManagerTaskEventsSurface {
   readManagerTaskEvents(taskId: string): Promise<ManagerTaskEventRow[]>;
-  //  — additive read surface for the `merge` side field on
+  // additive read surface for the `merge` side field on
   // GET /api/manager/tasks/:task_id. Empty array when no merge rows
   // exist; the derived side field then reports `merged: false`.
   readManagerTaskMergedEvents(
     parentTaskId: string,
   ): Promise<ManagerTaskMergedRow[]>;
-  //  — additive read surface for the `completion` side field
+  // additive read surface for the `completion` side field
   // on GET /api/manager/tasks/:task_id. Empty array when no
   // completion rows exist; the derived side field then reports
   // `completed: false`. Completion is report/archive evidence, NOT
@@ -338,18 +343,18 @@ export interface TaskStatusBody {
   completed_at: string | null;
   reply: string | null;
   envelope_id: string | null;
-  //  — inner per-agent task id (from the
+  // inner per-agent task id (from the
   // `manager.task.replied` event payload); `null` for unknown /
   // non-terminal / failed manager tasks.
   submit_task_id: string | null;
   error: ReturnType<typeof deriveManagerTaskStatus>["error"];
   events: Array<{ type: string; ts: string }>;
-  //  §3 — bounded merge side field. Always present (never
+  // an earlier revision §3 — bounded merge side field. Always present (never
   // null) so frontend consumers see a stable shape; `merged: false`
   // when no `manager.task.merged` rows exist for this task_id.
-  // Documented contract in ``.
+  // Documented contract in `docs/tests/2026-05-26-card372-...`.
   merge: MergeStatusSideField;
-  //  — additive evidence. `{ has_conflict: false }` when the
+  // additive evidence. `{ has_conflict: false }` when the
   // task had at most one terminal class and no contradicting follow-up.
   // When `has_conflict: true`, includes `terminal_status` (the first
   // terminal that landed), `later_events` (types of events that
@@ -357,7 +362,7 @@ export interface TaskStatusBody {
   terminal_conflict: ReturnType<
     typeof deriveManagerTaskStatus
   >["terminal_conflict"];
-  //  — additive stale warning. `{ stale: false }` for fresh /
+  // additive stale warning. `{ stale: false }` for fresh /
   // terminal tasks. `stale: true` when a started-without-terminal task
   // has passed the soft window; primary `status` stays `in_progress`
   // until the hard ceiling (then `status` becomes `timed_out` with
@@ -366,7 +371,7 @@ export interface TaskStatusBody {
   stale_warning: ReturnType<
     typeof deriveManagerTaskStatus
   >["stale_warning"];
-  //  — additive completion side field. Always present (never
+  // additive completion side field. Always present (never
   // null) so consumers see a stable shape; `completed: false` when no
   // `manager.task.completed` rows exist. Coexists with `merge` and
   // `status`; completion is report/archive evidence, NOT a lifecycle

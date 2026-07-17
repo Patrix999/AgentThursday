@@ -1,7 +1,7 @@
 /**
- *  — manager dynamic tool error emission redaction tests.
+ * manager dynamic tool error emission redaction tests.
  *
- *  added safe `enrichManagerInputSummary` / `enrichManagerResultSummary`
+ * an earlier revision added safe `enrichManagerInputSummary` / `enrichManagerResultSummary`
  * for dispatch + result payloads but left the `onError` branch of
  * `buildDynamicSkillTools` at `message.slice(0, 200)` — handler exceptions
  * that quote `Bearer …` / `sk-…` / `ghp_…` / `approval_token=…` reached
@@ -216,7 +216,7 @@ describe("buildDynamicSkillTools — non-manager handler error path is unchanged
     // (contract-preserving). The narrower mapper-layer redaction continues
     // to handle this case downstream; the emission contract for
     // non-manager tools is preserved verbatim per spec.
-    const toolId = "localdoc.convert_text";
+    const toolId = "fyimd.convert_text";
     const { args, captured } = harness(
       toolId,
       new Error("oops Bearer raw.token leaked-by-design-in-test"),
@@ -232,7 +232,7 @@ describe("buildDynamicSkillTools — non-manager handler error path is unchanged
   });
 
   it("non-manager long messages still slice at 200 without truncated flag", async () => {
-    const toolId = "localdoc.convert_text";
+    const toolId = "fyimd.convert_text";
     const long = "y".repeat(800);
     const { args, captured } = harness(toolId, new Error(long));
     const tools = buildDynamicSkillTools(args);

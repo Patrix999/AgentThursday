@@ -1,5 +1,5 @@
 /**
- *  — narrow agent context surface for artifact adapters.
+ * narrow agent context surface for artifact adapters.
  *
  * The dynamic-tool dispatch path passes `agentCtx` as the third arg to
  * `DispatchHandler.execute`. We type it as the smallest interface the

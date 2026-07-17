@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { PageHeader } from "../nav/PageHeader";
 
 /**
- *  — operator manual page. Renders /operator-manual.md (a
- * static asset produced by the multi-agent manual workflow + 's
+ * operator manual page. Renders /operator-manual.md (a
+ * static asset produced by the multi-agent manual workflow + agentC's
  * editorial pass; provenance is embedded in the document head).
  * Minimal markdown renderer on purpose — no new dependency for one page.
  */

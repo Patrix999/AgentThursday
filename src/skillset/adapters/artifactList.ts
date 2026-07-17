@@ -1,7 +1,7 @@
 /**
- *  — adapter for `artifact.list` dynamic tool.
+ * adapter for `artifact.list` dynamic tool.
  *
- * Wraps the agent's DO callable `listArtifacts()` ().
+ * Wraps the agent's DO callable `listArtifacts()` .
  */
 
 import { z } from "zod";

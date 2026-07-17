@@ -45,8 +45,8 @@ import type {
 import { prewarmNodeModules, ensureNodeModules } from "./gateBootstrap";
 import { runPhasedGate, truncate } from "./gatePhaseRunner";
 
-//  — backward-compat re-exports. Public importers
-// (e.g. `src/server.ts` and `scripts/-...`) continue to
+// backward-compat re-exports. Public importers
+// (e.g. `src/server.ts` and `scripts/card244h-...`) continue to
 // resolve these symbols from `./skillset/gateRunner` without an
 // atomic update. New code should import directly from
 // `./gateConstants` / `./gateTypes` instead.
@@ -72,7 +72,7 @@ function getContract(toolId: string): ToolContract | undefined {
 }
 
 /**
- *  — list the worktree's changed paths so the typecheck fast
+ * list the worktree's changed paths so the typecheck fast
  * path can scope phases to what actually changed. The agent's
  * `repo.write` / `repo.patch` are UNCOMMITTED in the checkout
  * (`devShellWrite.ts`: "No commit / push paths exist in this module"),
@@ -175,7 +175,7 @@ export async function runGate(
     return r;
   }
 
-  //  — when typecheck / build fire without a repo checkout
+  // when typecheck / build fire without a repo checkout
   // resolved (e.g. lazy materialization race lost), the monolithic
   // fallthrough runs `npm run typecheck` / `npm run build:web` in the
   // sandbox cwd which has no node_modules and produces the misleading
@@ -204,7 +204,7 @@ export async function runGate(
     return r;
   }
 
-  //  — scoped typecheck phase selection. Detect the worktree's
+  // scoped typecheck phase selection. Detect the worktree's
   // changed paths and run only the relevant phases, skipping the slow
   // full-repo `root` phase for web-/tui-/scripts-only mutations. Computed
   // BEFORE prewarm so dependency warming follows the selected scope
@@ -226,7 +226,7 @@ export async function runGate(
     });
   }
 
-  //  — dependency requirements follow the scoped selection for
+  // dependency requirements follow the scoped selection for
   // typecheck (root-bin for diag/root/tui/scripts; web-bin for the `web`
   // phase); other targets keep the static per-target map.
   const effectiveRequirements: ReadonlyArray<{ subdir: string; markers: readonly string[] }> =
@@ -383,7 +383,7 @@ export async function runGate(
   // umbrella timeout with no breakdown of which sub-step (tsc vs
   // vite) was slow. Other targets keep the 190c monolithic flow.
   if (target === "typecheck" && ctx.repoBaseDir) {
-    //  — run the scoped phase subset (computed above). Falls
+    // run the scoped phase subset (computed above). Falls
     // back to the full chain when no selection was produced (e.g.
     // sandboxExec absent on this path, which shouldn't happen here).
     const sel = typecheckSelection ?? selectTypecheckPhases([]);

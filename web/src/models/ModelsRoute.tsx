@@ -3,7 +3,7 @@ import { PageHeader } from "../nav/PageHeader";
 import { authHeaders, clearSecret } from "../auth/secret";
 
 /**
- *  — Models catalog page (read-only). Mirrors the
+ * Models catalog page (read-only). Mirrors the
  * `src/modelProfiles.ts` MODEL_PROFILES shape returned by GET
  * /api/models. Aligned with the Agents/Skillsets layout (dark theme,
  * unified PageHeader).
@@ -41,7 +41,7 @@ export default function ModelsRoute() {
   const [profiles, setProfiles] = useState<ModelProfile[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    //  — /api/models is behind the X-AgentThursday-Secret umbrella;
+    // /api/models is behind the X-AgentThursday-Secret umbrella;
     // send auth headers and bounce to the secret gate on 401 (same
     // pattern as the agent-runs / workflow-runs api helpers). A bare
     // fetch returned 401 in the browser.

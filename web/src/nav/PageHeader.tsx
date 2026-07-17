@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { PrimaryNav } from "./PrimaryNav";
 
 /**
- * Unified page header (2026-06-15, operator) — every route's top nav bar
+ * Unified page header (2026-06-15, the operator) — every route's top nav bar
  * shares one full-width layout, font, and button order:
  *
  *   [← back] TITLE / subtitle        …flex spacer…       [actions] [☰ menu]

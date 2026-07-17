@@ -18,7 +18,7 @@ export const WorkspaceSnapshotSchema = z.object({
   replyNeed: ReplyNeedSchema.nullable(),
   latestResult: ArtifactViewSchema.nullable(),
   inspectEntry: InspectEntrySchema,
-  //  — canonical active context identity (registry
+  // canonical active context identity (registry
   // `context_active` pointer). The client uses this to reconcile its
   // localStorage cache: if the value differs, the client updates
   // `agentthursday.contextId` and re-fetches under the canonical id. Carries

@@ -1,5 +1,5 @@
 /**
- *  — message timestamp formatting tests (pure; the web file has
+ * message timestamp formatting tests (pure; the web file has
  * no DOM deps so it imports fine under the node test runner via tsx).
  */
 import { describe, it } from "node:test";
@@ -7,7 +7,7 @@ import { strict as assert } from "node:assert";
 
 import { formatMessageTime } from "../web/src/shell/messageTime";
 
-describe("formatMessageTime ()", () => {
+describe("formatMessageTime ", () => {
   const now = new Date("2026-06-11T14:30:00").getTime();
 
   it("shows HH:MM for same-day messages", () => {

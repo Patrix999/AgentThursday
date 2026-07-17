@@ -1,5 +1,5 @@
 /**
- *  — pure workflow run model tests. Proves the contract is
+ * pure workflow run model tests. Proves the contract is
  * deterministic and that the `run -> phases -> agents` tree is folded
  * ONLY from structured ledger rows (never inferred): the assembler
  * takes typed rows and never touches `manager.task.*` events.

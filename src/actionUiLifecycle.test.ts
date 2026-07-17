@@ -1,5 +1,5 @@
 /**
- *  — lifecycle pairing + workflow-era intent tests.
+ * lifecycle pairing + workflow-era intent tests.
  */
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
@@ -21,7 +21,7 @@ function row(
   return { event_type, payload: JSON.stringify(payload), created_at: at, trace_id: trace };
 }
 
-describe("annotateLifecycleRows ()", () => {
+describe("annotateLifecycleRows ", () => {
   it("pairs dispatch+result into one action (dispatch skipped, result annotated)", () => {
     const rows = [
       row("tool.repo.read.result", NOW, { ok: true }),
@@ -69,7 +69,7 @@ describe("annotateLifecycleRows ()", () => {
   });
 });
 
-describe("buildActionUiIntents workflow-era mapping ()", () => {
+describe("buildActionUiIntents workflow-era mapping ", () => {
   it("maps workflow.run.started/terminal to workflow.run intents", () => {
     const intents = buildActionUiIntents(
       [
@@ -115,7 +115,7 @@ describe("buildActionUiIntents workflow-era mapping ()", () => {
   });
 });
 
-describe("same-tool burst pairing ( feed observation)", () => {
+describe("same-tool burst pairing (an earlier revision feed observation)", () => {
   it("pairs by path so interleaved reads of different files don't cross-consume", () => {
     const rows = [
       row("tool.repo.read.result", NOW, { input: { path: "b.ts" } }),
@@ -132,7 +132,7 @@ describe("same-tool burst pairing ( feed observation)", () => {
 });
 
 
-describe("result previews ()", () => {
+describe("result previews ", () => {
   it("file read surfaces a bounded content preview", () => {
     const content = Array.from({ length: 50 }, (_, i) => `line ${i}`).join("\n");
     const intents = buildActionUiIntents(
@@ -180,7 +180,7 @@ describe("result previews ()", () => {
     assert.match(props.preview ?? "", /TS2307/);
   });
 
-  it("byte-caps a multibyte preview ( lesson)", () => {
+  it("byte-caps a multibyte preview (an earlier revision lesson)", () => {
     const content = "界".repeat(2000); // 6KB UTF-8
     const intents = buildActionUiIntents(
       [row("tool.repo.read.result", NOW, { input: { path: "x" }, output: { content } })],
@@ -191,7 +191,7 @@ describe("result previews ()", () => {
   });
 });
 
-describe("file read path carried from dispatch ()", () => {
+describe("file read path carried from dispatch ", () => {
   it("a read.result with only output still maps to file_read using the paired dispatch path", () => {
     const intents = buildActionUiIntents(
       [
@@ -211,7 +211,7 @@ describe("file read path carried from dispatch ()", () => {
 });
 
 
-describe("auto-dispatch marker ()", () => {
+describe("auto-dispatch marker ", () => {
   it("marks a gate result whose task+target had an autodispatch.start", () => {
     const intents = buildActionUiIntents(
       [

@@ -1,26 +1,26 @@
 /**
- *  —  `manager.task.merged` emitter v1.
+ * M9.1 `manager.task.merged` emitter v1.
  *
  * Pure orchestrator helper for the new audit-grade merge event. Mirrors
- * the  read-side pattern (`managerSubagentSummaries`): the
+ * the an earlier revision read-side pattern (`managerSubagentSummaries`): the
  * adapter and the HTTP-route layer both call into this module so
  * validation, permission, and emission stay in lockstep.
  *
- * Contract anchor — ``
+ * Contract anchor — `docs/adr/2026-05-26-agent-handoff-merge-contract.md`
  * §4.2 (`ManagerTaskMergedPayload`), §4.4 (audit trail), §4.5 (state
  * model: presence-of-event is the discriminator).
  *
- * Key design choices for v1 (documented for  reader follow-up):
+ * Key design choices for v1 (documented for an earlier revision reader follow-up):
  *
  *   1. `summary_id` wire field — kept per ADR §4.2 — semantically
  *      equals the subagent's `task_id` in v1. ADR §10 Q3 already
- *      accepts row-id instability;  emits exactly one
+ *      accepts row-id instability; an earlier revision emits exactly one
  *      `manager.subagent.summary` per subagent terminal success, so
  *      `task_id` is a stable per-summary identifier today. The wire
  *      field is preserved so 372 (reader) can promote `summary_id` to
  *      `event_log.id` later without breaking emit-side callers.
  *
- *   2. Permission boundary — sourced from  §4: each supplied
+ *   2. Permission boundary — sourced from an earlier revision §4: each supplied
  *      ref must map to a `manager.subagent.summary` row whose
  *      `source_agent_id === callingAgentId`. Cross-manager merges are
  *      rejected as `permission_denied` (NOT silently dropped; the
@@ -30,7 +30,7 @@
  *   3. Zero-ref merges — permitted per ADR §4.2 notes for audit
  *      purposes only. v1 keeps the discriminator clean ("presence of
  *      event = audit-grade merge").
- *       hardening: a zero-ref merge with `merge_verdict=
+ *      an earlier revision hardening: a zero-ref merge with `merge_verdict=
  *      "success"` is REJECTED at validation. Empty refs + success
  *      papers over a broken summary-aggregation chain — the operator
  *      sees "merged success" but no subagent summaries were aggregated.
@@ -203,9 +203,9 @@ export async function emitManagerTaskMerged(
       `merge_verdict must be one of: ${[...VALID_MERGE_VERDICTS].join(", ")}`,
     );
   }
-  //  — zero-ref + success is REJECTED. Empty refs paired with
+  // zero-ref + success is REJECTED. Empty refs paired with
   // a success verdict silently papers over a broken summary-
-  // aggregation chain ( push key missing → no rows → merge
+  // aggregation chain (an earlier revision push key missing → no rows → merge
   // can still claim success). Audit-only zero-ref merges remain legal
   // under `partial` or `failed`.
   if (
@@ -296,7 +296,7 @@ export async function emitManagerTaskMerged(
       // "this id exists but isn't yours" vs "this id doesn't exist for
       // your parent_task_id". v1 accepts this — the alternative is to
       // collapse both to a single opaque code, which makes operator
-      // debugging worse.  reader already exposes the same
+      // debugging worse. an earlier revision reader already exposes the same
       // identity shape (rejecting on source_agent_id mismatch returns
       // empty list, not error), so cross-manager existence is already
       // not directly inferrable through the read path.

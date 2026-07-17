@@ -11,14 +11,14 @@ import type {
 import { getDebugReadonlyNotice } from "../debugSurfaceMode";
 
 /**
- *   — context identity summary. Renders the active
+ * M7.7v3 context identity summary. Renders the active
  * contextId + creation reason at the top of FutureActions so the
  * operator can see which logical context they are operating on.
  * Refreshes on `agentthursday:context:compacted` (the same event the legacy
- * compact and  reset paths dispatch) and on the new
+ * compact and an earlier revision reset paths dispatch) and on the new
  * `agentthursday:context:switched` event dispatched by `<NewContextAction>`.
  *
- *  (2026-05-21) — extracted from ContextPanel.tsx; behavior
+ * an earlier revision (2026-05-21) — extracted from ContextPanel.tsx; behavior
  * unchanged (same fetches, same event listeners, same DOM tree).
  */
 export function ContextIdentity({ actionsEnabled }: { actionsEnabled: boolean }) {

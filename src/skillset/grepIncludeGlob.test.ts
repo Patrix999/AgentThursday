@@ -1,5 +1,5 @@
 /**
- *  — grep --include glob portability tests.
+ * grep --include glob portability tests.
  *
  * The sandbox grep (busybox/musl pathname fnmatch) can't recurse with
  * `**` / `*` across `/`; `**\/*.tsx` must normalize to basename-level

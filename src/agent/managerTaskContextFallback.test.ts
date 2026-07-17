@@ -1,5 +1,5 @@
 /**
- *  — pure-helper unit tests for current-manager-task fallback.
+ * pure-helper unit tests for current-manager-task fallback.
  *
  * Mirrors the 4 acceptance cases on the card:
  *   1. missing `parent_task_id` → filled with current manager_task_id
@@ -132,7 +132,7 @@ describe("applyManagerTaskContextFallback", () => {
   });
 });
 
-describe("resolveDispatchTaskContext ()", () => {
+describe("resolveDispatchTaskContext ", () => {
   it("returns ok+undefined for text-only calls (no task_context)", () => {
     const r = resolveDispatchTaskContext(undefined, CURRENT);
     assert.equal(r.ok, true);

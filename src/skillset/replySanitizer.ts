@@ -1,10 +1,10 @@
 /**
- *  / 202a — strip leaked thinking-family tag residue from
+ * an earlier revision — strip leaked thinking-family tag residue from
  * user-visible reply.
  *
  * Some model paths emit `<think>...</think>` (or its `<thinking>`
  * sibling) reasoning fragments into the assistant text channel.
- *  verifier saw `直接跑 gate：</think>直接跑 gate：`. Card
+ * an earlier revision verifier saw `直接跑 gate：</think>直接跑 gate：`. Card
  * 202 verifier saw `前缀</thinking>后缀`. Both are reasoning syntax;
  * users should not see either.
  *

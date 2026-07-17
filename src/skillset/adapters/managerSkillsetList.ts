@@ -1,5 +1,5 @@
 /**
- *  — adapter for `manager.skillset_list`. Returns the merged
+ * adapter for `manager.skillset_list`. Returns the merged
  * embedded ∪ custom skillset set with per-row `source` + loader
  * `status` (loaded / rejected / unknown).
  */
@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import { registerDispatchHandler } from "../dispatchRegistry";
 import { managerListSkillsets, type ManagerEnv } from "../../agent/managerOps";
+import { resolveCallerSkillsetScope } from "./managerCtx";
 
 const inputSchema = z.object({}).optional().transform((v) => v ?? {});
 
@@ -17,8 +18,10 @@ type Output = Awaited<ReturnType<typeof managerListSkillsets>>;
 registerDispatchHandler<Input, Output>({
   tool_id: "manager.skillset_list",
   inputSchema,
-  execute: async (_input, envUnknown) => {
+  execute: async (_input, envUnknown, ctx) => {
     const env = (envUnknown ?? {}) as ManagerEnv;
-    return managerListSkillsets(env);
+    // Owner-scope to the CALLING agent's tenant (admin → all; unresolvable →
+    // embedded only, no cross-tenant leak).
+    return managerListSkillsets(env, await resolveCallerSkillsetScope(env, ctx));
   },
 });

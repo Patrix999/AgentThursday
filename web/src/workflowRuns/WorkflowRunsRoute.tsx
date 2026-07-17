@@ -8,7 +8,7 @@ import {
 } from "../api/workflowRuns";
 
 /**
- *  — minimal observable workflow run model debug surface at
+ * minimal observable workflow run model debug surface at
  * `/workflow-runs`. Read-only: lists `workflow_run` rows from the
  * ledger, and on selection shows the `run -> phases -> agents` tree.
  * This is an operational debug surface (not a marketing card); it does
@@ -71,7 +71,7 @@ export function WorkflowRunsRoute() {
       <main className="flex-1 min-h-0 overflow-y-auto px-4 py-4 sm:px-6">
         <div className="mx-auto w-full max-w-4xl">
       <p className="text-[11px] text-slate-500 mb-3">
-         — observable workflow run model (debug). A run = one manager
+        observable workflow run model (debug). A run = one manager
         dispatch invocation (<code>wfr-&lt;parent_task_id&gt;</code>). Tree is
         read from the structured workflow ledger.
       </p>

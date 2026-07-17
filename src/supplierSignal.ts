@@ -1,7 +1,7 @@
 /**
  * supplier-side degradation signal helpers.
  *
- *  (truthfulness gate) catches **user-facing claims** that don't
+ * an earlier revision (truthfulness gate) catches **user-facing claims** that don't
  * match dispatched tools. This module catches the complementary failure:
  * **supplier-side anomalies** in the model/adapter path itself
  * (missing finish_reason, tool calls extracted but not dispatched, stream
@@ -31,7 +31,7 @@ export type SupplierStepSignal = {
   toolCallCount: number;
   toolResultCount: number;
   /**
-   *  (2a) — `tool-error` parts emitted by the AI SDK when a
+   * an earlier revision (2a) — `tool-error` parts emitted by the AI SDK when a
    * tool's `execute()` throws (e.g. codemode `Code execution failed:
    * …` from a Workers Loader sandbox throw). `step.toolResults` (used
    * to derive `toolResultCount`) is a getter that filters
@@ -40,20 +40,20 @@ export type SupplierStepSignal = {
    * these separately stops `detectSupplierDegradation` from flagging
    * dispatched-and-errored tools as
    * `tool_calls_present_but_not_dispatched` (which previously fired
-   * on  small-d traces where `execute` ran Node-only code and
+   * on an earlier revision small-d traces where `execute` ran Node-only code and
    * threw inside the sandbox).
    */
   toolErrorCount: number;
   toolErrorNames: string[];
   /**
-   * -1 — `needsApproval: true` tool calls (e.g.
+   * 1 — `needsApproval: true` tool calls (e.g.
    * `advance_kanban_card`) legitimately pause the round: the AI SDK
    * builds a `tool-approval-request` content part in place of a
    * `tool-result` / `tool-error` part, and `execute()` never fires
    * until the user confirms. Previously this module saw
    * `toolResultCount=0` / `toolErrorCount=0` on a step that did emit
    * a tool call, and tagged `tool_calls_present_but_not_dispatched`
-   * — misclassifying the pause as supplier degradation (
+   * — misclassifying the pause as supplier degradation (an earlier revision
    * RCA: prod task `task-mpby4jjw`). Counting approval-pending
    * separately, and adding it to the dispatched threshold, keeps the
    * real supplier-side dispatch gap detection working while letting
@@ -61,7 +61,7 @@ export type SupplierStepSignal = {
    */
   toolApprovalPendingCount: number;
   /**
-   *  — names extracted from `ctx.toolCalls` / `ctx.toolResults`.
+   * names extracted from `ctx.toolCalls` / `ctx.toolResults`.
    * Empty when the SDK didn't expose names (older versions, or shapes
    * the safe-access path couldn't resolve). Capped at the call site so
    * the persisted event payload stays compact and grep-friendly.
@@ -140,7 +140,7 @@ export function detectSupplierDegradation(t: SupplierTaskSignals): {
   }
 
   for (const step of t.steps) {
-    //  (2a) + 279c-1 — count dispatched-and-resulted,
+    // an earlier revision (2a) + 279c-1 — count dispatched-and-resulted,
     // dispatched-and-errored, and approval-pending tool calls alongside
     // each other before deciding whether the call was *not dispatched*.
     //
@@ -148,8 +148,8 @@ export function detectSupplierDegradation(t: SupplierTaskSignals): {
     //   ai/dist/index.js:3913); tool-error parts (execute() threw) and
     //   approval-pending parts (`needsApproval: true`, execute() didn't
     //   fire) are excluded from that getter.
-    // - Before , a thrown tool was misclassified as not
-    //   dispatched; before -1, an approval-pending tool was
+    // - Before an earlier revision, a thrown tool was misclassified as not
+    //   dispatched; before 1, an approval-pending tool was
     //   misclassified the same way (prod task `task-mpby4jjw`).
     //
     // The dispatched-or-pending count covers all three "the call was
@@ -166,7 +166,7 @@ export function detectSupplierDegradation(t: SupplierTaskSignals): {
       reasons.add("tool_calls_present_but_not_dispatched");
     }
 
-    // Reason 1b ( 2a): at least one tool was dispatched and
+    // Reason 1b (an earlier revision 2a): at least one tool was dispatched and
     // its `execute()` threw. The call DID happen; the throw is real
     // (e.g. codemode "Code execution failed: …" from a sandbox
     // violation). Surfacing this as a distinct reason lets reviewers
@@ -198,8 +198,8 @@ export function detectSupplierDegradation(t: SupplierTaskSignals): {
 
 /**
  * Render the user-facing warning marker. Chinese by default per kanban
- * §"Suggested marker text" — operator's primary operating language for this
- * project is Chinese, and this aligns with the  warning style.
+ * §"Suggested marker text" — the operator's primary operating language for this
+ * project is Chinese, and this aligns with the an earlier revision warning style.
  *
  * `reasons` go in as compact enum tokens (already grep-friendly), comma-
  * joined. We deliberately don't expand into natural language — the goal

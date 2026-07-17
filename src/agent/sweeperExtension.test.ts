@@ -1,5 +1,5 @@
 /**
- *  — sweeper gate-aware grace decision tests.
+ * sweeper gate-aware grace decision tests.
  *
  * 381 attempt #4: the 30-min backstop sealed the envelope while
  * gate.build was actively mid-run. The decision must extend on recent

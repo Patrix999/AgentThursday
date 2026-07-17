@@ -1,7 +1,7 @@
 import { postJson } from "./client";
 
 /**
- *  RecoverActions endpoints. `clearStaleState` was  §B-7 explicit;
+ * an earlier revision RecoverActions endpoints. `clearStaleState` was an earlier revision §B-7 explicit;
  * `forceContinue` reuses /cli/continue with a different label so the inspect UI
  * makes "advance the loop manually" discoverable from the debug surface.
  */

@@ -2,7 +2,7 @@ import { json } from "../httpUtil";
 import { listModelProfiles } from "../modelProfiles";
 
 /**
- *  — `/api/config` route extracted from `server.ts`.
+ * `/api/config` route extracted from `server.ts`.
  *
  * Returns a narrow, deliberately small public-config payload so the SPA
  * can read the debug surface mode at runtime. Auth is enforced by the
@@ -23,7 +23,7 @@ export function handleConfig(env: Env): Response {
 }
 
 /**
- *  — `GET /api/models` returns the static model profile registry.
+ * `GET /api/models` returns the static model profile registry.
  *
  * Auth is enforced by the composition root in `server.ts` (the `/api/*`
  * umbrella gate); this module only renders the response.

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { PageHeader } from "../nav/PageHeader";
 
 /**
- *  — shared layout shell for the `/agents/*` surface.
+ * shared layout shell for the `/agents/*` surface.
  * Header is the unified `PageHeader` (2026-06-15) so the nav bar
  * matches every other route; body is a single readable column.
  */

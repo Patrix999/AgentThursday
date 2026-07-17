@@ -1,8 +1,8 @@
 /**
- *  — generic agent-facing dynamic tool mapper.
+ * generic agent-facing dynamic tool mapper.
  *
  * Walks the inspect-detail projection of currently loaded skillsets
- * (with  env-binding capability-class downgrade already
+ * (with an earlier revision env-binding capability-class downgrade already
  * applied), looks up each callable skill's tools in the contract
  * registry + agent dispatch registry, and emits an AI SDK
  * `tools` object the agent can spread into its `getTools()` output.
@@ -13,7 +13,7 @@
  *   3. tool contract dispatch_path.surface ∈ supported set
  *   4. dispatch registry has a handler for the canonical tool_id
  *
- * Tool name conversion: canonical `tool_id` (e.g. `"localdoc.convert_text"`)
+ * Tool name conversion: canonical `tool_id` (e.g. `"fyimd.convert_text"`)
  * → AI SDK key `tool_id.replace(/[^a-zA-Z0-9_]/g, "_")`. The canonical
  * id stays the event-name key (`tool.<canonical>.dispatch/result/error`)
  * so observability events remain stable across provider rename. No
@@ -67,11 +67,11 @@ export interface BuildDynamicSkillToolsArgs {
   contractsByToolId?: (toolId: string) => ToolContract | undefined;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handlersByToolId?: (toolId: string) => DispatchHandler<any, any> | undefined;
-  //  — optional per-handler context, threaded into `execute`
+  // optional per-handler context, threaded into `execute`
   // as the third arg. Stateful adapters (artifact.*) use it to reach
   // DO-side methods; stateless adapters ignore it.
   agentCtx?: unknown;
-  //  — per-profile narrow. When set, candidates whose
+  // per-profile narrow. When set, candidates whose
   // `skillset_id` is not in this set are skipped (the dynamic tool
   // surface is restricted to the resolved effective skillset closure
   // for the active AgentProfile). When undefined, behavior is
@@ -116,7 +116,7 @@ function collectBoundCandidates(args: BuildDynamicSkillToolsArgs): BoundCandidat
   const out: BoundCandidate[] = [];
   for (const entry of detail.entries) {
     if (entry.status !== "loaded") continue;
-    //  — per-profile narrow. `allowed === undefined` keeps
+    // per-profile narrow. `allowed === undefined` keeps
     // legacy behavior (every loaded skillset contributes); a set
     // restricts to its members.
     if (allowed !== undefined && !allowed.has(entry.skillset_id)) continue;
@@ -247,7 +247,7 @@ export function buildDynamicSkillTools(args: BuildDynamicSkillToolsArgs): Record
             reason: "handler_exception",
           };
           if (canonical.startsWith("manager.")) {
-            //  — manager handler errors can carry user-supplied
+            // manager handler errors can carry user-supplied
             // text (the agent's `text` arg surfaces in target-agent error
             // messages). Redact + cap before the payload reaches
             // event_log so raw inspect debug never sees ghp_/Bearer/

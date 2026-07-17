@@ -1,7 +1,7 @@
 /**
- *  — adapter for `artifact.read` dynamic tool.
+ * adapter for `artifact.read` dynamic tool.
  *
- * Wraps the agent's DO callable `readArtifact()` ().
+ * Wraps the agent's DO callable `readArtifact()` .
  */
 
 import { z } from "zod";

@@ -7,11 +7,11 @@ import {
 import { getActiveAgentPin, getActiveContextId } from "../auth/secret";
 
 /**
- *  — read-only "active agent" strip shown above the skillset
+ * read-only "active agent" strip shown above the skillset
  * list and detail panes. Pulls from `/api/agent-profiles/<id>` because
  * that endpoint is the only one that carries both the selected
  * skillset id and the resolver's `skillset_runtime` (effective ids,
- * disabled fallback reason) in one call — see . We never call
+ * disabled fallback reason) in one call — see an earlier revision. We never call
  * the runtime endpoint here; the list view already does that.
  *
  * Active id resolution mirrors `useWorkspace`: pin first, then the

@@ -20,10 +20,11 @@ import {
   type RuntimeStateInfo,
 } from "../../../src/skillset/runtimeCapabilitySnapshot";
 import { ActiveAgentContextStrip } from "./ActiveAgentContextStrip";
+import { SkillsetEditPanel } from "./SkillsetEditPanel";
 import { SkillsetsLayout } from "./SkillsetsLayout";
 
 /**
- *  — `/skillsets/:id` detail view.
+ * `/skillsets/:id` detail view.
  *
  * Read-only manifest / runtime view for a single skillset id. Each of
  * the four upstream fetches tracks its own error tuple so a single
@@ -137,6 +138,8 @@ export function SkillsetDetailRoute() {
               </div>
             </header>
 
+            <SkillsetEditPanel id={id} />
+
             <RuntimeCapabilitySnapshotPanel snapshot={snapshot} />
 
             <SkillsSection entry={detailEntry} />
@@ -183,7 +186,7 @@ function RuntimeBadge(props: { state: RuntimeState }) {
 }
 
 /**
- *  — Runtime capability snapshot.
+ * Runtime capability snapshot.
  *
  * Operator-facing explainer for "what can this skillset actually do
  * right now": runtime state + consequence sentence, counts of declared
@@ -191,8 +194,8 @@ function RuntimeBadge(props: { state: RuntimeState }) {
  * stub-only, missing-handler, event-emitting; tier distribution and
  * SOUL caps. Read-only — no enable/disable, no enforcement.
  *
- * Copy was reviewed by  on 2026-05-26 (Discord msg
- * `100000000000000007`): drop implementation jargon, merge
+ * Copy was reviewed by agentD on 2026-05-26 (Discord msg
+ * `100000000000000009`): drop implementation jargon, merge
  * stub-only / missing-handler labels into self-explanatory phrasing,
  * and use the plain "Skillset cap: … · Total runtime: …" caps line.
  */

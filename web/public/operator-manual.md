@@ -1,8 +1,8 @@
-# agentthursday Agent 操作手册
+# AgentThursday Agent 操作手册
 
-> **本手册由 agentthursday 多 agent workflow 生产**（2026-06-10， dogfood）：
+> **本手册由 AgentThursday 多 agent workflow 生产**（2026-06-10，an earlier revision dogfood）：
 > 章节起草与互驳评审由 workflow run `wfr-exec-ca1dc1f8`（v4）与 `wfr-exec-38baea9a`（v3，第 4 章）的 subagents 完成；
->  做了最终事实校订（模型示例名、origin/retention 取值、descriptor 形状、第 4 章访问方式、第 6 章会话语义），并重写第 5 章。
+> agentC 做了最终事实校订（模型示例名、origin/retention 取值、descriptor 形状、第 4 章访问方式、第 6 章会话语义），并重写第 5 章。
 > 全程 ledger 可查：Console → Workflow Runs，或 `GET /api/inspect/workflow-runs/<run_id>`。
 
 ---
@@ -180,7 +180,7 @@
 - **`archived`**：软下线。数据完整保留，操作员可在需要时直接更新状态恢复服务。适用于临时停用或替换中的 agent。
 - **`deleted_marker`**：删除标记。进入该状态后，agent 被视为已删除，系统将根据 `retention_policy` 在后续周期中清理相关持久化数据。恢复操作可能受限或不可行，取决于具体组织策略。
 
-> **注意**：`retention_policy` 与 `accepts_tasks` 是独立的策略字段（ 四层生命周期模型），不通过本工具的 `status` 自动联动。
+> **注意**：`retention_policy` 与 `accepts_tasks` 是独立的策略字段（an earlier revision 四层生命周期模型），不通过本工具的 `status` 自动联动。
 
 ---
 
@@ -189,7 +189,7 @@
 | 错误码 | 触发场景 | 排查与处理 |
 |--------|----------|------------|
 | `name_conflict` | 创建或更名时 `name` 已存在 | 先执行 `manager_agent_list` 确认占用情况。若旧 agent 不再需要，可将其更新为 `archived` 或改用其他名称 |
-| `unknown_model` | 模型标识无法识别 | 核对 `model` 拼写（区分大小写）；确认该模型是否已在当前 agentthursday 构建中接入 |
+| `unknown_model` | 模型标识无法识别 | 核对 `model` 拼写（区分大小写）；确认该模型是否已在当前 AgentThursday 构建中接入 |
 | `unsupported_model` | 模型标识正确但当前环境不支持运行 | 查阅部署配置中的允许模型白名单，更换为已支持模型 |
 | `unknown_skillset` | `skillset` 不存在 | 先调用 `manager_skillset_list` 查看已有技能集；如需自定义，先通过 `manager_skillset_create` 创建 |
 
@@ -222,7 +222,7 @@
 ```json
 {
   "agent_id": "agent-bdd58c91-d6bf-4036-8c5e-7346cb4e146c",
-  "text": "请审阅  的风险分析，重点检查 Cloudflare CPU 限制相关部分。"
+  "text": "请审阅 an earlier revision 的风险分析，重点检查 Cloudflare CPU 限制相关部分。"
 }
 ```
 
@@ -249,10 +249,10 @@
 ```json
 {
   "agent_id": "agent-dc4bab52-69a5-49b7-a21d-b3fb4da528e6",
-  "text": "完成  的仓库准备工作",
+  "text": "完成 an earlier revision 的仓库准备工作",
   "task_context": {
     "id": "task-abc-123",
-    "title": "Prepare repo worktree for ",
+    "title": "Prepare repo worktree for an earlier revision",
     "objective": "调用 repo_prepare 并返回 head_sha、branch、worktree_path 和 git status",
     "source_agent_id": "agent-bdd58c91-d6bf-4036-8c5e-7346cb4e146c",
     "parent_task_id": "task-parent-789",
@@ -368,7 +368,7 @@
   "text": "在 repo_prepare 后的 worktree 中实现 loop timeout 可观察性",
   "task_context": {
     "id": "task-m91a-001",
-    "title": " loop timeout observability",
+    "title": "M9.1a loop timeout observability",
     "objective": "在 managerAsyncTaskController.ts 中添加 10m timeout 检测日志并写入 state.loop_timeout_reason",
     "expected_outputs": ["console.warn 日志", "state 字段更新"],
     "non_goals": ["不实现完整 event emitting", "不修改 schema 之外的字段"],
@@ -616,7 +616,7 @@
 
 ### 4.1 什么是 envelope
 
-envelope（证据信封）是 agentthursday 中每一次 agent 操作的最小审计单元。它完整记录了 agent 的"声称"与"实际做了什么"之间的对照，是操作员事后核查 agent 行为的唯一可信来源。
+envelope（证据信封）是 AgentThursday 中每一次 agent 操作的最小审计单元。它完整记录了 agent 的"声称"与"实际做了什么"之间的对照，是操作员事后核查 agent 行为的唯一可信来源。
 
 一个标准的 envelope 包含四层结构：
 
@@ -680,11 +680,11 @@ agent 在完成后对 envelope 的交叉检查：
 
 ## 5. Approvals 审批
 
-> 本章由 重写（agent 草稿与现实偏差过大，已声明于 provenance）。
+> 本章由agentC 重写（agent 草稿与现实偏差过大，已声明于 provenance）。
 
 ### 5.1 审批机制概述
 
-agentthursday 中工具按风险分层（tier）。声明了 `needsApproval` 的高风险工具在 agent 调用时不会立即执行，而是挂起一条审批请求，等待操作员决定。审批由 HMAC token 背书：审批记录只存 `signature_hash` / `signature_ref`，原始签名不落库。
+AgentThursday 中工具按风险分层（tier）。声明了 `needsApproval` 的高风险工具在 agent 调用时不会立即执行，而是挂起一条审批请求，等待操作员决定。审批由 HMAC token 背书：审批记录只存 `signature_hash` / `signature_ref`，原始签名不落库。
 
 ### 5.2 操作员审批流程
 
@@ -704,7 +704,7 @@ agentthursday 中工具按风险分层（tier）。声明了 `needsApproval` 的
 
 ### 6.1 消息格式与交互机制
 
-agentthursday 通过 Discord channel 与操作员建立实时交互链路。agent 常驻于指定 channel，通过监听消息事件接收外部输入。
+AgentThursday 通过 Discord channel 与操作员建立实时交互链路。agent 常驻于指定 channel，通过监听消息事件接收外部输入。
 
 消息触发规则如下：
 

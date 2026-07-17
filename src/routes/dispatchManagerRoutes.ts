@@ -1,7 +1,7 @@
 /**
- *  —  manager skillset dispatch HTTP surface.
+ * M9.0 manager skillset dispatch HTTP surface.
  *
- * Mirrors `dispatchLocalDocRoutes.ts`: each `/api/dispatch/manager/<tool>`
+ * Mirrors `dispatchFyimdRoutes.ts`: each `/api/dispatch/manager/<tool>`
  * path resolves the handler via the adapter registry
  * (`getDispatchHandler`) so the agent's dynamic-tool surface and the
  * HTTP surface share the exact same execute path.
@@ -24,7 +24,7 @@
  *       agent_loop_timeout                                      → 504
  *       internal / unknown                                      → 500
  *   - `status === "failed"`, reason → equivalent of the above   → see code
- *   - `status === "blocked"`                                    → 503 (parity with localdoc)
+ *   - `status === "blocked"`                                    → 503 (parity with fyimd)
  *   - dispatch missing handler                                  → 500
  *
  * Adapters MUST return the same body shape declared in each tool's
@@ -42,11 +42,11 @@ const MANAGER_TOOL_IDS = new Set([
   "manager.skillset_create",
   "manager.skillset_update",
   "manager.agent_message",
-  //  — audit-grade merge event emitter. HTTP-callable for
+  // audit-grade merge event emitter. HTTP-callable for
   // deterministic verifier smoke; the same handler is reused by the
   // manager DO's dynamic-tool surface via the adapter registry.
   "manager.task_merge",
-  //  — post-merge completion report emitter. HTTP-callable
+  // post-merge completion report emitter. HTTP-callable
   // for deterministic verifier smoke; identical adapter registry
   // wiring as task_merge. Coexists with `manager.task.replied`;
   // completion is report/archive evidence, not a lifecycle terminal.
@@ -72,24 +72,24 @@ function httpStatusForCode(code: string): number {
     case "missing_id":
     case "id_mismatch":
     case "unknown_tool_id":
-    //  — manager.task_merge ref-shape mismatch is a 400-class
+    // manager.task_merge ref-shape mismatch is a 400-class
     // client error (ref.task_id/agent_id contradicts the referenced
     // summary row).
     case "ref_mismatch":
       return 400;
     // 403 — write to immutable surface OR cross-manager permission
-    // boundary ( / ).
+    // boundary .
     case "embedded_skillset_readonly":
     case "permission_denied":
       return 403;
     // 404 — row not found
     case "target_not_found":
-    //  D — display-name-shaped agent_id surfaces here when
+    // an earlier revision D — display-name-shaped agent_id surfaces here when
     // the caller skipped `manager.agent_list` resolution and passed
     // a skillset / display name instead.
     case "agent_not_found":
     case "not_found":
-    //  — manager.task_merge ref pointed at a parent/summary
+    // manager.task_merge ref pointed at a parent/summary
     // pair with no matching `manager.subagent.summary` row.
     case "summary_not_found":
       return 404;
@@ -149,7 +149,7 @@ export async function handleDispatchManagerRoutes(
     return json({ status: "error", reason: "handler_not_registered" }, 500);
   }
   const body = await request.json().catch(() => ({}));
-  //  E — validate body shape via the handler's zod inputSchema
+  // an earlier revision E — validate body shape via the handler's zod inputSchema
   // BEFORE calling execute. Without this, malformed shapes (e.g.
   // `task_context: null` on `manager.agent_message`) reached the
   // adapter which assumed structural typing and surfaced as HTTP 500
@@ -174,12 +174,12 @@ export async function handleDispatchManagerRoutes(
     );
   }
   const validBody = parsed.data;
-  //  — adapters that enforce a per-caller permission boundary
+  // adapters that enforce a per-caller permission boundary
   // (currently `manager.task_merge`; `manager.subagent_summaries` may
   // be wired the same way in a future patch) require `ctx.name` to be
   // the calling agent_id. The DO-internal call path threads
   // `this.name` natively; over HTTP we thread the
-  // `X-AgentThursday-Context-Id` header — the same header  already
+  // `X-AgentThursday-Context-Id` header — the same header an earlier revision already
   // uses as the DO routing key — into a synthetic ctx object so the
   // adapter's `requireCallingAgentCtx` succeeds. The umbrella secret
   // gate (`requireSecret`) still applies; the permission boundary

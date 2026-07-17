@@ -2,11 +2,11 @@
  * ModelProfile static registry.
  *
  * Typed source of truth for known Workers AI model capability/risk facts.
- *  (supplier marker),  (`supplier.signal.summary` events),
- * and future  (`recommendedAction` derivation) read these profiles
+ * an earlier revision (supplier marker), an earlier revision (`supplier.signal.summary` events),
+ * and future an earlier revision (`recommendedAction` derivation) read these profiles
  * to interpret runtime signals against an explicit baseline.
  *
- * v1 invariants (per kanban +  milestone red lines):
+ * v1 invariants (per kanban + M7.5 milestone red lines):
  *   - This module does NOT route, retry, switch, pause, or score models.
  *   - Profiles are engineering facts and observed risks, not global
  *     intelligence rankings.
@@ -18,8 +18,8 @@
  *     prompts MAY read these profiles but v1 dispatch is unchanged.
  *
  * Out of scope (per kanban):
- *   - dynamic profile updates from canary data (deferred to +)
- *   - per-task 4-state degradation summary ()
+ *   - dynamic profile updates from canary data (deferred to an earlier revision+)
+ *   - per-task 4-state degradation summary 
  *   - any change to `supplier.signal.summary` event shape
  */
 
@@ -49,11 +49,11 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
       streamingToolCalls: "reliable",
     },
     knownRisks: [
-      "Profile reflects  verifier baseline on 2026-04-29 production tasks; not an exhaustive guarantee.",
+      "Profile reflects an earlier revision verifier baseline on 2026-04-29 production tasks; not an exhaustive guarantee.",
     ],
     recommendedUse: [
       "Default production model for tool-dispatch tasks.",
-      "Reference baseline for /117/118 supplier-signal interpretation.",
+      "Reference baseline for an earlier revision supplier-signal interpretation.",
     ],
     notes: "Saved getModel() target after the 2026-04-28 Llama saga — only model in the discriminator probe with proper streaming finish_reason emission.",
   },
@@ -66,9 +66,9 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
       streamingToolCalls: "risky",
     },
     knownRisks: [
-      "Streaming finish_reason may be absent at end of stream; workers-ai-provider flush() can reject the round as `stream-truncated` ( saga 2026-04-28; nine hypotheses to localize).",
-      "Tool calls may be emitted as inline JSON inside assistant text rather than the structured toolCalls field, bypassing dispatch entirely ( e2e 2026-04-29).",
-      "When the inline-JSON pattern occurs,  logs `tool.truthfulness.violation` with `category=fabricated-claim` but no structured tool dispatch happens, so 's structural reasons (`tool_calls_present_but_not_dispatched`, `finish_reason_missing`) do not always fire on this exact path.",
+      "Streaming finish_reason may be absent at end of stream; workers-ai-provider flush() can reject the round as `stream-truncated` (M7.4 saga 2026-04-28; nine hypotheses to localize).",
+      "Tool calls may be emitted as inline JSON inside assistant text rather than the structured toolCalls field, bypassing dispatch entirely (an earlier revision e2e 2026-04-29).",
+      "When the inline-JSON pattern occurs, an earlier revision logs `tool.truthfulness.violation` with `category=fabricated-claim` but no structured tool dispatch happens, so an earlier revision's structural reasons (`tool_calls_present_but_not_dispatched`, `finish_reason_missing`) do not always fire on this exact path.",
     ],
     recommendedUse: [
       "Diagnostic / canary probing of supplier-side regression patterns.",
@@ -85,7 +85,7 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
     },
     knownRisks: [
       "No production-grade ModelProfile-shaped evidence collected as of 2026-04-29.",
-      "Llama family streaming finish_reason regression ( saga 2026-04-28) may apply; treat with the same conservatism as Llama Scout until validated against  supplier.signal.summary baseline.",
+      "Llama family streaming finish_reason regression (M7.4 saga 2026-04-28) may apply; treat with the same conservatism as Llama Scout until validated against an earlier revision supplier.signal.summary baseline.",
     ],
     recommendedUse: [
       "Treat capability as unknown until evidence collected.",
@@ -101,13 +101,13 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
     },
     knownRisks: [
       "No production-grade ModelProfile-shaped evidence collected as of 2026-04-29.",
-      "Was probed during the 2026-04-28 saga discriminator round but no -equivalent summary was captured then; needs a fresh smoke under current  instrumentation.",
+      "Was probed during the 2026-04-28 saga discriminator round but no equivalent summary was captured then; needs a fresh smoke under current an earlier revision instrumentation.",
     ],
     recommendedUse: [
       "Treat capability as unknown until evidence collected.",
     ],
   },
-  //  — Anthropic Claude, dispatched via @ai-sdk/anthropic.
+  // Anthropic Claude, dispatched via @ai-sdk/anthropic.
   // Runnable only when ANTHROPIC_API_KEY is configured.
   {
     modelId: "claude-opus-4-8",
@@ -124,7 +124,7 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
     recommendedUse: [
       "Highest-capability option for hard reasoning / long-horizon agentic work.",
     ],
-    notes: "Adaptive thinking only (no temperature/budget_tokens); the agentthursday loop passes neither, so the constraint is satisfied automatically.",
+    notes: "Adaptive thinking only (no temperature/budget_tokens); the AgentThursday loop passes neither, so the constraint is satisfied automatically.",
   },
   {
     modelId: "claude-sonnet-4-6",
@@ -158,7 +158,7 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
       "Fast, cost-effective Anthropic option for simpler tasks.",
     ],
   },
-  //  — DeepSeek, dispatched via @ai-sdk/deepseek. Runnable when
+  // DeepSeek, dispatched via @ai-sdk/deepseek. Runnable when
   // a deepseek credential is stored (Models page → Add provider key).
   {
     modelId: "deepseek-chat",
@@ -170,7 +170,7 @@ export const MODEL_PROFILES: readonly ModelProfile[] = [
     },
     knownRisks: [
       "Requires a DeepSeek credential (Models page → Add provider key).",
-      "Streaming tool-call reliability not yet validated against the  supplier-signal baseline.",
+      "Streaming tool-call reliability not yet validated against the an earlier revision supplier-signal baseline.",
     ],
     recommendedUse: [
       "Wallet-friendly external option for general tool-dispatch tasks.",

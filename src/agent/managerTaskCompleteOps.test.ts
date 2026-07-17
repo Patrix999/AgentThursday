@@ -1,5 +1,5 @@
 /**
- *  — `manager.task.completed` emitter pure-helper tests.
+ * `manager.task.completed` emitter pure-helper tests.
  *
  * Covers the completion-report emitter contract:
  *   1. Happy path: success + prior merge → record + payload echo.
@@ -17,7 +17,7 @@
  *   7. Multi-complete: multiple writes per parent are allowed and the
  *      registry is called once per emit.
  *   8. Status derivation: `manager.task.completed` is a no-op even
- *      after a `failed` terminal (unlike `merged` per ).
+ *      after a `failed` terminal (unlike `merged` per an earlier revision).
  */
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
@@ -69,14 +69,14 @@ function buildRegistry(opts: {
 const happyInput: ManagerTaskCompleteInput = {
   parent_task_id: PARENT_TASK_ID,
   completion_verdict: "success",
-  summary: " dogfood verified: subagent reply landed, summary aggregated, merge audit emitted.",
+  summary: "an earlier revision dogfood verified: subagent reply landed, summary aggregated, merge audit emitted.",
   evidence: {
     merge_event_id: 6830,
     subagent_task_ids: ["task-sub-1"],
     envelope_id: "env-abc",
   },
   next_step: "operator to flip kanban to .done.verified",
-  card_ref: { card_id: "377", path: "" },
+  card_ref: { card_id: "377", path: "docs/kanban/377-foo.md.done" },
 };
 
 describe("emitManagerTaskCompleted — happy path", () => {
@@ -312,7 +312,7 @@ describe("emitManagerTaskCompleted — summary byte cap", () => {
   it("counts CJK bytes correctly (TextEncoder, not string.length)", async () => {
     // '界' is 3 UTF-8 bytes. 700 copies = 2100 bytes > 2000 cap, but
     // string.length = 700. If the helper used string.length the test
-    // would falsely PASS. This proves  lesson is honored.
+    // would falsely PASS. This proves an earlier revision lesson is honored.
     const cjkOver = "界".repeat(700);
     assert.equal(cjkOver.length, 700);
     const { registry, writes } = buildRegistry({
@@ -458,7 +458,7 @@ describe("emitManagerTaskCompleted — shape validation", () => {
     const result = await emitManagerTaskCompleted(
       registry,
       // @ts-expect-error testing runtime guard
-      { ...happyInput, card_ref: { path: "" } },
+      { ...happyInput, card_ref: { path: "docs/kanban/x.md" } },
       MANAGER_ID,
       NOW,
     );
@@ -499,15 +499,15 @@ describe("emitManagerTaskCompleted — multi-complete", () => {
   });
 });
 
-describe(" — manager.task.completed is no-op for status derivation", () => {
+describe("manager.task.completed is no-op for status derivation", () => {
   it("does NOT flip terminal_conflict even after failed terminal", () => {
     const events: ManagerTaskEventRow[] = [
       { type: MANAGER_TASK_EVENT_NAMES.received, ts: "2026-05-27T09:00:00.000Z" },
       { type: MANAGER_TASK_EVENT_NAMES.started, ts: "2026-05-27T09:01:00.000Z" },
       { type: MANAGER_TASK_EVENT_NAMES.failed, ts: "2026-05-27T09:02:00.000Z", payload: { reason: "boom", message: "boom" } },
-      // : a completion landing after a failed terminal must
+      // an earlier revision: a completion landing after a failed terminal must
       // NOT count as a conflict (unlike `merged`, which DOES flip
-      // terminal_conflict per ). Operators can see the
+      // terminal_conflict per an earlier revision). Operators can see the
       // disagreement via the additive completion side field on the
       // status endpoint; the lifecycle terminal status stays `failed`.
       { type: MANAGER_TASK_EVENT_NAMES.completed, ts: "2026-05-27T09:03:00.000Z" },
@@ -537,7 +537,7 @@ describe(" — manager.task.completed is no-op for status derivation", () => {
   });
 });
 
-describe(" — event-name lock-in", () => {
+describe("event-name lock-in", () => {
   it("exposes MANAGER_TASK_COMPLETED_EVENT_NAME as exact string", () => {
     assert.equal(MANAGER_TASK_COMPLETED_EVENT_NAME, "manager.task.completed");
   });

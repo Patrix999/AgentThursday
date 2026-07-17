@@ -1,9 +1,9 @@
-//  — recovery/readiness/review projection helpers.
+// recovery/readiness/review projection helpers.
 //
 // All helpers here are read-only projections lifted from `src/server.ts`.
 // Mutation surfaces (`confirmKanbanMutation`, `setModelProfile`,
 // `acknowledgeHumanResponse`) intentionally remain in `server.ts` — they
-// touch state/event_log and are out of scope per  kanban.
+// touch state/event_log and are out of scope per an earlier revision kanban.
 //
 // Contracts preserved byte-for-byte:
 // - SQL LIMIT/ORDER unchanged (review_notes LIMIT 3, checkpoints LIMIT 5,
@@ -166,7 +166,7 @@ export function getOutcomeVerificationView(host: RecoveryViewsHost): OutcomeVeri
 }
 
 export function getMutationReviewView(host: RecoveryViewsHost): MutationReview {
-  //  — bounded read. GROUP BY counts + LIMIT 1 evidence probe; O(1)
+  // bounded read. GROUP BY counts + LIMIT 1 evidence probe; O(1)
   // memory regardless of how many mutations the project has accumulated.
   const countsRows = host.sql<{ status: string; n: number | bigint }>`
     SELECT status, COUNT(*) as n FROM kanban_mutations GROUP BY status

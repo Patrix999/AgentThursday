@@ -1,7 +1,7 @@
 import { authHeaders } from "../auth/secret";
 
 /**
- *  (UX W4) — send a work message to a cloud agent from its
+ * an earlier revision (UX W4) — send a work message to a cloud agent from its
  * detail page. Wraps `POST /api/manager/agents/:id/message`, which
  * returns `{ ok, task_id, status }` (async accept semantics).
  */

@@ -5,7 +5,7 @@ import type { WorkspaceFileEntry } from "../../shared/schema";
 /**
  * Read-only workspace file panel.
  *
- *  redesign: switched from a two-column grid (list left, inline
+ * an earlier revision redesign: switched from a two-column grid (list left, inline
  * preview right) to a single-column FTP / file-explorer style listing
  * with a slide-over drawer for file content.
  *
@@ -18,8 +18,8 @@ import type { WorkspaceFileEntry } from "../../shared/schema";
  *     full-width listing without losing list scroll position.
  *
  * Behavior preserved from earlier cards:
- *   - : panel default open inside Inspect tab.
- *   - : `agentthursday:workspace:focus-path` custom event still opens
+ *   - an earlier revision: panel default open inside Inspect tab.
+ *   - an earlier revision: `agentthursday:workspace:focus-path` custom event still opens
  *     the panel, navigates to the parent dir, and opens the drawer
  *     on the targeted file.
  */
@@ -208,13 +208,13 @@ function FileRow({
 }
 
 /**
- *  — viewport-level screen-edge file drawer with animation
+ * viewport-level screen-edge file drawer with animation
  * and dismiss affordances.
  *
  * Changed from absolute inside the panel to fixed at the viewport
  * right edge so the preview area is significantly larger.
- * : responsive widths (94vw mobile → 64vw ultra-wide, capped at
- * max-w-6xl). : click-outside dismiss, Escape key dismiss,
+ * an earlier revision: responsive widths (94vw mobile → 64vw ultra-wide, capped at
+ * max-w-6xl). an earlier revision: click-outside dismiss, Escape key dismiss,
  * and slide-in / backdrop-fade transition. Read-only.
  */
 function FileDrawer({

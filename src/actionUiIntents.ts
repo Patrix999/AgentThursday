@@ -4,17 +4,17 @@
  * Pure derive-on-read translation layer: takes recent `event_log` rows
  * (the same shape `getInspectSnapshot()` already pulls into `trace[]`)
  * and produces a capped, schema-validated `ActionUiIntent[]` view that
- * 's frontend ActivityFeed consumes.
+ * an earlier revision's frontend ActivityFeed consumes.
  *
- * v1 invariants (per kanban +  milestone red lines):
+ * v1 invariants (per kanban + M7.6 milestone red lines):
  *   - **No persisted intent event** — derived fresh on every inspect read.
- *     Avoids schema churn cascading into  consumers (/119/121).
- *   - **No model-declared `@component`** — that's + P2; v1 only maps
+ *     Avoids schema churn cascading into M7.5 consumers .
+ *   - **No model-declared `@component`** — that's M7.7+ P2; v1 only maps
  *     known event types to a fixed set of component names.
  *   - **Raw payload hidden by default** — generic cards include only
  *     event type / timestamp / taskId / short summary. Tool events do
  *     NOT carry full prompts, raw Discord bodies, raw provider payloads,
- *     or secrets through this surface.  will do per-tool richer
+ *     or secrets through this surface. an earlier revision will do per-tool richer
  *     extraction with explicit sanitization.
  *   - **Raw `trace[]` unchanged** — intents are an INDEX, not a
  *     replacement.
@@ -29,23 +29,23 @@ export type ActionUiIntentType =
   | "agent.pause"
   | "generic.tool_event"
   | "generic.event"
-  //  — tool-specific intent types. Each upgrades a known tool
+  // tool-specific intent types. Each upgrades a known tool
   // event family into a dedicated panel with a whitelisted prop set.
   | "tool.search_results"
   | "tool.file_read"
   | "tool.execution_result"
-  //  — workspace mutation intent. Recognizes write-shaped tool
+  // workspace mutation intent. Recognizes write-shaped tool
   // events (checkpoint writes + future tool.workspace.* prefix). Carries
   // an optional file path through `placementHint.focusPath` so the
   // frontend can ask the workspace file manager to open it.
   | "tool.workspace_mutation"
-  //  — manager tool lifecycle. Recognizes the four manager
+  // manager tool lifecycle. Recognizes the four manager
   // tool families (agent_list / agent_message / agent_create /
   // agent_update) across dispatch / result / error phases, surfacing
   // safe whitelisted fields (agent_id, task_id, envelope_id, counts,
   // bounded redacted previews) for the right-side Activity panel.
   | "tool.lifecycle"
-  //  — workflow-era activity: executor run started/terminal
+  // workflow-era activity: executor run started/terminal
   // events + executor-dispatched subagent terminal events (trace_id
   // prefixed `wfr-`). Links the feed to /workflow-runs.
   | "workflow.run";
@@ -55,6 +55,40 @@ export type ActionUiIntentPriority = "primary" | "secondary" | "debug";
 export type ActionUiIntentRegion = "top" | "feed" | "debug";
 
 export type ActionUiIntentSize = "compact" | "medium" | "large";
+
+/**
+ * Default activity-feed membership — the SAME filter the console's
+ * `ActivityFeed.tsx` (`isDefaultFeedIntent`) applies, ported here so the
+ * owner-scoped user-app feed surfaces byte-identical "activity": drops
+ * debug / degradation / pause / lifecycle-noise (`generic.event` such as
+ * `agent.woken`), keeps the model's real tool actions — dispatch
+ * (`tool.lifecycle`), browser/search, file read, file/repo write
+ * (`tool.workspace_mutation`), execution, and workflow runs.
+ */
+export function isDefaultFeedIntent(
+  // Structural-minimal param (only the 3 fields read) so this works for BOTH
+  // the builder's `ActionUiIntent` (props: Record) and the schema's
+  // `InspectSnapshot["actionUiIntents"]` item (props: unknown).
+  intent: {
+    priority: ActionUiIntentPriority;
+    type: ActionUiIntentType;
+    placementHint: { region: ActionUiIntentRegion };
+  },
+): boolean {
+  if (intent.priority === "debug") return false;
+  if (intent.placementHint.region === "debug") return false;
+  if (intent.type === "agent.degradation") return false;
+  if (intent.type === "agent.pause") return false;
+  return (
+    intent.type === "generic.tool_event"
+    || intent.type === "tool.search_results"
+    || intent.type === "tool.file_read"
+    || intent.type === "tool.execution_result"
+    || intent.type === "tool.workspace_mutation"
+    || intent.type === "tool.lifecycle"
+    || intent.type === "workflow.run"
+  );
+}
 
 export type ActionUiIntent = {
   id: string;
@@ -118,8 +152,8 @@ function truncate(s: string, cap: number): { text: string; truncated: boolean } 
   return { text: s.slice(0, cap), truncated: true };
 }
 
-//  — UTF-8 byte-cap for result previews (multi-byte safe; the
-//  lesson: a `.length` cap lets `'界'.repeat(N)` blow the budget).
+// UTF-8 byte-cap for result previews (multi-byte safe; the
+// an earlier revision lesson: a `.length` cap lets `'界'.repeat(N)` blow the budget).
 const RESULT_PREVIEW_BYTE_CAP = 1536;
 function bytePreview(s: string, cap: number = RESULT_PREVIEW_BYTE_CAP): { text: string; truncated: boolean } {
   const enc = new TextEncoder();
@@ -160,7 +194,7 @@ function buildIntentId(row: ActionUiIntentSourceRow): string {
 }
 
 /**
- * Map `degradation.summary` rows for inspect/diagnostics. operator clarified
+ * Map `degradation.summary` rows for inspect/diagnostics. the operator clarified
  * degradation/pause should remain conversation-first in the default user
  * flow, so v1 keeps these intents in the debug region rather than
  * top-pinning them into the future ActivityFeed shell.
@@ -217,7 +251,7 @@ function mapDegradationSummary(
 /**
  * Map pause-related lifecycle events for inspect/diagnostics. The
  * default user-facing pause/resume behavior remains conversational
- * (), not a forced visible web component.
+ * , not a forced visible web component.
  */
 function mapPause(
   row: ActionUiIntentSourceRow,
@@ -271,7 +305,7 @@ function mapPause(
 }
 
 /**
- * Map any `tool.*` event to the generic tool event card.  will
+ * Map any `tool.*` event to the generic tool event card. an earlier revision will
  * later add per-tool components for search/read/execution that supersede
  * this generic mapping for those specific event types.
  *
@@ -282,9 +316,9 @@ function mapPause(
  * strings, or any user-supplied content beyond what's already public via
  * raw trace.
  *
- *  — also forward `pathPreview` / `sourceId` when the tool
+ * also forward `pathPreview` / `sourceId` when the tool
  * already pre-truncated them at the logEvent boundary (e.g.
- * `tool.content_list`). These are the same caps  applies, so
+ * `tool.content_list`). These are the same caps an earlier revision applies, so
  * surfacing them here doesn't widen any leak window.
  */
 function mapToolEvent(
@@ -376,9 +410,9 @@ function mapGeneric(
 }
 
 /**
- *  — search-tool mapper. Recognizes `tool.content_search`
+ * search-tool mapper. Recognizes `tool.content_search`
  * (and any sibling search-flavored events). Whitelists ONLY the
- * pre-truncated preview fields the tool already logged via 's
+ * pre-truncated preview fields the tool already logged via an earlier revision's
  * `slice(0, 80)` discipline; never forwards full query/path/payload.
  *
  * Result hits are NOT in the event_log payload (they go directly to
@@ -448,7 +482,7 @@ function mapSearchResults(
 }
 
 /**
- *  — file-read mapper. Recognizes `tool.content_read` (and
+ * file-read mapper. Recognizes `tool.content_read` (and
  * `tool.content_list` is intentionally excluded — listing is a
  * navigation event, not a "the agent read this file" surface).
  *
@@ -480,7 +514,7 @@ function mapFileRead(
   const lineCount = numericField(parsed, "lineCount", "linesRead");
   const truncated = parsed.truncated === true;
   const truncatedBytes = numericField(parsed, "truncatedBytes", "truncated_bytes");
-  //  — bounded content preview (set upstream in the
+  // bounded content preview (set upstream in the
   // repo.read.result branch where the content is still in the payload).
   const resultPreviewRaw = strField(parsed, "resultPreview");
   const resultPreview = resultPreviewRaw !== null ? bytePreview(resultPreviewRaw) : null;
@@ -530,7 +564,7 @@ function mapFileRead(
 }
 
 /**
- *  — execution mapper. Recognizes `tool.execute` (Tier 2
+ * execution mapper. Recognizes `tool.execute` (Tier 2
  * codemode JS/TS via `@cloudflare/think/tools/execute`) and
  * `tool.sandbox_exec` (Tier 4 OS shell via Cloudflare Sandbox
  * container). Both already log a pre-truncated code/command preview
@@ -596,7 +630,7 @@ function mapExecution(
 }
 
 /**
- *  — workspace mutation mapper. Recognizes write-shaped tool
+ * workspace mutation mapper. Recognizes write-shaped tool
  * events that change persisted state, with two concrete sources today:
  *
  *   - `tool.write_checkpoint` — agent's own checkpoint write (the
@@ -707,7 +741,7 @@ function mapWorkspaceMutation(
 }
 
 /**
- *  — manager tool lifecycle mapper. Recognizes
+ * manager tool lifecycle mapper. Recognizes
  * `tool.manager.<family>.<phase>` events for the four families the
  * card scopes:
  *   - agent_list (dispatch / result)
@@ -943,7 +977,7 @@ function classifyAndMap(
   now: number,
 ): ActionUiIntent {
   const { value: parsed } = safeParse(row.payload);
-  //  — workflow-era events first (registry trace rows).
+  // workflow-era events first (registry trace rows).
   if (row.event_type === "workflow.run.started" || row.event_type === "workflow.run.terminal") {
     return mapWorkflowRun(row, parsed, now);
   }
@@ -957,7 +991,7 @@ function classifyAndMap(
   if (row.event_type === "loop.pause.needs_human" || row.event_type === "loop.pause.awaiting_resume") {
     return mapPause(row, parsed, now);
   }
-  //  — manager tool lifecycle. Try the dedicated mapper
+  // manager tool lifecycle. Try the dedicated mapper
   // first for `tool.manager.<family>.<phase>` rows; fall through to
   // generic `tool.*` chrome only if the row doesn't match the
   // whitelisted family pattern.
@@ -965,7 +999,7 @@ function classifyAndMap(
     const intent = mapManagerLifecycle(row, parsed, now);
     if (intent) return intent;
   }
-  //  — tool-specific upgraded mappers. Each returns null when
+  // tool-specific upgraded mappers. Each returns null when
   // the payload lacks the whitelisted fields, so the caller falls back
   // to `mapToolEvent` generic chrome rather than rendering an empty
   // dedicated panel.
@@ -994,7 +1028,7 @@ function classifyAndMap(
     if (content !== null && typeof merged.lineCount !== "number") {
       merged.lineCount = content.length === 0 ? 0 : content.split("\n").length;
     }
-    //  — keep a bounded preview (first ~30 lines) so the feed
+    // keep a bounded preview (first ~30 lines) so the feed
     // shows what was actually read; full content stays out of props.
     if (content !== null && content.length > 0) {
       merged.resultPreview = content.split("\n").slice(0, 30).join("\n");
@@ -1003,12 +1037,12 @@ function classifyAndMap(
     const intent = mapFileRead(row, merged, now);
     if (intent) return intent;
   }
-  //  — gate result: ok/exit + bounded stdout (esp. on failure).
+  // gate result: ok/exit + bounded stdout (esp. on failure).
   if (/^tool\.gate\.[a-z_]+\.result$/.test(row.event_type)) {
     const intent = mapGateResult(row, parsed, now);
     if (intent) return intent;
   }
-  //  — surface repo.grep results (count + first matches) instead
+  // surface repo.grep results (count + first matches) instead
   // of the bare generic tool chrome.
   if (row.event_type === "tool.repo.grep.result") {
     const intent = mapGrepResult(row, parsed, now);
@@ -1018,7 +1052,7 @@ function classifyAndMap(
     const intent = mapExecution(row, parsed, now);
     if (intent) return intent;
   }
-  //  — workspace mutation upgrade. Catches `tool.write_checkpoint`
+  // workspace mutation upgrade. Catches `tool.write_checkpoint`
   // today + `tool.workspace.<op>` forward-compat tomorrow. Falls through
   // to `mapToolEvent` if payload doesn't match either branch.
   if (row.event_type === "tool.write_checkpoint" || row.event_type.startsWith("tool.workspace.")) {
@@ -1029,7 +1063,7 @@ function classifyAndMap(
   return mapGeneric(row, parsed, now);
 }
 
-//  — gate result mapper: ok/exit/duration + bounded stdout.
+// gate result mapper: ok/exit/duration + bounded stdout.
 function mapGateResult(
   row: ActionUiIntentSourceRow,
   parsed: Record<string, unknown> | null,
@@ -1049,7 +1083,7 @@ function mapGateResult(
   );
   return {
     id: buildIntentId(row),
-    //  — fall back to trace_id so the auto-dispatch key matches
+    // fall back to trace_id so the auto-dispatch key matches
     // the autodispatch.start row (which keys by taskId === trace).
     taskId: strField(parsed, "taskId") ?? row.trace_id,
     sourceEventType: row.event_type,
@@ -1074,7 +1108,7 @@ function mapGateResult(
   };
 }
 
-//  — repo.grep result mapper: match count + first matches as a
+// repo.grep result mapper: match count + first matches as a
 // `file:line: text` preview, byte-capped.
 function mapGrepResult(
   row: ActionUiIntentSourceRow,
@@ -1134,7 +1168,7 @@ function mapGrepResult(
   };
 }
 
-// ──  — tool lifecycle pairing ───────────────────────────────
+// ── tool lifecycle pairing ───────────────────────────────
 // A dispatch row and its matching result/error row are one ACTION, not
 // two feed items (359b's original goal, previously only approximated
 // for manager tools). Pairing key = event base name + trace_id. The
@@ -1153,7 +1187,7 @@ export type LifecycleAnnotatedRow = {
   row: ActionUiIntentSourceRow;
   lifecycle?: LifecycleAnnotation;
   skip?: boolean;
-  //  — the paired dispatch's `input` (e.g. repo.read's file
+  // the paired dispatch's `input` (e.g. repo.read's file
   // path) carried onto the result row, whose payload often only has
   // `output`. Merged into the row payload before mapping.
   enrichInput?: Record<string, unknown>;
@@ -1187,7 +1221,7 @@ export function annotateLifecycleRows(
     if (m === null) continue;
     // Same tool + same trace can interleave (two manager.agent_message
     // calls to different subagents; a burst of repo.read calls across
-    // files — observed live on 's dogfood feed). agent_id keys
+    // files — observed live on an earlier revision's dogfood feed). agent_id keys
     // the map; path matches two-tier: exact when the result echoes a
     // path, FIFO-oldest otherwise (result payloads don't always echo
     // the dispatch input).
@@ -1219,7 +1253,7 @@ export function annotateLifecycleRows(
         status: phase === "error" ? "error" : "ok",
         durationMs: Math.max(0, out[i].row.created_at - out[matched.index].row.created_at),
       };
-      //  — carry the dispatch's input (file path etc.) forward.
+      // carry the dispatch's input (file path etc.) forward.
       const { value: dispatchParsed } = safeParse(out[matched.index].row.payload);
       if (dispatchParsed && typeof dispatchParsed.input === "object" && dispatchParsed.input !== null) {
         out[i].enrichInput = dispatchParsed.input as Record<string, unknown>;
@@ -1239,7 +1273,7 @@ export function annotateLifecycleRows(
   return out;
 }
 
-// ──  — workflow-era mappers ─────────────────────────────────
+// ── workflow-era mappers ─────────────────────────────────
 
 function mapWorkflowRun(
   row: ActionUiIntentSourceRow,
@@ -1315,7 +1349,7 @@ function mapWorkflowSubagent(
  * cap inputs and outputs, fail-soft per row (a malformed payload becomes
  * a generic event, not a crash), and never throw.
  */
-//  — splice a paired dispatch's `input` into a result row's
+// splice a paired dispatch's `input` into a result row's
 // JSON payload so downstream mappers (repo.read needs the file path,
 // which only lives on the dispatch) see it. Fail-soft: returns the
 // original string on any parse error.
@@ -1342,8 +1376,8 @@ export function buildActionUiIntents(
   const now = options?.now ?? Date.now();
 
   const out: ActionUiIntent[] = [];
-  //  — collect (taskId|target) of harness auto-dispatched gates
-  // ( gate-intent guard) so the feed can mark them "🤖 auto"
+  // collect (taskId|target) of harness auto-dispatched gates
+  // (an earlier revision gate-intent guard) so the feed can mark them "🤖 auto"
   // instead of looking like the agent ran the gate itself.
   const autoGateKeys = new Set<string>();
   for (const r of rows.slice(0, rowLimit)) {
@@ -1355,7 +1389,7 @@ export function buildActionUiIntents(
       if (taskId !== null && target !== null) autoGateKeys.add(`${taskId}|${target}`);
     }
   }
-  //  — pair tool dispatch/result/error rows into single
+  // pair tool dispatch/result/error rows into single
   // lifecycle-annotated actions before mapping.
   const window = annotateLifecycleRows(rows.slice(0, rowLimit));
   for (const entry of window) {
@@ -1369,7 +1403,7 @@ export function buildActionUiIntents(
       if (entry.lifecycle && intent.component.props && typeof intent.component.props === "object") {
         (intent.component.props as Record<string, unknown>).lifecycle = entry.lifecycle;
       }
-      //  — mark harness-auto-dispatched gate intents.
+      // mark harness-auto-dispatched gate intents.
       if (/^tool\.gate\.[a-z_]+\.result$/.test(intent.sourceEventType)
         && intent.component.props && typeof intent.component.props === "object") {
         const props = intent.component.props as Record<string, unknown>;

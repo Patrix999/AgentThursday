@@ -31,7 +31,7 @@ import {
 } from "./devShell";
 import { canonicalInputHash } from "./approvalToken";
 
-//  — `dev.echo.t4` is an internal T4 test tool that flows
+// `dev.echo.t4` is an internal T4 test tool that flows
 // through the same approval guard as any future real T4/T5 write tool.
 // It executes a pure no-op (returns the input back) so the verifier can
 // smoke the consume-then-execute path without external side effects.
@@ -58,7 +58,7 @@ export interface WorkspaceWriteBackend {
 }
 
 /**
- *  — minimal sandbox filesystem client surface used by the
+ * minimal sandbox filesystem client surface used by the
  * sandbox-backed `WorkspaceWriteBackend`. Mirrors the subset of the
  * `@cloudflare/sandbox` SDK we depend on so this module stays pure
  * (no SDK import) and is straightforward to fake in tests.
@@ -72,11 +72,11 @@ export interface SandboxFsClient {
 }
 
 /**
- *  — robust detection of "file not found" thrown by the
+ * robust detection of "file not found" thrown by the
  * production `@cloudflare/sandbox` SDK. 193a's `e instanceof Error &&
  * e.name === "FileNotFoundError"` check did not fire in production,
  * so the missing-file value reaches the adapter in at least one of
- * these shapes (verifier QA `2026-05-08--production-rerun.md`):
+ * these shapes (verifier QA `2026-05-08-card193a-production-rerun.md`):
  *
  *   1. cross-realm `Error` whose constructor lives in a different
  *      JS realm — `instanceof Error` is `false` even though `.name`
@@ -89,7 +89,7 @@ export interface SandboxFsClient {
  * specific (typed name) to least specific (message substring). It
  * deliberately keeps the message-substring branch narrow ("File not
  * found:") so generic IO errors that happen to mention "not found"
- * elsewhere are still propagated — see  §非目标.
+ * elsewhere are still propagated — see card 193b §非目标.
  *
  * Exported for direct test coverage (193b sanity).
  */
@@ -113,7 +113,7 @@ export function isSandboxFileNotFound(e: unknown): boolean {
 }
 
 /**
- *  — adapt a sandbox FS client into the `WorkspaceWriteBackend`
+ * adapt a sandbox FS client into the `WorkspaceWriteBackend`
  * shape used by `dispatchWriteTool`. All paths are resolved relative to
  * `baseDir`; the input `path` is the manifest-validated relative path
  * (already passed through `assertSafeRepoPath` so it is safe to join).
@@ -121,8 +121,8 @@ export function isSandboxFileNotFound(e: unknown): boolean {
  * Why this exists: pre-193, `repo.write` / `repo.patch` / `repo.delete`
  * wrote to the AgentThursdayAgent DO scratch workspace, while `repo.read` /
  * `gate.*` operate on the production sandbox checkout (`/workspace/AgentThursday`,
- * see ). This split made agent-proposed patches invisible to
- * `repo.read` and `gate.*` ( finding F1). Writing through this
+ * see card 189). This split made agent-proposed patches invisible to
+ * `repo.read` and `gate.*` (an earlier revision finding F1). Writing through this
  * backend lands the patch in the same checkout the gate runs against,
  * so the self-dev loop closes:
  *   `repo.patch → repo.read sees it → gate.* validates it → diff evidence`.
@@ -140,12 +140,12 @@ export function makeSandboxWriteBackend(
   const join = (relPath: string) => `${baseDir}/${relPath}`;
   return {
     async readFile(relPath) {
-      // /193b — production `@cloudflare/sandbox` SDK signals
+      // production `@cloudflare/sandbox` SDK signals
       // missing files by *throwing* `FileNotFoundError`, not by
       // returning `{success:false}`. 193a's `instanceof Error &&
       // .name === "FileNotFoundError"` did not fire on the production
       // thrown value (cross-realm / non-Error / message-prefix shape;
-      // see  §背景). 193b switches to `isSandboxFileNotFound`
+      // see card 193b §背景). 193b switches to `isSandboxFileNotFound`
       // which checks `name`, `constructor.name`, and the canonical
       // message phrasing independently. Real I/O / permission /
       // generic errors keep propagating to the dispatcher catch.
@@ -182,7 +182,7 @@ export function makeSandboxWriteBackend(
 }
 
 /**
- *  — strip caller-supplied approval material from any `input`
+ * strip caller-supplied approval material from any `input`
  * that crosses into a dispatcher event payload (`tool.<id>.dispatch`,
  * `tool.<id>.error`). Reserved keys at the top level of the input are
  * replaced with the literal string `"[redacted]"` so the verifier can
@@ -198,7 +198,7 @@ export function makeSandboxWriteBackend(
  * Reserved set is the literal approval material a caller might present:
  * `approval` (the {token_id, token} struct), bare `token` / `token_id`
  * / `token_hash`. Top-level only — deeper nesting is not a known
- * legitimate caller pattern, so we don't speculate ( spec:
+ * legitimate caller pattern, so we don't speculate (an earlier revision spec:
  * "Keep it surgical").
  */
 const APPROVAL_RESERVED_KEYS: ReadonlySet<string> = new Set([
@@ -217,7 +217,7 @@ function redactInputForEvent(input: Record<string, unknown>): Record<string, unk
 }
 
 /**
- *  — approval consumption result the dispatcher receives back
+ * approval consumption result the dispatcher receives back
  * from the cross-DO callback. Mirrors the shape of
  * `ChannelHubAgent.consumeApprovalToken` so the dispatcher can surface
  * the verify reason verbatim without re-importing the DO type.
@@ -227,10 +227,10 @@ export type ApprovalConsumeResult =
   | { ok: false; error: string; detail?: string };
 
 /**
- *  — payload presented by the caller alongside a T4/T5 tool
+ * payload presented by the caller alongside a T4/T5 tool
  * dispatch. Raw `token` is in-memory only: never logged, never persisted,
  * never echoed in the dispatch event payload (which is why this rides
- * on `ctx`, not on `input` — see  §C).
+ * on `ctx`, not on `input` — see an earlier revision §C).
  */
 export interface ApprovalPresentation {
   token_id: string;
@@ -242,7 +242,7 @@ export interface WriteDispatchContext {
   traceId?: string | null;
   workspace?: WorkspaceWriteBackend;
   manifestPolicy?: ManifestPathPolicy;
-  //  — present for any tier-≥4 dispatch. Caller is responsible
+  // present for any tier-≥4 dispatch. Caller is responsible
   // for refusing to populate these for tier-<4 calls.
   approval?: ApprovalPresentation;
   agentId?: string;
@@ -253,7 +253,7 @@ export interface WriteDispatchContext {
     tool_id: string;
     input_hash: string;
   }) => Promise<ApprovalConsumeResult>;
-  //  B — post-checkout sandbox baseDir when writes land in the
+  // an earlier revision B — post-checkout sandbox baseDir when writes land in the
   // prepared worktree; null when the dispatcher falls back to the DO
   // scratch workspace. Surfaced verbatim in dispatch / result / error
   // event payloads so trace consumers can correlate writes with the
@@ -270,7 +270,7 @@ export interface WriteDispatchResult {
   contract: { tier: number; emit_events: string[]; required_evidence: string[] };
   backend: "real" | "stub";
   diff?: string;
-  //  B — sandbox baseDir when the write hit the prepared
+  // an earlier revision B — sandbox baseDir when the write hit the prepared
   // worktree; null on DO scratch fallback. Mirrors the read-side
   // `DispatchResult.worktree_path` so callers can pin the write to a
   // specific `repo.prepare` outcome.
@@ -528,9 +528,9 @@ export async function dispatchWriteTool(
 
   const contract = getContractMeta(knownToolId);
 
-  //  — dispatch event MUST NOT carry the raw approval token.
+  // dispatch event MUST NOT carry the raw approval token.
   // `ctx.approval` rides on the context, not on `input`, so the input
-  // hash is approval-free.  — defence-in-depth: redact any
+  // hash is approval-free. defence-in-depth: redact any
   // caller-supplied approval-shaped keys from the *event copy* of the
   // input as well, so a buggy/malicious caller that stuffed approval
   // material into `input.approval` cannot leak it into event_log /
@@ -542,7 +542,7 @@ export async function dispatchWriteTool(
     payload: { input: redactInputForEvent(input), traceId: ctx.traceId ?? null, tier: contract.tier, worktree_path: worktreePath },
   });
 
-  //  — approval enforcement for T4/T5. Must happen before any
+  // approval enforcement for T4/T5. Must happen before any
   // tool-side execution so a missing / bad approval cannot cause a side
   // effect. Failure paths return `ok: false` and never enter the switch.
   if (contract.tier >= 4) {
@@ -629,9 +629,9 @@ export async function dispatchWriteTool(
 
     switch (knownToolId) {
       case "repo.write": {
-        //  — write paths are joined into the sandbox checkout;
+        // write paths are joined into the sandbox checkout;
         // `assertSafeRepoPath` rejects absolute paths, `..` segments,
-        // and shell metacharacters.  moved this check into the
+        // and shell metacharacters. an earlier revision moved this check into the
         // repo.* cases so the new tier-4 `dev.echo.t4` (no path field)
         // flows through the dispatcher cleanly.
         const path = typeof input.path === "string" ? input.path : undefined;
@@ -691,7 +691,7 @@ export async function dispatchWriteTool(
         break;
       }
       case "dev.echo.t4": {
-        //  — internal T4 test tool. Pure no-op: returns the
+        // internal T4 test tool. Pure no-op: returns the
         // canonical input hash so the verifier can prove the value the
         // dispatcher actually executed against (i.e. the value bound
         // to the consumed approval). No filesystem / VCS / network.

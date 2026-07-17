@@ -4,12 +4,12 @@ import { DEMO_INSTANCE } from "../demoConstants";
 import type { AgentThursdayAgent } from "../server";
 
 /**
- *  — active-context / DO routing helpers extracted from
+ * active-context / DO routing helpers extracted from
  * `server.ts`.
  *
  * Pure routing utilities. No active-context semantics changed — every
  * function is the verbatim body of the original `server.ts`
- * declaration (Cards 149 / 149e / 149e1 invariants preserved).
+ * declaration (an earlier revision invariants preserved).
  *
  * Owners of the imports (kept in this module):
  *  - `getAgentByName` from `agents` — DO stub resolver
@@ -31,15 +31,15 @@ import type { AgentThursdayAgent } from "../server";
  *  - `resolveCanonicalActiveContextRoute`
  *
  * `cliRoutes.ts` keeps its own local `CONTEXT_HEADER` declaration (set
- * up by ) — that duplication is intentional and out of
+ * up by an earlier revision) — that duplication is intentional and out of
  * scope for 242z4. The new canonical declaration here is what
  * `server.ts` reads.
  */
 
-//   — per-context DO routing. Reads `X-AgentThursday-Context-Id`
+// M7.7v3 per-context DO routing. Reads `X-AgentThursday-Context-Id`
 // from the request header and uses it as the DO instance name.
 //
-//  — header semantics tightened for the "single active session
+// header semantics tightened for the "single active session
 // per (user, agent)" model. When the header is present it acts as an
 // **explicit override** (handy for debugging / pinned testing tabs).
 // When it is absent, header-less user-layer requests now fall through
@@ -67,7 +67,7 @@ export function resolveContextDoName(request: Request): string {
 }
 
 /**
- *  — canonical active-context resolver for user-layer routes.
+ * canonical active-context resolver for user-layer routes.
  *
  * Resolution order:
  *   1. Explicit `X-AgentThursday-Context-Id` header (debug / pinned tab override).
@@ -117,7 +117,7 @@ export function getActiveAgentThursdayAgentStub(env: Env, request: Request) {
 }
 
 /**
- *  — async stub resolver that follows the canonical active
+ * async stub resolver that follows the canonical active
  * pointer when no header is set. User-layer routes that want
  * "follow active context unless caller explicitly pinned a tab"
  * use this instead of `getActiveAgentThursdayAgentStub`.
@@ -131,9 +131,9 @@ export async function getCanonicalActiveAgentThursdayAgentStub(env: Env, request
 }
 
 /**
- *  — paired `{ name, stub }` resolver. Route handlers that
+ * paired `{ name, stub }` resolver. Route handlers that
  * pass a `routedContextId` to the DO (notably
- * `/cli/context/reset` per ) MUST send the same id that the
+ * `/cli/context/reset` per an earlier revision) MUST send the same id that the
  * stub points at. With the canonical resolver in place, calling
  * `getCanonicalActiveContextDoName(...)` and
  * `getCanonicalActiveAgentThursdayAgentStub(...)` separately can race the

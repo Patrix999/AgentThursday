@@ -1,12 +1,12 @@
-//  — `/api/diag/dispatch` route + helpers extracted from `server.ts`.
+// `/api/diag/dispatch` route + helpers extracted from `server.ts`.
 //
 // Originally lived under `server.ts:8815-9033` (helpers) + `:10230-10280`
-// (inline route branch). Pattern follows  routes (`inspectRoutes`,
+// (inline route branch). Pattern follows M8.8 routes (`inspectRoutes`,
 // `demoRoutes` etc.): single exported `handleDiagDispatch(...)`; helpers
 // stay file-internal. No behavior change — bodies were lifted verbatim,
 // only `env` reaches in via the function arg instead of fetch() closure.
 //
-//  A.2 — diagnostic endpoint helpers. Lets reviewers capture the
+// an earlier revision A.2 — diagnostic endpoint helpers. Lets reviewers capture the
 // raw `env.AI.run()` output for the four models in the dispatch saga, so we
 // can tell whether tool_calls land where workers-ai-provider expects them.
 
@@ -23,7 +23,7 @@ const DIAG_MODEL_ALLOWLIST = [
 const DiagDispatchRequestSchema = z.object({
   model: z.enum(DIAG_MODEL_ALLOWLIST),
   prompt: z.string().min(1).max(2000),
-  //  A.2-stream — opt into streaming mode. When set, the endpoint
+  // an earlier revision A.2-stream — opt into streaming mode. When set, the endpoint
   // calls env.AI.run(..., {stream: true}) and returns an SSE-chunk summary.
   stream: z.boolean().optional(),
 });
@@ -90,7 +90,7 @@ function summarizeDiagOutput(output: unknown): {
   };
 }
 
-//  A.2-stream — read SSE chunks from a Workers AI streaming response,
+// an earlier revision A.2-stream — read SSE chunks from a Workers AI streaming response,
 // parse line-buffered `data: {...}` events, and return a summary of where
 // tool_calls (and content) appear across chunks. Bypasses workers-ai-provider's
 // own parser so we can tell whether tool_calls are dropped at the network
@@ -230,7 +230,7 @@ function summarizeDiagStreamChunks(chunks: unknown[]): {
   };
 }
 
-//  A.2 — diagnostic endpoint for direct env.AI.run() capture.
+// an earlier revision A.2 — diagnostic endpoint for direct env.AI.run() capture.
 // Bypasses the workers-ai-provider adapter so we can see the raw shape
 // Workers AI returns for an allowlisted model + minimal tool schema.
 // Used to determine whether tool_calls land in the structural fields
@@ -283,7 +283,7 @@ export async function handleDiagDispatch(request: Request, env: Env): Promise<Re
   return json({ mode: "non-stream", ...summarizeDiagOutput(output) });
 }
 
-// Test surface — re-exported under `__internalForTests` so the
+// Test surface — re-exported under `__internalForTests` so the an earlier revision
 // smoke can drive the helpers directly without going through `env.AI`.
 // Not part of the public route module API; do not import from production
 // code paths.

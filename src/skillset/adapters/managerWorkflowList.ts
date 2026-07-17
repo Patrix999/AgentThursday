@@ -1,5 +1,5 @@
 /**
- *  — adapter for `manager.workflow_list`. Bounded list of
+ * adapter for `manager.workflow_list`. Bounded list of
  * saved workflow descriptors (name / version / phase + agent counts /
  * updated_at).
  */
@@ -20,8 +20,12 @@ type Output = ManagerWorkflowListResult;
 registerDispatchHandler<Input, Output>({
   tool_id: "manager.workflow_list",
   inputSchema,
-  execute: async (_input, envUnknown) => {
+  execute: async (_input, envUnknown, ctx) => {
     const env = (envUnknown ?? {}) as ManagerEnv;
-    return managerWorkflowList(env);
+    const callingAgentId =
+      ctx && typeof ctx === "object" && typeof (ctx as { name?: unknown }).name === "string"
+        ? (ctx as { name: string }).name
+        : null;
+    return managerWorkflowList(env, callingAgentId);
   },
 });

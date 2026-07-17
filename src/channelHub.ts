@@ -3,9 +3,9 @@
  *
  * Owns inbox / outbox / identity / conversation tables. Provider-agnostic.
  * No Discord/email adapter wiring in this card — only schema, storage, and
- * idempotent ingestion. Cards 86+ wire actual transports.
+ * idempotent ingestion. an earlier revision+ wire actual transports.
  *
- * Boundary rationale ( review notes §1): kept as its own DO from day 1
+ * Boundary rationale (M7.3 review notes §1): kept as its own DO from day 1
  * so AgentThursdayAgent's event_log isn't shared with channel events, and webhook
  * traffic patterns can scale independently of agent task patterns.
  */
@@ -140,14 +140,14 @@ type AgentThursdayAgentRPC = {
     currentTaskId: string | null;
     currentTaskLifecycle: string | null;
   }>;
-  //  — registry pointer accessor (only invoked on the
+  // registry pointer accessor (only invoked on the
   // registry DO; safe shape so the RPC compiles in this file).
   getActiveContextId(): Promise<{
     contextId: string;
     reason: string | null;
     createdAt: number;
   }>;
-  //  — registry-DO profile read so ChannelHub can validate a
+  // registry-DO profile read so ChannelHub can validate a
   // `channel_conversations.active_profile_id` at set-time and
   // route-time. Shape mirrors `AgentProfile` (see `src/schema/agent.ts`)
   // but is typed structurally so this file doesn't pull the full
@@ -159,33 +159,33 @@ type AgentThursdayAgentRPC = {
     channel: string;
     skillset: string;
     persona: string;
-    //  lifecycle v2 — persisted enum:
+    // an earlier revision lifecycle v2 — persisted enum:
     // `initialized` (active, may be paused via accepts_tasks=false),
     // `archived` (reversible removal), `deleted_marker` (audit tombstone).
-    // See ``.
+    // See `docs/adr/2026-05-26-agent-lifecycle-product-contract.md`.
     status: "initialized" | "archived" | "deleted_marker";
     created_at: string;
     updated_at: string;
   } | null>;
 };
 
-//  — `AGENT_THURSDAY_REGISTRY_INSTANCE_NAME` (was `AGENT_THURSDAY_INSTANCE_NAME`)
+// `AGENT_THURSDAY_REGISTRY_INSTANCE_NAME` (was `AGENT_THURSDAY_INSTANCE_NAME`)
 // is the registry DO that owns `context_active`. It is **not** the
 // default chat target anymore; ChannelHub looks up the canonical
 // active context via `getActiveContextId()` on this registry and
 // routes inbound messages there. Falls back to the registry only
 // when the active pointer is empty or RPC fails.
-//  — constant extracted to ./channelHub/registryName so the
+// constant extracted to ./channelHub/registryName so the
 // Discord gateway DO can share it; re-exported import keeps all
 // existing references in this file working unchanged.
 import { AGENT_THURSDAY_REGISTRY_INSTANCE_NAME } from "./channelHub/registryName";
 
-//  — DiscordGatewayAgent DO instance name. Match the literal
+// DiscordGatewayAgent DO instance name. Match the literal
 // in `discordGatewayAgent.ts` (`DISCORD_GATEWAY_INSTANCE`); we don't
 // import it here to avoid pulling the full Discord types into ChannelHub.
 const GATEWAY_INSTANCE_FOR_POLL = "agentthursday-dev";
 
-// /156q1 — recognise DO isolate memory-pressure errors so
+// recognise DO isolate memory-pressure errors so
 // `routePending` can leave the inbox row retryable (`received`) instead
 // of permanently consuming it as `failed`. The CF runtime surfaces these
 // resets in a few different shapes depending on which RPC layer caught
@@ -216,7 +216,7 @@ type OutboxRow = {
   approval_id: string | null;
 };
 
-//  — read-only outbox inspect surface row shape.
+// read-only outbox inspect surface row shape.
 // Verifier-facing only; never includes provider tokens, raw payload JSON
 // (which can contain auth headers), or any secret material.
 export type ChannelOutboxInspectRow = {
@@ -262,7 +262,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   async onStart(props?: unknown): Promise<void> {
     await super.onStart(props as Record<string, unknown> | undefined);
 
-    //  — schema/migration setup extracted to
+    // schema/migration setup extracted to
     // `./channelHub/schema.ts`. Behavior preserved verbatim (additive,
     // idempotent DDL + column-migration block). The Discord bot id is
     // read from env here and passed in because `env` is `protected` on
@@ -272,14 +272,14 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * Idempotent inbound persist.  §E-15:
+   * Idempotent inbound persist. an earlier revision §E-15:
    *  - first insert → `{ inserted: true, id }`
    *  - duplicate `(provider, provider_message_id)` → `{ inserted: false, id }`
    *  - per-conversation pending cap exceeded → status `deferred`
    */
   @callable()
   async ingestInbound(envelopeRaw: unknown): Promise<ChannelInboundResult> {
-    //  — body extracted to `./channelHub/inbound.ts`. `env` is
+    // body extracted to `./channelHub/inbound.ts`. `env` is
     // `protected`, so the call site reads `AGENT_THURSDAY_DISCORD_BOT_ID` and
     // passes it in. Behavior preserved verbatim.
     const agentthursdayDiscordBotId = (this.env as { AGENT_THURSDAY_DISCORD_BOT_ID?: string }).AGENT_THURSDAY_DISCORD_BOT_ID;
@@ -287,7 +287,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — try to merge a non-addressed message into a recent
+   * try to merge a non-addressed message into a recent
    * addressed-to-agent anchor row from the same sender/conversation.
    *
    * Called by `/api/channel/discord/direct` when `applyDirectFilters`
@@ -305,10 +305,10 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   * Route up to `limit` pending `received` inbox rows.  §B +  §B.
+   * Route up to `limit` pending `received` inbox rows. an earlier revision §B + an earlier revision §B.
    * For `process` action, RPCs AgentThursdayAgent.submitTask. Active-task guard runs
    * via `AgentThursdayAgent.getStatus()` before any submit so we never overwrite work.
-   * : when the guard fires on an addressed/trusted row, the decision
+   * an earlier revision: when the guard fires on an addressed/trusted row, the decision
    * is `busy-skip` and the row STAYS `received` (not deferred) so the next
    * route attempt can pick it up when the agent is free.
    * Idempotent: only `received` rows are picked up (others have already been
@@ -344,7 +344,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       return { ok: true, scanned: 0, busySkipped: 0, decisions: [] };
     }
 
-    //  — per-row routing. Behavior change from 's
+    // per-row routing. Behavior change from an earlier revision's
     // single batch-level route:
     //
     //  - Resolve canonical active context ONCE per batch (the unbound
@@ -354,7 +354,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     //    profile validation cache (so the registry DO is RPC'd at most
     //    once per distinct profile_id in the batch).
     //  - Per-target cache `Map<resolvedDoName, {stub, readiness}>` so
-    //    's invariant — "readiness check and submit hit the
+    //    an earlier revision's invariant — "readiness check and submit hit the
     //    same DO" — is preserved per row instead of per batch. Two rows
     //    bound to different profiles each get their own readiness.
     //  - Rows with `invalid_binding` (missing / archived / RPC-failed
@@ -370,11 +370,11 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       readiness: { canAccept: boolean; reason: string };
     };
     const targetCache = new Map<string, TargetEntry>();
-    //  — `AgentValidation` is the corrected name (was
+    // `AgentValidation` is the corrected name (was
     // `ProfileValidation`). Backing registry RPC is still
     // `readAgentProfile` (legacy persistence callable; the row IS the
-    // agent record). See
-    //  — status enum widened; accept any valid DB value.
+    // agent record). See docs/design/2026-05-24-m9.0-agent-centric-correction.md.
+    // status enum widened; accept any valid DB value.
     type AgentValidation = { exists: boolean; status: string | null } | null;
     const agentCache = new Map<string, AgentValidation>();
 
@@ -432,8 +432,8 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       // converts unknown + addressed → wait, which is the safe default.
       const role = await this.lookupSenderRole(item.provider, item.senderProviderUserId);
 
-      //  — per-row route resolution. Column name
-      // `active_profile_id` is legacy storage ( §compat); the
+      // per-row route resolution. Column name
+      // `active_profile_id` is legacy storage (an earlier revision §compat); the
       // value it holds IS the agent_id used as the DO routing key.
       const bindingRow = this.sql<{ active_profile_id: string | null }>`
         SELECT active_profile_id FROM channel_conversations
@@ -451,7 +451,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
 
       if (resolved.kind === "invalid_binding") {
         const now = Date.now();
-        //  — resolver already produces a self-describing reason
+        // resolver already produces a self-describing reason
         // string `invalid_binding:agent:<agentId>:<cause>`; persist as-is.
         const reason = resolved.reason;
         this.sql`
@@ -477,14 +477,14 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
         continue;
       }
 
-      //  — `target.name` is the DO name we'll readiness-check AND
+      // `target.name` is the DO name we'll readiness-check AND
       // submit against. For unbound rows that's the canonical active
-      // context (preserves  behavior). For bound rows it's
+      // context (preserves an earlier revision behavior). For bound rows it's
       // the agent_id itself, matching `AgentRunWorkflow.step.do`.
       const target = await resolveTarget(resolved.targetName);
       const agentthursdayBusy = !target.readiness.canAccept;
       const decision = decideRoute(item, { activeTaskBusy: agentthursdayBusy, senderRole: role });
-      //  — when the policy fired busy-skip, append the concrete
+      // when the policy fired busy-skip, append the concrete
       // readiness reason so operators can see WHICH busy condition won
       // (waitingForHuman / blocked / active task lifecycle / RPC failure).
       if (decision.action === "busy-skip") {
@@ -496,10 +496,10 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       let handoffTaskId: string | null = null;
 
       if (decision.action === "busy-skip") {
-        //  invariant: the row is NOT consumed. status stays 'received',
+        // an earlier revision invariant: the row is NOT consumed. status stays 'received',
         // route_action / route_reason are NOT written (so it doesn't look
         // routed in inspect). Aggregate-level `busySkipped` counter signals
-        // to the caller that this batch had busy-skipped rows.
+        // to the caller that this batch had busy-skipped rows. an earlier revision
         // note: busy-skip is per-TARGET — profile A busy must not block
         // a row bound to profile B.
         decisions.push({
@@ -521,7 +521,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
           UPDATE channel_inbox SET status = 'processing', updated_at = ${now}
           WHERE id = ${item.id}
         `;
-        //  — re-read text + addressed_signals_json from SQL
+        // re-read text + addressed_signals_json from SQL
         // immediately after the row is locked into `processing`. The
         // `candidates` array was captured before the `await readiness`
         // RPC yielded, so a continuation chunk that merged into this
@@ -543,10 +543,10 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
         try {
           const prompt = buildTaskPromptFromInbox(item);
           const display = buildDisplayTextFromInbox(item);
-          //  — submit on the SAME route the readiness check
-          // ran against. : `target` is per-row resolved, so
+          // submit on the SAME route the readiness check
+          // ran against. an earlier revision: `target` is per-row resolved, so
           // this invariant now applies per row, not per batch.
-          //  — pass `displayText` so the YOU line in the
+          // pass `displayText` so the YOU line in the
           // Web/mobile dialog shows the user's raw text without
           // channel metadata or safety suffix; agent still gets the
           // full `prompt` for routing/safety context.
@@ -556,7 +556,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
           finalStatus = "handled";
         } catch (e) {
           const errMsg = String(e instanceof Error ? e.message : e);
-          //  — fail-soft on DO isolate memory resets, with
+          // fail-soft on DO isolate memory resets, with
           // _real_ retry semantics. (156q parked rows as `deferred`
           // but `routePending` only scans `received`, so the row was
           // effectively orphaned — same outcome the user reported.)
@@ -598,7 +598,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
           }
         }
 
-        //  — auto-reply: enqueue assistant text to outbox + deliver.
+        // auto-reply: enqueue assistant text to outbox + deliver.
         // Isolated try/catch so outbound failure does NOT unwind lifecycle;
         // inbox row stays `handled`, agent task stays `completed`. The
         // outbox row carries its own `failed` state for retry. Only attempts
@@ -610,7 +610,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
             console.log(`[agentthursday-channel] channel.reply.skipped-empty inboxId=${item.id} taskId=${handoffTaskId ?? "null"}`);
           } else {
             const capped = trimmed.length > 4000 ? trimmed.slice(0, 4000) : trimmed;
-            //  — DM channels reject `message_reference.message_id`
+            // DM channels reject `message_reference.message_id`
             // pointing at the inbound DM (`MESSAGE_REFERENCE_UNKNOWN_MESSAGE`
             // 50035). Don't carry a reply_to into the outbox row at all
             // for DMs — guild channels keep the existing reply behaviour.
@@ -677,7 +677,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — readiness against an already-resolved stub. Used by
+   * readiness against an already-resolved stub. Used by
    * `routePending` so the readiness check and the per-item submit
    * share a single resolved route (no double active-pointer lookup,
    * no race window).
@@ -693,7 +693,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — paired `{ name, stub }` for whichever AgentThursdayAgent
+   * paired `{ name, stub }` for whichever AgentThursdayAgent
    * instance currently owns the canonical active context.
    *
    * Resolution order:
@@ -738,7 +738,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — single-stub convenience for callers that don't need
+   * single-stub convenience for callers that don't need
    * to know the resolved name. Routes via `getAgentThursdayRoute()` so it
    * always follows the canonical active context. Replaces the
    * previous hardcoded-DEMO_INSTANCE behavior.
@@ -749,7 +749,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — pick the send credentials for a Discord channel. When a
+   * pick the send credentials for a Discord channel. When a
    * runtime-configured bot (registry `discord_bot` table) owns the
    * channel, its token is used; otherwise the env bot. Fail-soft: any
    * registry error falls back to env so existing delivery never breaks.
@@ -775,7 +775,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — fire-and-forget post-reply nudge to the gateway DO so
+   * fire-and-forget post-reply nudge to the gateway DO so
    * polling-mode ingress runs an immediate sweep on the channel we
    * just replied into. The gateway DO's `pollChannelOnce` is a no-op
    * when ingress mode != polling, so this is safe to call without
@@ -815,18 +815,18 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     return "unknown";
   }
 
-  // ──  — outbound + approval cards ───────────────────────────────
+  // ── outbound + approval cards ───────────────────────────────
 
   @callable()
   async enqueueOutboundText(input: EnqueueOutboundTextRequest): Promise<EnqueueOutboundResult> {
-    //  — body extracted to `./channelHub/outbound.ts`. Pure
+    // body extracted to `./channelHub/outbound.ts`. Pure
     // SQL + JSON; no env access. Behavior preserved verbatim.
     return enqueueOutboundTextImpl(this, input);
   }
 
   @callable()
   async enqueueOutboundApproval(input: EnqueueOutboundApprovalRequest): Promise<EnqueueOutboundResult> {
-    //  — body extracted to `./channelHub/outbound.ts`. `env`
+    // body extracted to `./channelHub/outbound.ts`. `env`
     // is `protected`, so the call site reads `AGENT_THURSDAY_APPROVAL_ALLOW_ALWAYS`
     // and passes the resolved boolean in. Behavior preserved verbatim.
     const alwaysAllowEnabled = this.env.AGENT_THURSDAY_APPROVAL_ALLOW_ALWAYS === "true";
@@ -834,12 +834,12 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — sweeper-issued fallback reply. When the agent-side
+   * sweeper-issued fallback reply. When the agent-side
    * envelope sweeper finalizes a draft because the original
    * saveMessages never returned, the LLM's intended reply text was
    * never generated, so the round would otherwise leave the
    * conversation hanging without the `[envelope: env-...]` marker
-   * the  demo contract requires.
+   * the M8.3 demo contract requires.
    *
    * This RPC enqueues a clearly-labeled fallback outbox row reusing
    * the channel/message context of the original inbound message
@@ -858,7 +858,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     taskId: string;
     envelopeId: string;
     /**
-     *  — when present, lets the fallback prefer a specific
+     * when present, lets the fallback prefer a specific
      * recovery message body instead of the generic "未正常完成" line.
      * Currently switches text only when value is
      * `"read_intent_no_execution"`; other reasons (or undefined) keep
@@ -920,7 +920,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       }
     } catch { /* fail-soft — fall through to enqueue attempt */ }
 
-    //  — when sweeper seal produced `read_intent_no_execution`,
+    // when sweeper seal produced `read_intent_no_execution`,
     // prefer the dedicated recovery render so the user gets the same
     // honest "我说要读文件但没真正调用工具" explanation that the happy-
     // path empty-fallback emits. The generic "未正常完成" line is
@@ -961,9 +961,9 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     `;
     if (rows.length === 0) return { ok: true, scanned: 0, bridgeMode: this.bridgeMode(), deliveries: [] };
 
-    const bridgeUrl = this.env.AGENT_THURSDAY_BRIDGE_URL;
-    const bridgeSecret = this.env.AGENT_THURSDAY_BRIDGE_SECRET;
-    //  — bridge mode now also reflects direct Discord. Delegate to the
+    const bridgeUrl = this.env.AGENT_THURSDAY_OPENCLAW_BRIDGE_URL;
+    const bridgeSecret = this.env.AGENT_THURSDAY_OPENCLAW_BRIDGE_SECRET;
+    // bridge mode now also reflects direct Discord. Delegate to the
     // single-source-of-truth helper instead of hard-coding here.
     const bridgeMode = this.bridgeMode();
 
@@ -971,7 +971,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
 
     for (const row of rows) {
       const now = Date.now();
-      //  — also pull `chat_type` so the sender-side defensive
+      // also pull `chat_type` so the sender-side defensive
       // guard can drop `message_reference` for DM rows even if the
       // outbox row still carries `reply_to_provider_message_id` (old
       // row from before the routePending fix, or a proactive
@@ -1004,12 +1004,12 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       let finalStatus: ChannelOutboxStatus = "sent";
       let errorOut: string | null = null;
 
-      //  — direct Discord delivery takes precedence over Bridge bridge
+      // direct Discord delivery takes precedence over OpenClaw bridge
       // when DISCORD_BOT_TOKEN is configured AND the row is for the discord
       // provider. Other providers (when they land) still go through bridge/dry-run.
       const useDirectDiscord = row.provider === "discord" && Boolean(this.env.DISCORD_BOT_TOKEN);
       const targetChannelId = conv.provider_thread_id || conv.provider_channel_id || null;
-      //  — replies into a stored bot's channel must go out with
+      // replies into a stored bot's channel must go out with
       // that bot's token. Resolved once per delivery; env token is the
       // fall-through (and the only path when no stored bots exist).
       const sendEnv = targetChannelId !== null
@@ -1022,7 +1022,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
           errorOut = "discord:no-target-channel-on-conversation";
         } else if (payload.kind === "text") {
           // Card §C-4: split for 2000-char limit, code-fence safe.
-          // : only the first chunk uses the reply reference,
+          // an earlier revision: only the first chunk uses the reply reference,
           // and `replyRefForDiscord` is null for DMs so Discord
           // doesn't 400 on `MESSAGE_REFERENCE_UNKNOWN_MESSAGE`.
           const visibleText = stripDiscordVisibleInternalMarkers(payload.text);
@@ -1042,7 +1042,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
           }
         } else {
           // approval kind: render text fallback + native button row.
-          // : same DM guard as text path — DMs go without a
+          // an earlier revision: same DM guard as text path — DMs go without a
           // reference, channels keep the existing reply behaviour.
           const text = renderApprovalText(payload.approval);
           const body = buildDiscordApprovalSendBody({
@@ -1084,7 +1084,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
             attempt_count = attempt_count + 1, sent_at = ${now}
           WHERE id = ${row.id}
         `;
-        //  — in polling ingress mode, kick a one-shot poll on
+        // in polling ingress mode, kick a one-shot poll on
         // the same Discord channel so a user's follow-up message is
         // ingested faster than the next scheduled tick. Fire-and-forget;
         // the gateway DO checks ingress mode itself and turns this into
@@ -1117,7 +1117,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
    * return the prior resolution; payload-hash mismatch invalidates;
    * expiration auto-denies. For `kind=tool` resolutions, calls the existing
    * `AgentThursdayAgent.approvePendingTool` so we do not create a parallel approval
-   * authority ( §C-20).
+   * authority (an earlier revision §C-20).
    */
   @callable()
   async resolveApproval(input: ApprovalResolveRequest): Promise<ApprovalResolveResult> {
@@ -1217,7 +1217,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       WHERE id = ${row.id}
     `;
 
-    // Downstream side-effect —  §C-20: route tool-kind approvals
+    // Downstream side-effect — an earlier revision §C-20: route tool-kind approvals
     // through the existing AgentThursdayAgent surface, do not create a parallel path.
     let downstream: ApprovalResolveResult["downstream"] = null;
     if (row.kind === "tool" && row.target_tool_call_id) {
@@ -1247,28 +1247,28 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — minimal lookup used by the /discord/interactions button
+   * minimal lookup used by the /discord/interactions button
    * handler to fetch the canonical payload hash for an approval, so the
    * resolve call can echo it back as `payloadHashEcho`. Returns null if the
    * approval row doesn't exist (e.g. expired and pruned in the future).
    */
   @callable()
   async lookupApprovalHash(approvalId: string): Promise<string | null> {
-    //  — body extracted to `./channelHub/approvalOps.ts`. Reads the
-    // legacy `channel_approvals` table (), not `agent_tool_approvals`.
+    // body extracted to `./channelHub/approvalOps.ts`. Reads the
+    // legacy `channel_approvals` table , not `agent_tool_approvals`.
     return lookupApprovalHashImpl(this, approvalId);
   }
 
   private bridgeMode(): "http" | "dry-run" | "discord-direct" {
     if (this.env.DISCORD_BOT_TOKEN) return "discord-direct";
-    if (this.env.AGENT_THURSDAY_BRIDGE_URL) return "http";
+    if (this.env.AGENT_THURSDAY_OPENCLAW_BRIDGE_URL) return "http";
     return "dry-run";
   }
 
   /**
-   *  helper — set identity role so the router can promote a sender
+   * an earlier revision helper — set identity role so the router can promote a sender
    * from `unknown` to `trusted` (or back). Minimal seam needed to actually
-   * exercise the `process` path;  will surface this in the UI.
+   * exercise the `process` path; an earlier revision will surface this in the UI.
    */
   @callable()
   async setIdentityRole(input: {
@@ -1294,7 +1294,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — read a conversation's AgentProfile binding.
+   * read a conversation's AgentProfile binding.
    * Returns `{ activeProfileId: null }` for an unknown or unbound
    * conversation; routePending treats both the same (active-context
    * fallback). `null` row is intentionally not surfaced as 404 here so
@@ -1304,7 +1304,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   async getConversationBinding(input: { conversationId: string }): Promise<{
     conversationId: string;
     activeAgentId: string | null;
-    //  — legacy alias retained for backward-compat with any
+    // legacy alias retained for backward-compat with any
     // unmigrated client. New clients read `activeAgentId`. Both fields
     // always carry the same value; column name `active_profile_id` is
     // legacy storage (see src/channelHub/schema.ts comment).
@@ -1331,7 +1331,77 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — set or clear a conversation's AgentProfile binding.
+   * M9.2 (2026-06-26) — a conversation's stored `provider_channel_id`, for the
+   * route-level tenant-ownership check (channel ∈ caller's BYO bots). Null when the
+   * row is unknown or a pre-seed binding with no ingested channel yet — the caller
+   * (canBind kernel) treats null as not-owned (fail closed).
+   */
+  @callable()
+  async getConversationProviderChannel(input: { conversationId: string }): Promise<{ providerChannelId: string | null }> {
+    const id = (input?.conversationId ?? "").trim();
+    if (id.length === 0 || id.length > 200) return { providerChannelId: null };
+    const rows = this.sql<{ provider_channel_id: string | null }>`
+      SELECT provider_channel_id FROM channel_conversations WHERE conversation_id = ${id} LIMIT 1
+    `;
+    return { providerChannelId: rows.length > 0 ? rows[0].provider_channel_id : null };
+  }
+
+  /**
+   * M9.2 (2026-06-26) — list conversations whose `provider_channel_id` is in
+   * `channelIds`, with their current binding, for the user-app channel-binding UI.
+   * `channelIds: null` = unfiltered (admin/operator). An empty array returns []
+   * (a scoped caller with no BYO-bot channels owns no conversations). Caller is
+   * responsible for passing only the requesting tenant's channels.
+   */
+  @callable()
+  async listConversationsForChannels(input: { channelIds: string[] | null; limit?: number }): Promise<{
+    conversations: Array<{
+      conversationId: string;
+      providerChannelId: string | null;
+      provider: string;
+      chatType: string;
+      activeAgentId: string | null;
+      lastSeenAt: number;
+    }>;
+  }> {
+    const limit = Math.max(1, Math.min(200, Math.floor(input?.limit ?? 100)));
+    type Row = {
+      conversation_id: string;
+      provider_channel_id: string | null;
+      provider: string;
+      chat_type: string;
+      active_profile_id: string | null;
+      last_seen_at: number;
+    };
+    // Filter by channel membership in JS — the DO sql tag does not expand a JS
+    // array into an `IN (...)` list, and a tenant's BYO-bot channel set is small.
+    // For the scoped path we over-fetch recent rows then keep only owned channels.
+    const wanted = input.channelIds === null ? null : new Set(input.channelIds.filter((c) => typeof c === "string" && c.length > 0));
+    if (wanted !== null && wanted.size === 0) return { conversations: [] };
+    // Over-fetch so JS filtering still yields up to `limit` owned rows.
+    const scanLimit = wanted === null ? limit : Math.min(2000, limit * 10);
+    const all = this.sql<Row>`
+      SELECT conversation_id, provider_channel_id, provider, chat_type, active_profile_id, last_seen_at
+      FROM channel_conversations ORDER BY last_seen_at DESC LIMIT ${scanLimit}
+    `;
+    const rows = (wanted === null
+      ? all
+      : all.filter((r) => r.provider_channel_id !== null && wanted.has(r.provider_channel_id))
+    ).slice(0, limit);
+    return {
+      conversations: rows.map((r) => ({
+        conversationId: r.conversation_id,
+        providerChannelId: r.provider_channel_id,
+        provider: r.provider,
+        chatType: r.chat_type,
+        activeAgentId: r.active_profile_id && r.active_profile_id.length > 0 ? r.active_profile_id : null,
+        lastSeenAt: r.last_seen_at,
+      })),
+    };
+  }
+
+  /**
+   * set or clear a conversation's AgentProfile binding.
    *
    *  - `profileId: string`  → bind. Profile must exist on the registry DO
    *                          and not be archived; validated by RPC here so
@@ -1348,7 +1418,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   @callable()
   async setConversationBinding(input: {
     conversationId: string;
-    //  — accept either `agentId` (new) or `profileId` (legacy).
+    // accept either `agentId` (new) or `profileId` (legacy).
     // Caller may pass one or the other; passing both with different
     // values is rejected so we never silently pick one. Same column
     // (`active_profile_id`) backs both.
@@ -1362,7 +1432,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     if (id.length === 0 || id.length > 200) {
       return { ok: false, code: "invalid_conversation_id", message: "conversation_id required (1..200 chars)" };
     }
-    //  — alias resolution. Prefer `agentId`; fall back to
+    // alias resolution. Prefer `agentId`; fall back to
     // `profileId` for legacy callers. If both present and differ, fail.
     const agentRaw = input?.agentId;
     const profileRaw = input?.profileId;
@@ -1395,7 +1465,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
         const ns = this.env.AgentThursdayAgent as unknown as AgentNamespace<Agent<Env>>;
         const registry = await getAgentByName<Env, Agent<Env>>(ns, AGENT_THURSDAY_REGISTRY_INSTANCE_NAME);
         // Registry callable still named `readAgentProfile` (legacy
-        // persistence; see  design note compat table).
+        // persistence; see an earlier revision design note compat table).
         agent = await (registry as unknown as AgentThursdayAgentRPC).readAgentProfile(agentId);
       } catch (e) {
         const msg = String(e instanceof Error ? e.message : e).slice(0, 200);
@@ -1414,7 +1484,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     // ahead of first inbound), seed minimal placeholders so the column
     // can carry the binding. provider/chat_type get filled by the next
     // ingestInbound which UPDATEs those columns and does not touch
-    // active_profile_id (legacy column name; see  design note).
+    // active_profile_id (legacy column name; see an earlier revision design note).
     const existing = this.sql<{ n: number }>`
       SELECT COUNT(*) as n FROM channel_conversations WHERE conversation_id = ${id}
     `;
@@ -1463,7 +1533,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
     } as Record<string, number>;
     for (const r of approvalCounts) if (r.status in approvals) approvals[r.status] = Number(r.n);
 
-    //  — SQL-side preview for big text/JSON columns.
+    // SQL-side preview for big text/JSON columns.
     // The snapshot is debug-only; the dialog/delivery surfaces query
     // separately via specific by-id reads. Capping `text`,
     // `attachments_json`, and `payload_json` to ~4000 chars keeps the
@@ -1506,7 +1576,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       approvalId: r.approval_id,
     }));
 
-    //  — preview large columns (`payload_json`, `audit`).
+    // preview large columns (`payload_json`, `audit`).
     const recentApprovalRows = this.sql<ApprovalRow>`
       SELECT id, kind, title, warning, reason,
              substr(payload_json, 1, 4000) AS payload_json,
@@ -1538,7 +1608,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       resolvedAt: r.resolved_at,
     }));
 
-    //  — top 10 recently-seen conversations + their binding
+    // top 10 recently-seen conversations + their binding
     // for the inspect-surface binding UI. Bounded query so the snapshot
     // size stays predictable as conversation count grows.
     const recentConversationRows = this.sql<{
@@ -1560,7 +1630,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
         conversationId: r.conversation_id,
         provider: r.provider,
         chatType: r.chat_type,
-        //  — both fields populated from the legacy column.
+        // both fields populated from the legacy column.
         activeAgentId: bound,
         activeProfileId: bound,
         lastSeenAt: Number(r.last_seen_at),
@@ -1583,7 +1653,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — read-only outbox inspect surface.
+   * read-only outbox inspect surface.
    *
    * Verifier-facing query of `channel_outbox` for marker / envelope_id /
    * conversation_id / single outbox_id consistency checks. Returns
@@ -1701,7 +1771,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — read-only  approval token inspect surface.
+   * read-only M8.5 approval token inspect surface.
    *
    * Returns redacted approval rows from `agent_tool_approvals`. The
    * persisted secret material (`token_hash`) is never SELECTed; row
@@ -1813,26 +1883,26 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — verifier-only minimum approval request creation.
+   * verifier-only minimum approval request creation.
    *
    * Persists a `pending` row to `agent_tool_approvals` and returns the raw
    * token **once** in the creation response. The raw token never re-appears:
    * inspect surfaces strip `token_hash`, and `redactApprovalRow` is the
    * single egress point for any subsequent row exposure.
    *
-   * Scope (per  §D non-goals): no dispatcher integration, no
+   * Scope (per an earlier revision §D non-goals): no dispatcher integration, no
    * `/api/approve` grant/deny, no replay consumption, no real T4/T5 tool
    * execution. This callable is for verifier smoke + future grant flows.
    *
    * Tier guard: only T4 / T5 are accepted (other tiers don't require
    * approval tokens); ttl_seconds is hard-capped to 1800s (T4) / 900s
-   * (T5) per  ADR §OQ3 — manifests cannot widen the cap.
+   * (T5) per an earlier revision ADR §OQ3 — manifests cannot widen the cap.
    */
   @callable()
   async createApprovalRequest(
     input: CreateApprovalRequestInput,
   ): Promise<CreateApprovalRequestResult> {
-    //  — body extracted to `./channelHub/approvalOps.ts`. Persists
+    // body extracted to `./channelHub/approvalOps.ts`. Persists
     // a `pending` row to `agent_tool_approvals` and returns the raw token
     // **once**; raw token never re-appears (inspect strips `token_hash`,
     // `redactApprovalRow` is the single egress point). `env` is `protected`
@@ -1843,7 +1913,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — reviewer grant/deny mutation.
+   * reviewer grant/deny mutation.
    *
    * Drives the `pending → granted | denied` state machine. Persists
    * `reviewer_id`, optional `reviewer_signature_hash` (SHA-256 of the
@@ -1857,7 +1927,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
    * `token_id` returns 400 `approval_not_found` here; the route layer
    * lifts that to 404.
    *
-   * Skeleton scope ( §D non-goals): no dispatcher, no replay
+   * Skeleton scope (an earlier revision §D non-goals): no dispatcher, no replay
    * consumption, no real cryptographic signature verify — that lands in
    * 212e alongside dispatcher integration. The hash recorded here is
    * what 212e will prove against.
@@ -1866,32 +1936,32 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
    * but whose `status` is still `pending` (no sweeper yet) IS decidable
    * here. Even if granted, `verifyApprovalToken` will reject it as
    * `expired` at replay time, so this is safe; an explicit expiry guard
-   * is deferred to the sweeper follow-up ( §follow-up).
+   * is deferred to the sweeper follow-up (an earlier revision §follow-up).
    */
   @callable()
   async decideApproval(
     input: DecideApprovalInput,
   ): Promise<DecideApprovalResult> {
-    //  — body extracted to `./channelHub/approvalOps.ts`. Drives
+    // body extracted to `./channelHub/approvalOps.ts`. Drives
     // the `pending → granted | denied` state machine. Raw signature is
     // hashed (SHA-256) before persist; raw is never stored.
     return decideApprovalImpl(this, input);
   }
 
   /**
-   *  — replay consumption skeleton.
+   * replay consumption skeleton.
    *
    * Verifier/admin path that exercises the final `granted → consumed`
-   * transition. Reuses `verifyApprovalToken` () to enforce all
+   * transition. Reuses `verifyApprovalToken`  to enforce all
    * binding rules and constant-time HMAC compare. Resolves the HMAC key
    * by `row.key_id` so v1 / legacy_shared rows verify against their
-   * issue-time secret ( §C).
+   * issue-time secret (an earlier revision §C).
    *
    * Success path: granted + unexpired + (agent_id, tool_id, input_hash)
    * match + raw token HMAC matches stored `token_hash` → status flips
    * to `consumed`, `consumed_at` set. The redacted row is returned.
    *
-   * Failure paths: never mutate row state ( §B). Reasons
+   * Failure paths: never mutate row state (an earlier revision §B). Reasons
    * propagate from `verifyApprovalToken`:
    *   - agent_mismatch / tool_mismatch / input_hash_mismatch
    *   - wrong_status   (covers pending / denied / consumed / expired
@@ -1900,7 +1970,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
    *   - expired         (granted but `expires_at <= now`)
    *   - token_mismatch  (binding & status OK but raw token wrong)
    *
-   * Skeleton scope ( §D): does NOT execute any T4/T5 tool, does
+   * Skeleton scope (an earlier revision §D): does NOT execute any T4/T5 tool, does
    * NOT integrate the agent dispatcher, does NOT touch
    * write/commit/push/deploy. The point of this card is to prove the
    * state machine's last hop is mechanically verifiable end-to-end.
@@ -1913,7 +1983,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   async consumeApprovalToken(
     input: ConsumeApprovalTokenInput,
   ): Promise<ConsumeApprovalTokenResult> {
-    //  — body extracted to `./channelHub/approvalOps.ts`. Drives
+    // body extracted to `./channelHub/approvalOps.ts`. Drives
     // the final `granted → consumed` transition with HMAC binding verify;
     // failure paths never mutate row state. Single-instance DO actor model
     // serializes callables so SELECT → verify → UPDATE is atomic. `env`
@@ -1924,19 +1994,19 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — propose-patch artifact creation. Verifier-only path.
+   * propose-patch artifact creation. Verifier-only path.
    *
-   * Mechanizes  ADR §D4 + §D7. Validates the input, runs
+   * Mechanizes an earlier revision ADR §D4 + §D7. Validates the input, runs
    * `evaluatePatchPolicy` (allowlist / denylist + redaction substring
    * scan), and on PASS persists a `status='proposed'` row. On FAIL the
    * call returns `{ ok: false, error: "policy_failed", detail }` and
    * **no row is inserted** — fail-closed at creation so inspect can
    * never leak a policy-failed artifact's body.
    *
-   * Boundary ( §1):
-   *  - This is NOT the agent dispatcher path. The agent /  cannot
+   * Boundary (an earlier revision §1):
+   *  - This is NOT the agent dispatcher path. The agent / agentD cannot
    *    write the working tree, commit, push, or deploy. Apply via
-   *    approval replay belongs to +.
+   *    approval replay belongs to an earlier revision+.
    *  - The route layer gates this with `requireSecret`; this callable
    *    enforces shape + policy, not auth.
    *
@@ -1975,7 +2045,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — propose-patch artifact inspect. List or single-row read.
+   * propose-patch artifact inspect. List or single-row read.
    *
    * Mirrors `inspectApprovals` shape: optional `artifact_id` for single
    * lookup, otherwise list with `status` filter ("proposed" | "all";
@@ -1983,7 +2053,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
    *
    * The inspect row strips `patch_text` (returns `patch_text_length`
    * only) so a multi-KiB diff body never lands in inspect responses.
-   * Use a future apply-side surface (+) if patch body retrieval
+   * Use a future apply-side surface  if patch body retrieval
    * is needed; v1 verifier-only smoke compares input_hash + policy
    * summary, not raw text.
    */
@@ -1997,7 +2067,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — read-only `channel_inbox` inspect surface.
+   * read-only `channel_inbox` inspect surface.
    *
    * Verifier / operator query of the inbox table by
    * `provider_message_id` (Discord snowflake or generic message id),
@@ -2019,9 +2089,9 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — read-only `channel_conversations` ownership inspect.
+   * read-only `channel_conversations` ownership inspect.
    *
-   * Answers 's 369a observability ask: surface "current workspace
+   * Answers agentP's 369a observability ask: surface "current workspace
    * agent vs channel route owner mismatch / unbound" without touching
    * the hot-polled `/api/workspace` payload. Two query forms:
    *   - `conversation_id` → single conversation owner + recent inbox.
@@ -2039,7 +2109,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — write one outbox/evidence row for an apply attempt that
+   * write one outbox/evidence row for an apply attempt that
    * has already produced an event-log row. The outbox table is the
    * redaction-safe view of apply evidence — same fields the inspect
    * surface already exposes for the event log, plus a stable `outbox_id`
@@ -2051,7 +2121,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
    * single-threaded so a same-event retry within one apply call cannot
    * occur, but the guard makes intent explicit.
    *
-   * Egress contract (matches  inspect): no `patch_text`, no raw
+   * Egress contract (matches an earlier revision inspect): no `patch_text`, no raw
    * token, no raw signature, no auth header, no worker secret.
    */
   private writePatchApplyOutbox(args: {
@@ -2090,8 +2160,8 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — approval-replay-driven apply with real dry-run + consume
-   * ( follow-up to 's verify-only skeleton).
+   * approval-replay-driven apply with real dry-run + consume
+   * (M8.6 follow-up to an earlier revision's verify-only skeleton).
    *
    * Verifier-only callable. Drives the apply path with a real
    * `git apply --check` against a sandbox-resident shallow checkout —
@@ -2110,7 +2180,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
    *     `(artifact_id, artifact_input_hash)` and require it to match
    *     both the caller's claimed `input_hash` and the approval row's
    *     stored value (§B binding).
-   *  5. Resolve the HMAC key by `row.key_id` (matches ) and
+   *  5. Resolve the HMAC key by `row.key_id` (matches an earlier revision) and
    *     `verifyApprovalToken` (pure — no row mutation).
    *  6. On verify-fail: write a `verify_failed` event row, return
    *     `{ok:false, error: <verdict.reason>}`. Approval untouched.
@@ -2143,11 +2213,11 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
    *  - The `/tmp/<event>.diff` file is best-effort cleaned up; the
    *    sandbox is non-persistent across container restarts anyway.
    *
-   * Boundaries ( ADR +  §3):
+   * Boundaries (an earlier revision ADR + an earlier revision §3):
    *  - Caller is verifier-side via `requireSecret` on `/api/*`.
    *  - No commit / push / deploy. The dispatch never invokes
    *    `git apply` (write), only `git apply --check`.
-   *  - Agent /  cannot reach this callable.
+   *  - Agent / agentD cannot reach this callable.
    */
   @callable()
   async applyPatchDryRun(input: {
@@ -2448,9 +2518,9 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       return { ok: false, error: "diff_path_outside_target", event_id: eventId, outbox_id: outboxId };
     }
 
-    //  — real dry-run via the agentthursday-dev-shell sandbox.
+    // real dry-run via the agentthursday-dev-shell sandbox.
     //
-    // Base tree: `ensureRepoCheckout` () does an idempotent
+    // Base tree: `ensureRepoCheckout`  does an idempotent
     // shallow clone (depth 50) of `${AGENT_THURSDAY_REPO_URL}` at REPO_BASE_DIR.
     // The resolved `head_sha` is recorded as provenance on the event row
     // and in the response so the verifier can reason about which tree
@@ -2515,7 +2585,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
       }
       head_sha = checkout.head_sha ?? null;
 
-      //  — pinned base SHA check. If the artifact was proposed
+      // pinned base SHA check. If the artifact was proposed
       // with a non-null `base_sha`, the resolved sandbox `head_sha`
       // must match (case-insensitive) before we run `git apply --check`
       // — otherwise the dry-run is being evaluated on a different tree
@@ -2725,7 +2795,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — read-only inspect over `patch_apply_events`. Mirrors
+   * read-only inspect over `patch_apply_events`. Mirrors
    * `inspectPatchArtifacts`: optional `event_id` for single lookup, else
    * list with `limit` clamped to [1,100]. No raw token, no signature, no
    * patch body — the table never stored those.
@@ -2740,7 +2810,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — read-only inspect over `patch_apply_outbox`. Mirrors
+   * read-only inspect over `patch_apply_outbox`. Mirrors
    * `inspectPatchApplyEvents` ergonomics: optional `outbox_id` for
    * single-row lookup, optional `event_id` / `artifact_id` filters
    * (mutually exclusive — first matched wins, in that order), else
@@ -2761,7 +2831,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — redaction-safe latest-`patch_apply_outbox` summary for
+   * redaction-safe latest-`patch_apply_outbox` summary for
    * `/cli/status.dashboard`. Single RPC: SELECT latest outbox row
    * (ORDER BY created_at DESC LIMIT 1), then if found SELECT the
    * matching event row by `event_id` and compute `matches_event` over
@@ -2780,7 +2850,7 @@ export class ChannelHubAgent extends Agent<Env, Record<string, never>> {
   }
 
   /**
-   *  — compact, leak-safe counts for the default user-layer panel.
+   * compact, leak-safe counts for the default user-layer panel.
    * No row data, no ids, no payloads — just what the user needs to see.
    */
   @callable()

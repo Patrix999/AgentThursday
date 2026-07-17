@@ -76,7 +76,7 @@ export function TurnPreview({ message, index }: { message: SanitizedMessage; ind
         : "bg-emerald-900/60 text-emerald-200";
   const previewText = firstTextPreview(message);
   const toolNames = collectToolNames(message);
-  //  — surface a stable per-block index and the truncated flag
+  // surface a stable per-block index and the truncated flag
   // so operators can correlate hover entries to the rail segments.
   // `truncated` reads only the sanitized parts; raw text never reaches
   // the client.
@@ -105,7 +105,7 @@ export function TurnPreview({ message, index }: { message: SanitizedMessage; ind
   );
 }
 
-//  — protected/system blocks must not leak content. Render a
+// protected/system blocks must not leak content. Render a
 // placeholder row so operators see they exist (count + safety note) but
 // never see raw prompt / SOUL / tool payload text. The server-side
 // sanitization already strips system messages out of `visibleMessages`,

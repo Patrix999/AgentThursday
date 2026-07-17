@@ -1,7 +1,7 @@
 /**
- *  —  AgentRun web API client.
+ * M9.0 AgentRun web API client.
  *
- * Wraps the -347 +  list backend at `/api/agent-runs`:
+ * Wraps the 347 + an earlier revision list backend at `/api/agent-runs`:
  *   GET  /api/agent-runs                    → list (optional ?profile_id, ?limit)
  *   GET  /api/agent-runs/<id>               → read (row + workflow_status)
  *   POST /api/agent-runs                    → start

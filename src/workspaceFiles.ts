@@ -33,7 +33,7 @@ export class FileError extends Error {
 /**
  * Normalize and validate a user-supplied path. Returns the SDK-friendly form.
  * Empty / "/" → "" (root). Any other leading "/" is an absolute path and is
- * rejected ( §A-3 forbids absolute paths; only "" and "/" denote root).
+ * rejected (an earlier revision §A-3 forbids absolute paths; only "" and "/" denote root).
  * Throws `PathError` on any rejection.
  */
 export function safePath(input: string | null | undefined): string {

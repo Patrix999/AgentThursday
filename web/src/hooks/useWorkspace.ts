@@ -16,11 +16,11 @@ type WorkspaceState = {
 };
 
 /**
- * Polls `/api/workspace` every 3s.  contract.
+ * Polls `/api/workspace` every 3s. an earlier revision contract.
  * On 401, clears the stored secret and dispatches `agentthursday:unauthorized` so
  * `SecretGate` re-prompts. Other errors stay inline.
  *
- *  — server-pinned active context reconcile. Each response
+ * server-pinned active context reconcile. Each response
  * carries `activeContextId` (the registry's canonical pointer). When
  * it differs from the client's localStorage cache (`agentthursday.contextId`),
  * the hook updates the cache and immediately re-fetches under the
@@ -59,13 +59,13 @@ export function useWorkspace(intervalMs = 3000): WorkspaceState {
         const json = (await res.json()) as WorkspaceSnapshot;
         if (!active) return { reconciled: false };
 
-        //  — reconcile localStorage cache against the
+        // reconcile localStorage cache against the
         // canonical active pointer. We only act when (a) the values
         // differ AND (b) we haven't already reconciled to this id in
         // this hook's lifetime — avoids loops if the response keeps
         // disagreeing.
         //
-        //  — when the user has explicitly pinned an agent via
+        // when the user has explicitly pinned an agent via
         // the workspace selector, the pin is the source of truth for
         // this client. The server registry pointer may legitimately
         // disagree (it tracks the canonical single-active context for

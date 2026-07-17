@@ -61,8 +61,8 @@ export const MODEL_CONTEXT_REGISTRY: Record<string, ModelContextProfile> = {
     modelMaxTokens: 256_000,
     thresholds: DEFAULT_CONTEXT_THRESHOLDS,
     source: "vendor-docs",
-    lastChecked: "2026-05-04",
-    notes: "Moonshot Kimi K2.6 — 256K context.",
+    lastChecked: "2026-07-17",
+    notes: "Moonshot Kimi K2.6 — 256K context (re-verified platform.kimi.com).",
   },
   "kimi-k2.5": {
     modelMaxTokens: 256_000,
@@ -129,11 +129,20 @@ export const MODEL_CONTEXT_REGISTRY: Record<string, ModelContextProfile> = {
     lastChecked: "2026-05-23",
     notes: "GLM-4.7-Flash via Workers AI @cf/zai-org/glm-4.7-flash — 131,072 context window, multi-turn tool-calling optimized.",
   },
+  // GLM-5 (Zhipu BYO-key): model overview lists 200K context.
+  "glm-5": {
+    modelMaxTokens: 200_000,
+    thresholds: DEFAULT_CONTEXT_THRESHOLDS,
+    source: "vendor-docs",
+    lastChecked: "2026-07-17",
+    notes: "Zhipu GLM-5 — 200K context (docs.bigmodel.cn model overview).",
+  },
 
-  // ── Anthropic Claude 4.x / 3.x ────────────────────────────────────
-  // Claude Sonnet 4 has a 1M long-context tier behind the
-  // `context-1m-2025-08-07` beta header; do NOT default to 1M. Stable
-  // default is 200K across Opus/Sonnet/Haiku 4 and 3.x families.
+  // ── Anthropic Claude 5 / 4.x / 3.x ────────────────────────────────
+  // (2026-07-17 pricing-auditor sweep, task-ce1dbbb0): Fable 5,
+  // Opus 4.8 and Sonnet 5 ship 1M stable default per current vendor docs
+  // (no beta header). Older 4.x/3.x stay 200K; Sonnet 4's 1M tier is
+  // still behind the `context-1m-2025-08-07` beta header.
   "claude-opus-4-7": {
     modelMaxTokens: 200_000,
     thresholds: DEFAULT_CONTEXT_THRESHOLDS,
@@ -141,22 +150,29 @@ export const MODEL_CONTEXT_REGISTRY: Record<string, ModelContextProfile> = {
     lastChecked: "2026-05-04",
     notes: "Anthropic Claude Opus 4.7 — 200K stable default.",
   },
-  //  — current Anthropic models wired for real dispatch.
+  // current Anthropic models wired for real dispatch.
   "claude-opus-4-8": {
-    modelMaxTokens: 200_000,
+    modelMaxTokens: 1_000_000,
     thresholds: DEFAULT_CONTEXT_THRESHOLDS,
     source: "vendor-docs",
-    lastChecked: "2026-06-11",
-    notes: "Anthropic Claude Opus 4.8 — 200K stable default (1M tier needs beta header).",
+    lastChecked: "2026-07-17",
+    notes: "Anthropic Claude Opus 4.8 — 1M stable default (models overview, 2026-07-17).",
   },
   "claude-fable-5": {
-    modelMaxTokens: 200_000,
+    modelMaxTokens: 1_000_000,
     thresholds: DEFAULT_CONTEXT_THRESHOLDS,
     source: "vendor-docs",
-    lastChecked: "2026-06-11",
-    notes: "Anthropic Claude Fable 5 — 200K stable default (1M tier needs beta header).",
+    lastChecked: "2026-07-17",
+    notes: "Anthropic Claude Fable 5 — 1M stable default (models overview, 2026-07-17).",
   },
-  //  — DeepSeek (64K context, vendor docs).
+  "claude-sonnet-5": {
+    modelMaxTokens: 1_000_000,
+    thresholds: DEFAULT_CONTEXT_THRESHOLDS,
+    source: "vendor-docs",
+    lastChecked: "2026-07-17",
+    notes: "Anthropic Claude Sonnet 5 — 1M stable default (models overview, 2026-07-17).",
+  },
+  // DeepSeek (64K context, vendor docs).
   "deepseek-chat": {
     modelMaxTokens: 64_000,
     thresholds: DEFAULT_CONTEXT_THRESHOLDS,
@@ -171,6 +187,44 @@ export const MODEL_CONTEXT_REGISTRY: Record<string, ModelContextProfile> = {
     lastChecked: "2026-06-11",
     notes: "DeepSeek R1 (reasoning) — 64K context.",
   },
+  // DeepSeek V4 family: vendor pricing page lists CONTEXT LENGTH 1M.
+  "deepseek-v4-pro": {
+    modelMaxTokens: 1_000_000,
+    thresholds: DEFAULT_CONTEXT_THRESHOLDS,
+    source: "vendor-docs",
+    lastChecked: "2026-07-17",
+    notes: "DeepSeek V4 Pro — 1M context (api-docs pricing, 2026-07-17).",
+  },
+  "deepseek-v4-flash": {
+    modelMaxTokens: 1_000_000,
+    thresholds: DEFAULT_CONTEXT_THRESHOLDS,
+    source: "vendor-docs",
+    lastChecked: "2026-07-17",
+    notes: "DeepSeek V4 Flash — 1M context (api-docs pricing, 2026-07-17).",
+  },
+
+  // ── xAI Grok (previously unmapped, fell to 128K fallback) ──
+  "grok-4.5": {
+    modelMaxTokens: 500_000,
+    thresholds: DEFAULT_CONTEXT_THRESHOLDS,
+    source: "vendor-docs",
+    lastChecked: "2026-07-17",
+    notes: "xAI Grok 4.5 — 500k (docs.x.ai pricing; beyond 500k bills at the long-context rate).",
+  },
+  "grok-4.3": {
+    modelMaxTokens: 1_000_000,
+    thresholds: DEFAULT_CONTEXT_THRESHOLDS,
+    source: "vendor-docs",
+    lastChecked: "2026-07-17",
+    notes: "xAI Grok 4.3 — 1M (docs.x.ai pricing).",
+  },
+  "grok-4.20": {
+    modelMaxTokens: 1_000_000,
+    thresholds: DEFAULT_CONTEXT_THRESHOLDS,
+    source: "vendor-docs",
+    lastChecked: "2026-07-17",
+    notes: "xAI Grok 4.20 — 1M (docs.x.ai pricing).",
+  },
   "claude-sonnet-4-6": {
     modelMaxTokens: 200_000,
     thresholds: DEFAULT_CONTEXT_THRESHOLDS,
@@ -182,7 +236,8 @@ export const MODEL_CONTEXT_REGISTRY: Record<string, ModelContextProfile> = {
     modelMaxTokens: 200_000,
     thresholds: DEFAULT_CONTEXT_THRESHOLDS,
     source: "vendor-docs",
-    lastChecked: "2026-05-04",
+    lastChecked: "2026-07-17",
+    notes: "Haiku 4.5 stays 200K — the only current non-1M Claude (2026-07-17 sweep).",
   },
   "claude-3-7-sonnet": {
     modelMaxTokens: 200_000,
@@ -319,7 +374,11 @@ export function pickModelContextProfile(modelId: string | null | undefined): Mod
   if (lower.includes("moonshot-v1-8k")) return MODEL_CONTEXT_REGISTRY["moonshot-v1-8k"];
   if (lower.includes("kimi") || lower.includes("moonshot")) return MODEL_CONTEXT_REGISTRY["kimi-k2.6"];
 
-  // Anthropic Claude
+  // Anthropic Claude (5-gen / Opus 4.8 are 1M; match before the
+  // 4.x family defaults so they don't collapse to 200K).
+  if (lower.includes("claude-fable")) return MODEL_CONTEXT_REGISTRY["claude-fable-5"];
+  if (lower.includes("claude-opus-4-8") || lower.includes("claude-opus-4.8")) return MODEL_CONTEXT_REGISTRY["claude-opus-4-8"];
+  if (lower.includes("claude-sonnet-5")) return MODEL_CONTEXT_REGISTRY["claude-sonnet-5"];
   if (lower.includes("claude-opus-4")) return MODEL_CONTEXT_REGISTRY["claude-opus-4-7"];
   if (lower.includes("claude-sonnet-4")) return MODEL_CONTEXT_REGISTRY["claude-sonnet-4-6"];
   if (lower.includes("claude-haiku-4")) return MODEL_CONTEXT_REGISTRY["claude-haiku-4-5"];
@@ -327,6 +386,19 @@ export function pickModelContextProfile(modelId: string | null | undefined): Mod
   if (lower.includes("claude-3-5-sonnet") || lower.includes("3-5-sonnet")) return MODEL_CONTEXT_REGISTRY["claude-3-5-sonnet"];
   if (lower.includes("claude-3-5-haiku") || lower.includes("3-5-haiku")) return MODEL_CONTEXT_REGISTRY["claude-3-5-haiku"];
   if (lower.includes("claude")) return MODEL_CONTEXT_REGISTRY["claude-sonnet-4-6"]; // sane default
+
+  // xAI Grok () — only the audited 4.x line; unknown/older grok ids
+  // stay on the conservative DEFAULT rather than over-committing to 1M.
+  if (lower.includes("grok-4.20")) return MODEL_CONTEXT_REGISTRY["grok-4.20"];
+  if (lower.includes("grok-4.5")) return MODEL_CONTEXT_REGISTRY["grok-4.5"];
+  if (lower.includes("grok-4.3")) return MODEL_CONTEXT_REGISTRY["grok-4.3"];
+
+  // DeepSeek V4 () — both variants 1M; -chat/-reasoner (V3/R1) stay 64K above.
+  if (lower.includes("deepseek-v4-pro")) return MODEL_CONTEXT_REGISTRY["deepseek-v4-pro"];
+  if (lower.includes("deepseek-v4")) return MODEL_CONTEXT_REGISTRY["deepseek-v4-flash"];
+
+  // Zhipu GLM-5 (); glm-4.7-flash keeps its exact key above.
+  if (lower.includes("glm-5")) return MODEL_CONTEXT_REGISTRY["glm-5"];
 
   // OpenAI
   if (lower.includes("gpt-4.1-mini")) return MODEL_CONTEXT_REGISTRY["gpt-4.1-mini"];

@@ -132,9 +132,9 @@ export const useCloudResult = makePollHook<CliResultData>("/cli/result");
 /**
  * unified workspace snapshot poller.
  *
- * Sourced from `GET /api/workspace`; `WorkspaceSnapshot` is the contract +
- * is built against. App.tsx is intentionally not migrated in  — it keeps
+ * Sourced from `GET /api/workspace`; `WorkspaceSnapshot` is the contract an earlier revision+
+ * is built against. App.tsx is intentionally not migrated in it keeps
  * using `useCloudStatus` until a follow-up card retires the legacy view. This
- * hook is exported so  (TUI demotion) can adopt it without re-plumbing.
+ * hook is exported so an earlier revision (TUI demotion) can adopt it without re-plumbing.
  */
 export const useWorkspaceSnapshot = makePollHook<WorkspaceSnapshot>("/api/workspace");

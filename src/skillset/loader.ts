@@ -1,11 +1,11 @@
 /**
- *  minimum static skillset loader.
+ * M8.1 minimum static skillset loader.
  *
  * Reads embedded manifests, runs 175 V1/V3/V4/V5 invariants and the
  * SOUL token budget guard from ADR 2026-05-07 IM-3 + Flag 1, and
  * returns a `LoaderState` that mirrors ADR 179 IM-2 cache shape.
  *
- * V2 (tool_id ∈ 176 contract registry) is delegated to 183.
+ * V2 (tool_id ∈ 176 contract registry) is delegated to 183. M8.1
  * accepts an optional `knownToolIds` set; tool_ids outside that set
  * trigger `v2_missing_tool_contract` errors but do not crash the
  * loader. When `knownToolIds` is omitted the V2 check is skipped
@@ -37,7 +37,7 @@ export interface LoadOptions {
 /**
  * Approximate token estimate. We can't ship a real tokenizer in a
  * Worker (size + cold-start cost), and the cap is conservative
- * (1000 / 3000) so a heuristic is acceptable for .  fabric
+ * (1000 / 3000) so a heuristic is acceptable for M8.1. M8.2 fabric
  * may upgrade to a Worker-friendly tokenizer.
  *
  * Heuristic: ~4 characters per token, with separate accounting for
@@ -267,6 +267,41 @@ export function loadSkillsets(
 }
 
 /**
+ * Stage 2 (skillsets-as-data, 2026-06-17) — assemble the effective manifest set
+ * from the code-embedded baseline ∪ DB-sourced manifests (system-seeded embedded
+ * rows + user custom), deduped to ONE manifest per id (passing duplicate ids to
+ * `loadSkillsets` would trip `v5_id_conflict` and drop the skillset entirely).
+ *
+ * Per-id usability fallback: the DB version of an EMBEDDED id is preferred ONLY
+ * if it actually loads clean (loader status `"loaded"`); a DB row that is
+ * malformed / unknown-tool / over-cap reverts to the code manifest for THAT id —
+ * so an embedded skillset can never be lost even if a seed or edit is bad
+ * (status-keyed, not parse-keyed). Non-embedded custom skillsets carry no code
+ * fallback (correct: a broken custom one stays rejected). Used by BOTH the
+ * per-agent getTools snapshot and `loadMergedManifests` so the two never drift.
+ */
+export function assembleEffectiveManifests(
+  embeddedCode: ReadonlyArray<EmbeddedManifest>,
+  dbManifests: ReadonlyArray<EmbeddedManifest>,
+  options?: LoadOptions,
+): EmbeddedManifest[] {
+  const codeById = new Map(embeddedCode.map((m) => [m.id, m] as const));
+  const byId = new Map<string, EmbeddedManifest>();
+  for (const m of embeddedCode) byId.set(m.id, m); // code baseline (floor)
+  for (const m of dbManifests) byId.set(m.id, m); // DB wins: system overrides code, user custom added
+  // Usability check: load the DB-preferred candidate; any EMBEDDED id that did
+  // not load clean reverts to its code manifest (the DB system row was bad).
+  const state = loadSkillsets(Array.from(byId.values()), options);
+  for (const [id, code] of codeById) {
+    const entry = state.entries[id];
+    if ((!entry || entry.status !== "loaded") && byId.get(id) !== code) {
+      byId.set(id, code);
+    }
+  }
+  return Array.from(byId.values());
+}
+
+/**
  * Read-only inspect view: trims the heaviest fields (full manifest
  * objects, raw yaml) so /api/inspect/skillset returns a small
  * payload suitable for the web UI.
@@ -315,7 +350,7 @@ export function summarizeLoaderState(state: LoaderState): {
 }
 
 /**
- *  generic per-skill inspect detail.
+ * an earlier revision generic per-skill inspect detail.
  *
  * Walks every loaded manifest and projects each skill into a
  * provider-neutral shape: id, name, tier, tools, capability_class
@@ -385,7 +420,7 @@ export function summarizeLoaderDetail(state: LoaderState): LoaderDetailSummary {
 }
 
 /**
- *  — generic env-binding-aware capability class downgrade.
+ * generic env-binding-aware capability class downgrade.
  *
  * Mutates `detail` in place: for each skill whose `source_ref` declares
  * a non-empty `env_binding` string, look the binding up via
@@ -393,7 +428,7 @@ export function summarizeLoaderDetail(state: LoaderState): LoaderDetailSummary {
  * downgrade `capability_class` to `"callable_tool_no_secret"`. Skills
  * whose `source_ref` doesn't declare an `env_binding` are untouched.
  *
- * Provider-neutral: no LocalDoc / discord / any provider id appears
+ * Provider-neutral: no fyi.md / discord / any provider id appears
  * here. The shape of `source_ref` is the only contract.
  */
 export function downgradeCapabilityClassByEnvBinding(

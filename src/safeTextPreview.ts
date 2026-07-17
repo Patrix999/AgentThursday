@@ -1,5 +1,5 @@
 /**
- *  — shared safe text preview / secret redaction helpers.
+ * shared safe text preview / secret redaction helpers.
  *
  * Used at two boundaries:
  *  - Emission (`src/skillset/agentDynamicTools.ts`): cap + redact
@@ -14,7 +14,7 @@
  * Patterns covered: GitHub PAT (`ghp_…`, `github_pat_…`), Bearer
  * tokens, OpenAI-style `sk-…` keys, generic approval-token shapes.
  * Not a full secret scanner — defends against the high-signal shapes
- * surfaced by  spec; deeper redaction lives at provider
+ * surfaced by an earlier revision spec; deeper redaction lives at provider
  * adapters and CI secret-scanning.
  */
 

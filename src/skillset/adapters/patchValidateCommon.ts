@@ -1,5 +1,5 @@
 /**
- *  — narrow agent context surface for `patch.validate`.
+ * narrow agent context surface for `patch.validate`.
  *
  * The dynamic-tool dispatch path passes `agentCtx` as the third arg to
  * `DispatchHandler.execute`. `patch.validate` needs two capabilities

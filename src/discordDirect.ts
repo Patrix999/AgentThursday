@@ -6,7 +6,7 @@
  *   1. Receives via Discord **HTTP Interactions** (slash commands + button
  *      clicks) — with Ed25519 signature verification, no `X-AgentThursday-Secret`.
  *   2. Receives normal MESSAGE_CREATE-style events via an auth-gated test
- *      path `POST /api/channel/discord/direct` (same payload shape as
+ *      path `POST /api/channel/discord/direct` (same payload shape as an earlier revision
  *      so future gateway-runners can post the same body).
  *
  * Pure helpers only here (verify / filter / normalize / splitter / button
@@ -61,9 +61,9 @@ export type DirectDiscordConfig = {
   ignoreNoMentionInGuild: boolean;
   allowBots: "none" | "mentions" | "all";
   /**
-   *  §A-1 conservative defaults: empty allowedUserIds /
+   * an earlier revision §A-1 conservative defaults: empty allowedUserIds /
    * allowedChannelIds means DENY (not allow). Dev mode bypasses these so
-   * local smoke can run without a real allowlist. Reuses 's
+   * local smoke can run without a real allowlist. Reuses an earlier revision's
    * existing dev escape hatch (`AGENT_THURSDAY_ALLOW_INSECURE_DEV`); semantics are
    * orthogonal to auth (auth still requires `AGENT_THURSDAY_SHARED_SECRET` when set).
    */
@@ -110,8 +110,8 @@ export type DirectFilterInput = {
   channelId: string;
   mentionsBot: boolean;
   mentionedUserIds: string[]; // all users mentioned in the message
-  //  — reply (type=19) whose referenced message was authored by
-  // the agentthursday bot. Treated equivalent to `mentionsBot` for the guild
+  // reply (type=19) whose referenced message was authored by
+  // the AgentThursday bot. Treated equivalent to `mentionsBot` for the guild
   // @mention gate so reply-to-agent follow-ups aren't silently dropped.
   replyToBot?: boolean;
 };
@@ -121,7 +121,7 @@ export type DirectFilterResult =
   | { accept: false; reason: string };
 
 /**
- *  — derive `isDm` for the direct-filter pipeline with the
+ * derive `isDm` for the direct-filter pipeline with the
  * right precedence:
  *
  *   1. Explicit `chatType` if present (`"dm"` → DM; `"channel"` /
@@ -131,14 +131,14 @@ export type DirectFilterResult =
  *
  * Polling REST `GET /channels/{id}/messages` returns guild messages
  * without `guild_id`, so the heuristic alone misclassifies them as
- * DMs and bypasses `DISCORD_IGNORE_NO_MENTION`.  set
+ * DMs and bypasses `DISCORD_IGNORE_NO_MENTION`. an earlier revision set
  * `isDm:false`/`chatType:"channel"` on the polling payload; this
  * helper makes the filter actually honour those fields instead of
  * re-deriving.
  *
  * Pure shape — exported for unit-style smoke from `applyDirectFilters`'s
  * call sites. Accepts a structurally-compatible input rather than
- * importing the full `BridgeDiscordInbound` type to keep
+ * importing the full `OpenClawDiscordInbound` type to keep
  * `discordDirect.ts` independent of `discordBridge.ts`.
  */
 export function deriveDirectFilterIsDm(payload: {
@@ -207,7 +207,7 @@ export function applyDirectFilters(input: DirectFilterInput, cfg: DirectDiscordC
     }
   }
   // Guild channels require @mention unless explicitly opted out.
-  //  — reply (type=19) whose referenced message was authored by
+  // reply (type=19) whose referenced message was authored by
   // our bot counts as addressed for this gate. Without this, reply-to-agent
   // follow-ups that omit an explicit `<@bot>` mention were silently
   // rejected with reason "guild message without @mention".
@@ -218,7 +218,7 @@ export function applyDirectFilters(input: DirectFilterInput, cfg: DirectDiscordC
 }
 
 /**
- *  — re-check user/channel allowlists outside the main filter
+ * re-check user/channel allowlists outside the main filter
  * pipeline. Used by the route handler when a continuation-eligible filter
  * rejection (`bot-author without mention (allowBots=mentions)`) fired
  * BEFORE the allowlist gates in `applyDirectFilters`. Without this
@@ -390,7 +390,7 @@ const SAFE_LIMIT = 1900; // headroom (Discord hard cap 2000)
 const DISCORD_INTERNAL_ENVELOPE_MARKER_RE = /^[ \t]*\[envelope:\s*env-[a-z0-9]+-[a-z0-9]+\s*\][ \t]*$/i;
 
 /**
- * Remove internal agentthursday tracing markers before text becomes Discord-visible.
+ * Remove internal AgentThursday tracing markers before text becomes Discord-visible.
  *
  * ChannelHub may still persist marker-bearing outbox text so verifier inspect
  * can locate a response by envelope id. This helper is intentionally scoped

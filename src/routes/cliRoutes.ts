@@ -9,7 +9,7 @@ import type {
 import type { DashboardCore, DashboardSection, AgentThursdayAgent } from "../server";
 
 /**
- *  — `/cli/*` HTTP route handling extracted from `server.ts`.
+ * `/cli/*` HTTP route handling extracted from `server.ts`.
  *
  * Single entry point: `handleCli(request, url, deps)`.
  *
@@ -40,7 +40,9 @@ export interface CliDeps {
   env: Env;
   getActiveStub: () => Promise<AgentThursdayAgentStub>;
   resolveActiveRoute: () => Promise<{ name: string; stub: AgentThursdayAgentStub }>;
-  getRegistryStub: () => Promise<AgentThursdayAgentStub>;
+  // an earlier revision (A3) — getRegistryStub removed: after an earlier revision every /cli
+  // surface operates on the routed DO; registry data is reachable via the
+  // explicit /api/inspect/*?agent_id= paths.
   buildDashboardSection: (core: DashboardCore) => Promise<DashboardSection>;
 }
 
@@ -51,7 +53,7 @@ export async function handleCli(
 ): Promise<Response | null> {
   if (url.pathname === "/cli/status" && request.method === "GET") {
     const stub = await deps.getActiveStub();
-    //  — lazy sweeper trigger. Fire-and-forget so /cli/status
+    // lazy sweeper trigger. Fire-and-forget so /cli/status
     // stays cheap; sweeper itself is fail-soft and bounded by the
     // 20-min draft-age threshold. Verifier polling /cli/status is a
     // common path during demo, so this naturally heals stuck rounds
@@ -65,7 +67,7 @@ export async function handleCli(
     const activeInterventions = approvalPolicy.interventions
       .filter(i => i.active)
       .map(i => `[${i.kind}] ${i.reason}`);
-    //  — daily dogfood observability dashboard v1.
+    // daily dogfood observability dashboard v1.
     // Inline read-only section. Fail-soft on cross-DO outbox lookup so
     // a transient ChannelHub glitch never breaks /cli/status.
     const dashboard = await deps.buildDashboardSection(dashboardCore);
@@ -144,7 +146,7 @@ export async function handleCli(
   }
 
   // Context lifecycle (inspect + reset). See
-  // docs/milestones/-context-lifecycle-management.md. `context.new`
+  // docs/milestones/M7.7-context-lifecycle-management.md. `context.new`
   // is deferred until Think SDK exposes traceable multi-thread sessions.
   if (url.pathname === "/cli/context/inspect" && request.method === "GET") {
     const lastNRaw = url.searchParams.get("lastN");
@@ -162,10 +164,10 @@ export async function handleCli(
     } catch {
       // Tolerate empty / malformed body; reason is optional.
     }
-    //  — pass `routedContextId` so the DO knows whether it's
+    // pass `routedContextId` so the DO knows whether it's
     // running on the registry (DEMO_INSTANCE) and can skip the
     // self-RPC for archive write.
-    //  — paired resolver guarantees `routedContextId` and
+    // paired resolver guarantees `routedContextId` and
     // `stub` point at the same DO. Previously the reset path called
     // `resolveContextDoName(request)` (sync) and
     // `getActiveAgentThursdayAgentStub(...)` separately; with the canonical
@@ -184,7 +186,7 @@ export async function handleCli(
     }
   }
 
-  //   — new-context (v1 reset-style fallback). Closes
+  // M7.7v3 new-context (v1 reset-style fallback). Closes
   // the active context_history row, opens a new one, clears messages.
   // Auth-gated via the global /cli/* requireSecret check above.
   if (url.pathname === "/cli/context/new" && request.method === "POST") {
@@ -195,19 +197,29 @@ export async function handleCli(
     } catch {
       // Tolerate empty / malformed body.
     }
-    const stub = await deps.getRegistryStub();
+    // an earlier revision (A2) — context lifecycle runs on the ROUTED DO (the operator
+    // agent since an earlier revision), not the registry. Pre-452 this wrote the
+    // registry's `context_active` — which 451c made the operator ROUTING
+    // pointer, so a console "new context" silently rerouted operator turns
+    // off the operator DO. Now it rotates the routed DO's own internal
+    // context label (drain-to-self archive semantics, an earlier revision); the
+    // registry pointer's only writer is the cutover/rollback endpoint.
+    const { stub } = await deps.resolveActiveRoute();
     const result = await stub.newContext({ reason: body.reason ?? null });
     return json(result);
   }
 
   if (url.pathname === "/cli/context/active" && request.method === "GET") {
-    const stub = await deps.getRegistryStub();
+    // an earlier revision (A2) — reads the routed DO's own internal context label (the
+    // routing target itself is fixed by the registry pointer; see cutover).
+    const { stub } = await deps.resolveActiveRoute();
     const result = await stub.getActiveContextId();
     return json(result);
   }
 
   if (url.pathname === "/cli/context/history" && request.method === "GET") {
-    const stub = await deps.getRegistryStub();
+    // an earlier revision (A2) — the routed DO's own context history.
+    const { stub } = await deps.resolveActiveRoute();
     const result = await stub.listContextHistory();
     return json(result);
   }
@@ -220,7 +232,7 @@ export async function handleCli(
   // dogfood curl.
   // context hygiene loop. Manual-trigger only in v1
   // (the callable rejects other triggers). Routes through the
-  // canonical active context () so hygiene runs ON the
+  // canonical active context  so hygiene runs ON the
   // DO whose messages it would compact.
   if (url.pathname === "/cli/context/hygiene/run" && request.method === "POST") {
     let body: HygieneRunInput = {};
@@ -246,7 +258,9 @@ export async function handleCli(
   if (url.pathname === "/cli/context/archive/inspect" && request.method === "GET") {
     const recentLimit = Number(url.searchParams.get("recentLimit") ?? "");
     const perContextLimit = Number(url.searchParams.get("perContextLimit") ?? "");
-    const stub = await deps.getRegistryStub();
+    // an earlier revision (A3) — the routed DO's own archive summary (see /cli/memory/
+    // candidates below).
+    const { stub } = await deps.resolveActiveRoute();
     const result = await stub.getArchiveInspectSummary({
       recentLimit: Number.isFinite(recentLimit) && recentLimit > 0 ? recentLimit : undefined,
       perContextLimit: Number.isFinite(perContextLimit) && perContextLimit > 0 ? perContextLimit : undefined,
@@ -255,13 +269,13 @@ export async function handleCli(
   }
 
   // read-only memory candidate inspect.
-  // Registry-only routing because conversation_archive and the
-  // dedupe-side `agent_memories` view both live on the registry
-  // DO; the candidate generator pulls from those tables only and
-  // never writes anywhere. GET-only; safe to poll.
+  // an earlier revision (A3) — routed-DO reads: the operator's live archive/memories
+  // moved to its own DO , so the console inspect surfaces follow
+  // the routed DO like the lifecycle routes . The registry's
+  // legacy data stays reachable via /api/inspect/*?agent_id=<registry>.
   if (url.pathname === "/cli/memory/candidates" && request.method === "GET") {
     const limitParam = Number(url.searchParams.get("limit") ?? "");
-    const stub = await deps.getRegistryStub();
+    const { stub } = await deps.resolveActiveRoute();
     const result = await stub.listMemoryCandidates({
       limit: Number.isFinite(limitParam) && limitParam > 0 ? Math.floor(limitParam) : undefined,
     });
@@ -294,7 +308,9 @@ export async function handleCli(
     // searched). Optional — default to whatever the route resolver
     // would pick.
     const callerContextId = request.headers.get(CONTEXT_HEADER) ?? undefined;
-    const stub = await deps.getRegistryStub();
+    // an earlier revision (A3) — search the routed DO's own archive (see /cli/memory/
+    // candidates above).
+    const { stub } = await deps.resolveActiveRoute();
     try {
       const result = await stub.conversationSearch({
         query: queryParam,
@@ -318,7 +334,7 @@ export async function handleCli(
     }
   }
 
-  //   — switch the active context to an existing
+  // M7.7v3 switch the active context to an existing
   // context_history row. Registry-only (always DEMO_INSTANCE) so the
   // active pointer stays the single source of truth across requests.
   if (url.pathname === "/cli/context/switch" && request.method === "POST") {
@@ -338,7 +354,10 @@ export async function handleCli(
         headers: { "Content-Type": "application/json" },
       });
     }
-    const stub = await deps.getRegistryStub();
+    // an earlier revision (A2) — switch rotates the ROUTED DO's own internal context
+    // (target must be in ITS context_history); the registry routing pointer
+    // is not touched — only the cutover/rollback endpoint writes it.
+    const { stub } = await deps.resolveActiveRoute();
     try {
       const result = await stub.switchContext({
         contextId: body.contextId.trim(),
@@ -385,7 +404,7 @@ export async function handleCli(
     return json(result);
   }
 
-  //  v2  — Read-only context snapshot for anchor planning.
+  // M7.7 v2 Read-only context snapshot for anchor planning.
   // Auth-gated by the global /cli/* requireSecret check above. No audit
   // row server-side; matches /cli/context/inspect's polling contract.
   if (url.pathname === "/cli/context/snapshot" && request.method === "GET") {
@@ -396,7 +415,7 @@ export async function handleCli(
     return json(result);
   }
 
-  //  v2  — Read-only deterministic anchor classifier.
+  // M7.7 v2 Read-only deterministic anchor classifier.
   // Same auth contract as /cli/context/snapshot.
   if (url.pathname === "/cli/context/anchors" && request.method === "GET") {
     const lastNRaw = url.searchParams.get("lastN");
@@ -410,7 +429,7 @@ export async function handleCli(
     return json(result);
   }
 
-  //  v2  — Read-only compact-plan dry-run.
+  // M7.7 v2 Read-only compact-plan dry-run.
   if (url.pathname === "/cli/context/compact-plan" && request.method === "POST") {
     let body: CompactPlanInput = {};
     try {
@@ -424,7 +443,7 @@ export async function handleCli(
     return json(result);
   }
 
-  //  v2  — Explicit apply of a previously proposed plan.
+  // M7.7 v2 Explicit apply of a previously proposed plan.
   // Pre-flight runs against a fresh snapshot per range.
   if (url.pathname === "/cli/context/apply-compact-plan" && request.method === "POST") {
     type ApplyBody = {

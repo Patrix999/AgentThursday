@@ -1,9 +1,9 @@
 /**
  * archiveOps — archive write/flush + search/inspect helpers.
  *
- *  pulled the three write/flush helpers
+ * an earlier revision pulled the three write/flush helpers
  * (`_writeArchiveFlush`, `drainForArchive`, `archiveChunks`) out of
- * `AgentThursdayAgent` verbatim.  extends this module with the two
+ * `AgentThursdayAgent` verbatim. an earlier revision extends this module with the two
  * read/audit-side callables (`conversationSearch`,
  * `getArchiveInspectSummary`) so the archive surface has one module
  * for both write and read paths.
@@ -28,8 +28,8 @@
  * yet.
  *
  * Per Step 5 preflight §6: reset/new/switch/hygiene are NOT part of
- * this module (), and compaction is NOT part of this module
- * (Cards 284–285). SQL strings, table names, column names, event
+ * this module , and compaction is NOT part of this module
+ * (an earlier revision–285). SQL strings, table names, column names, event
  * types, callable payloads, return shapes, and caps are byte-equivalent
  * to the original methods.
  */
@@ -52,11 +52,22 @@ import type {
   RetrievalLogRow,
 } from "../schema";
 import { newContextId } from "./contextHelpers";
+import { ADMIN_USER_ID } from "./requestIdentity";
 
 export type ArchiveOpsSqlTag = <T = Record<string, string | number | boolean | null>>(
   strings: TemplateStringsArray,
   ...values: (string | number | boolean | null)[]
 ) => T[];
+
+// FTS5 index over the archive (see archiveFtsOps.ts). The write
+// path keeps it fresh; the search path is FTS-first with the LIKE flow as
+// the permanent fail-soft fallback.
+import {
+  ftsIndexChunks,
+  advanceFtsBackfill,
+  ftsCandidateRowids,
+  buildFtsUnits,
+} from "./archiveFtsOps";
 
 export interface ArchiveWriteHost {
   sql: ArchiveOpsSqlTag;
@@ -81,9 +92,16 @@ export function writeArchiveFlushFree(
     trigger: ArchiveTrigger | string;
     chunks: readonly ArchiveChunkInput[];
     reason: string | null;
+    // Multi-tenancy — owner of the archived conversation (the per-context DO's
+    // resolved owner; admin sentinel for the operator). Stamped on every chunk
+    // so `conversationSearch` can owner-scope reads. Best-effort: a mis-stamped
+    // write at worst hides a row from its own owner (the READ filter is the
+    // security boundary, not this stamp). Omitted → admin sentinel.
+    ownerUserId?: string | null;
   },
 ): ArchiveFlushResult {
   const archivedAt = Date.now();
+  const ownerUserId = input.ownerUserId ?? ADMIN_USER_ID;
   const flushId = newContextId().replace(/^ctx_/, "flush_");
   const trigger = typeof input.trigger === "string" ? input.trigger : "manual";
 
@@ -112,6 +130,7 @@ export function writeArchiveFlushFree(
 
   let written = 0;
   let firstError: string | null = null;
+  const writtenChunkIds: string[] = [];
   for (const chunk of input.chunks) {
     try {
       const chunkId = `chunk_${flushId}_${chunk.messageIndex}`;
@@ -120,21 +139,25 @@ export function writeArchiveFlushFree(
             chunk_id, context_id, message_id, message_index, role,
             speaker, surface, task_id, card_id, type, harness_class,
             text, index_text, redaction_flags, source_ref,
-            is_synthetic_compaction, created_at, archived_at, trigger
+            is_synthetic_compaction, created_at, archived_at, trigger, owner_user_id
           ) VALUES (
             ${chunkId}, ${input.contextId}, ${chunk.messageId}, ${chunk.messageIndex}, ${chunk.role},
             ${null}, ${null}, ${null}, ${null}, ${null}, ${null},
             ${chunk.text}, ${chunk.indexText}, ${null}, ${null},
-            ${chunk.isSyntheticCompaction ? 1 : 0}, ${archivedAt}, ${archivedAt}, ${trigger}
+            ${chunk.isSyntheticCompaction ? 1 : 0}, ${archivedAt}, ${archivedAt}, ${trigger}, ${ownerUserId}
           )
         `;
       written++;
+      writtenChunkIds.push(chunkId);
     } catch (e) {
       if (firstError === null) {
         firstError = (e instanceof Error ? e.message : String(e)).slice(0, 400);
       }
     }
   }
+  // keep the FTS index in step with fresh writes (fail-soft
+  // inside; archiving never breaks because of the index).
+  ftsIndexChunks(host, writtenChunkIds);
 
   const status: "ok" | "failed" = firstError === null ? "ok" : "failed";
   host.sql`
@@ -204,18 +227,97 @@ export function archiveChunksFree(
     trigger: input.trigger,
     chunks: input.chunks,
     reason: input.reason ?? null,
+    ownerUserId: input.ownerUserId ?? null,
   });
+}
+
+/**
+ * Multi-tenancy — the fail-CLOSED empty result `conversation_search` returns
+ * when the caller's owner can't be resolved (so it never falls open to an
+ * all-tenants search). Pure (no `agents` / SQL deps) so the tool's fail-closed
+ * branch is unit-testable without importing the cf-agents runtime. Echoes the
+ * caller's filters for transparency; same caps as `conversationSearchFree`.
+ */
+export function emptyConversationSearchResult(
+  input: ConversationSearchInput,
+  retrievalId = "ret_owner_unresolved",
+): ConversationSearchResult {
+  const topK = Math.max(1, Math.min(10, Math.floor(input.topK ?? 3)));
+  const snippetCap = Math.max(50, Math.min(2000, Math.floor(input.snippetCap ?? 300)));
+  return {
+    ok: true,
+    retrievalId,
+    query: typeof input.query === "string" ? input.query : "",
+    topK,
+    snippetCap,
+    hits: [],
+    resultCount: 0,
+    searchedAt: Date.now(),
+    filters: {
+      contextId: input.contextId ?? null,
+      fromTimestamp: input.fromTimestamp ?? null,
+      toTimestamp: input.toTimestamp ?? null,
+      role: input.role ?? null,
+    },
+  };
+}
+
+// SQLite caps a LIKE pattern at ~50 bytes ("LIKE or GLOB pattern
+// too complex"). A whole natural-language query as one `%…%` substring blows
+// past that (fastest with CJK at 3 bytes/char, but long English does too) AND
+// almost never matches archived text verbatim. Split the query into terms,
+// byte-cap each, and AND them: legal patterns + better multi-keyword recall.
+// A long space-less run (CJK NL) yields one byte-capped leading fragment —
+// no crash, honest limited recall (FTS5 is the real fix, tracked separately).
+const LIKE_TERM_MAX_BYTES = 40; // < the ~48-byte content budget under 50
+const MAX_SEARCH_TERMS = 5;
+
+function utf8ByteCap(s: string, maxBytes: number): string {
+  const enc = new TextEncoder().encode(s);
+  if (enc.length <= maxBytes) return s;
+  // Decode a truncated slice; strip a trailing replacement char left by a
+  // split multi-byte code point so we don't LIKE-match U+FFFD.
+  return new TextDecoder("utf-8").decode(enc.slice(0, maxBytes)).replace(/�+$/, "");
+}
+
+export function buildSearchLikeTerms(queryRaw: string): string[] {
+  const terms = queryRaw.split(/\s+/).filter((t) => t.length > 0);
+  const source = terms.length > 0 ? terms : [queryRaw];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const t of source) {
+    const capped = utf8ByteCap(t, LIKE_TERM_MAX_BYTES);
+    if (!capped || seen.has(capped)) continue;
+    seen.add(capped);
+    out.push(`%${capped.replace(/[%_\\]/g, (c) => "\\" + c)}%`);
+    if (out.length >= MAX_SEARCH_TERMS) break;
+  }
+  return out;
 }
 
 export function conversationSearchFree(
   host: ArchiveSearchHost,
   input: ConversationSearchInput,
+  // Multi-tenancy — owner-scope the archive search. `undefined` = admin
+  // (unfiltered, sees ALL tenants' archives — preserves the operator's
+  // cross-context search). A non-empty string = a scoped tenant: only rows
+  // whose `owner_user_id` matches. The CALLER resolves this from the trusted
+  // caller identity and FAILS CLOSED (unresolved owner → empty results, never
+  // `undefined`); this function is the enforcement point, not the resolver.
+  scopeOwnerId?: string,
 ): ConversationSearchResult {
   if (!input || typeof input.query !== "string" || input.query.trim().length === 0) {
     throw new Error("conversationSearch: missing query");
   }
   const queryRaw = input.query.trim().slice(0, 500);
-  const queryLike = `%${queryRaw.replace(/[%_\\]/g, (c) => "\\" + c)}%`;
+  // byte-capped terms (AND-combined below); 5 fixed slots so the
+  // tagged-template SQL keeps a static shape. Unused slots = null sentinel.
+  const terms = buildSearchLikeTerms(queryRaw);
+  const t0 = terms[0] ?? null;
+  const t1 = terms[1] ?? null;
+  const t2 = terms[2] ?? null;
+  const t3 = terms[3] ?? null;
+  const t4 = terms[4] ?? null;
   const topK = Math.max(1, Math.min(10, Math.floor(input.topK ?? 3)));
   const snippetCap = Math.max(50, Math.min(2000, Math.floor(input.snippetCap ?? 300)));
   const filterContextId = (typeof input.contextId === "string" && input.contextId.length > 0)
@@ -230,12 +332,19 @@ export function conversationSearchFree(
   const filterRole = (input.role === "user" || input.role === "assistant" || input.role === "system")
     ? input.role
     : null;
+  // Multi-tenancy owner filter (sentinel-null = admin/unfiltered). A scoped
+  // tenant only matches its own owner's rows; admin (undefined) sees all.
+  const filterOwner = (typeof scopeOwnerId === "string" && scopeOwnerId.length > 0)
+    ? scopeOwnerId
+    : null;
 
-  // Build the SQL with optional filters. Each filter is gated by a
-  // sentinel value test so unset filters don't restrict the query.
-  // We hand-stitch the WHERE clause to keep the parameter binding
-  // ordering stable across the conditional pieces.
-  const rows = host.sql<{
+  // ── FTS5 path (ranked full-text; CJK-capable) ────────────
+  // Every search call advances the backfill one batch; the FTS path only
+  // activates once the watermark has caught the archive (before that,
+  // results would silently miss unindexed history). ANY error inside the
+  // FTS branch falls back to the LIKE flow below — an earlier revision's path stays
+  // as the permanent fallback.
+  let rows: {
     chunk_id: string;
     context_id: string;
     message_id: string | null;
@@ -246,29 +355,109 @@ export function conversationSearchFree(
     text: string;
     index_text: string | null;
     is_synthetic_compaction: number | bigint;
-  }>`
+  }[] | null = null;
+  let usedFts = false;
+  try {
+    const backfill = advanceFtsBackfill(host);
+    if (backfill.ready) {
+      const candidateIds = ftsCandidateRowids(host, queryRaw, topK);
+      if (candidateIds !== null) {
+        if (candidateIds.length === 0) {
+          rows = [];
+          usedFts = true;
+        } else {
+          const idsJson = JSON.stringify(candidateIds);
+          const fetched = host.sql<{
+            rowid: number | bigint;
+            chunk_id: string;
+            context_id: string;
+            message_id: string | null;
+            message_index: number | bigint | null;
+            role: string | null;
+            trigger: string;
+            archived_at: number | bigint;
+            text: string;
+            index_text: string | null;
+            is_synthetic_compaction: number | bigint;
+          }>`
+            SELECT rowid, chunk_id, context_id, message_id, message_index, role, trigger, archived_at, text, index_text, is_synthetic_compaction
+            FROM conversation_archive
+            WHERE rowid IN (SELECT value FROM json_each(${idsJson}))
+            AND (${filterContextId} IS NULL OR context_id = ${filterContextId})
+            AND (${filterFrom} IS NULL OR archived_at >= ${filterFrom})
+            AND (${filterTo} IS NULL OR archived_at <= ${filterTo})
+            AND (${filterRole} IS NULL OR role = ${filterRole})
+            AND (${filterOwner} IS NULL OR owner_user_id = ${filterOwner})
+          `;
+          // Restore bm25 candidate order (SQL IN doesn't preserve it).
+          const rankOf = new Map(candidateIds.map((id, i) => [id, i]));
+          fetched.sort((a, b) => (rankOf.get(Number(a.rowid)) ?? 1e9) - (rankOf.get(Number(b.rowid)) ?? 1e9));
+          rows = fetched.slice(0, topK);
+          usedFts = true;
+        }
+      }
+    }
+  } catch (e) {
+    host.logEvent("archive.fts.search_error", {
+      error: e instanceof Error ? e.message.slice(0, 200) : String(e),
+    });
+    rows = null;
+    usedFts = false;
+  }
+
+  // ── LIKE fallback (an earlier revision path, unchanged) ────────────────────────
+  // Build the SQL with optional filters. Each filter is gated by a
+  // sentinel value test so unset filters don't restrict the query.
+  // We hand-stitch the WHERE clause to keep the parameter binding
+  // ordering stable across the conditional pieces.
+  if (rows === null) {
+    rows = host.sql<{
+      chunk_id: string;
+      context_id: string;
+      message_id: string | null;
+      message_index: number | bigint | null;
+      role: string | null;
+      trigger: string;
+      archived_at: number | bigint;
+      text: string;
+      index_text: string | null;
+      is_synthetic_compaction: number | bigint;
+    }>`
       SELECT chunk_id, context_id, message_id, message_index, role, trigger, archived_at, text, index_text, is_synthetic_compaction
       FROM conversation_archive
-      WHERE (
-        (index_text IS NOT NULL AND index_text LIKE ${queryLike} ESCAPE '\\')
-        OR text LIKE ${queryLike} ESCAPE '\\'
-      )
+      WHERE (${t0} IS NULL OR (index_text LIKE ${t0} ESCAPE '\\' OR text LIKE ${t0} ESCAPE '\\'))
+      AND (${t1} IS NULL OR (index_text LIKE ${t1} ESCAPE '\\' OR text LIKE ${t1} ESCAPE '\\'))
+      AND (${t2} IS NULL OR (index_text LIKE ${t2} ESCAPE '\\' OR text LIKE ${t2} ESCAPE '\\'))
+      AND (${t3} IS NULL OR (index_text LIKE ${t3} ESCAPE '\\' OR text LIKE ${t3} ESCAPE '\\'))
+      AND (${t4} IS NULL OR (index_text LIKE ${t4} ESCAPE '\\' OR text LIKE ${t4} ESCAPE '\\'))
       AND (${filterContextId} IS NULL OR context_id = ${filterContextId})
       AND (${filterFrom} IS NULL OR archived_at >= ${filterFrom})
       AND (${filterTo} IS NULL OR archived_at <= ${filterTo})
       AND (${filterRole} IS NULL OR role = ${filterRole})
+      AND (${filterOwner} IS NULL OR owner_user_id = ${filterOwner})
       ORDER BY archived_at DESC, chunk_id ASC
       LIMIT ${topK}
     `;
+  }
 
+  // highlight around the FIRST term (the whole NL query is rarely
+  // present verbatim; the first term is what actually matched a row).
+  // for FTS hits, prefer the first query UNIT that actually
+  // appears in the text (units survive CJK; the raw first "word" of a
+  // space-less Chinese query is the whole query and never matches).
+  const ftsUnits = usedFts ? buildFtsUnits(queryRaw) : [];
+  const snippetNeedle = utf8ByteCap((queryRaw.split(/\s+/)[0] || queryRaw), LIKE_TERM_MAX_BYTES);
   const hits: ConversationSearchHit[] = rows.map((r) => {
     const fullText = r.text;
-    const matchIdx = fullText.toLowerCase().indexOf(queryRaw.toLowerCase());
+    const needle = usedFts
+      ? (ftsUnits.find((u) => fullText.toLowerCase().includes(u.toLowerCase())) ?? snippetNeedle)
+      : snippetNeedle;
+    const matchIdx = fullText.toLowerCase().indexOf(needle.toLowerCase());
     let snippet: string;
     if (matchIdx >= 0) {
-      const halfWindow = Math.max(20, Math.floor((snippetCap - queryRaw.length) / 2));
+      const halfWindow = Math.max(20, Math.floor((snippetCap - needle.length) / 2));
       const start = Math.max(0, matchIdx - halfWindow);
-      const end = Math.min(fullText.length, matchIdx + queryRaw.length + halfWindow);
+      const end = Math.min(fullText.length, matchIdx + needle.length + halfWindow);
       const head = start > 0 ? "…" : "";
       const tail = end < fullText.length ? "…" : "";
       snippet = `${head}${fullText.slice(start, end)}${tail}`;
@@ -291,7 +480,9 @@ export function conversationSearchFree(
       trigger: r.trigger,
       archivedAt: Number(r.archived_at),
       snippet,
-      matchReason: matchIdx >= 0 ? "text_match" : "index_text_match",
+      matchReason: usedFts
+        ? "fts_match"
+        : matchIdx >= 0 ? "text_match" : "index_text_match",
       isSyntheticCompaction: Number(r.is_synthetic_compaction) > 0,
     };
   });

@@ -1,5 +1,5 @@
 /**
- *  — `inspectChannelInboxImpl` regression tests.
+ * `inspectChannelInboxImpl` regression tests.
  *
  * Pure-helper test: stubs the host's `sql` template tag so we can
  * exercise the redaction shape + input shape-validation without the
@@ -51,8 +51,8 @@ function makeRow(overrides: Partial<InboxQRow> = {}): InboxQRow {
     id: "ib_test_1",
     provider: "discord",
     conversation_id: "068412bce4072eab",
-    provider_message_id: "100000000000000006",
-    sender_provider_user_id: "100000000000000002",
+    provider_message_id: "100000000000000010",
+    sender_provider_user_id: "100000000000000001",
     chat_type: "channel",
     addressed_to_agent: 1,
     addressed_signals_json: '["mention"]',
@@ -85,16 +85,16 @@ function makeHost(rows: InboxQRow[]): {
   return { host, get calls() { return calls; } };
 }
 
-describe(" inspectChannelInboxImpl", () => {
+describe("an earlier revision inspectChannelInboxImpl", () => {
   it("looks up by provider_message_id and surfaces route ownership fields", () => {
     const row = makeRow();
     const { host } = makeHost([row]);
     const result = inspectChannelInboxImpl(host, {
-      provider_message_id: "100000000000000006",
+      provider_message_id: "100000000000000010",
     });
     assert.equal(result.rows.length, 1);
     const r = result.rows[0];
-    assert.equal(r.provider_message_id, "100000000000000006");
+    assert.equal(r.provider_message_id, "100000000000000010");
     assert.equal(r.conversation_id, "068412bce4072eab");
     assert.equal(r.route_action, "process");
     assert.equal(r.route_reason, "addressed_to_agent");

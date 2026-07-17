@@ -1,7 +1,7 @@
 /**
- *  —  manager merge UI v1.
+ * M9.1 manager merge UI v1.
  *
- * Typed client for `GET /api/manager/tasks/:task_id/merge` (
+ * Typed client for `GET /api/manager/tasks/:task_id/merge` (an earlier revision
  * reader). Mirrors `agentProfiles.ts`:
  *   - sends `X-AgentThursday-Secret` via `authHeaders()`
  *   - on 401: clearSecret + dispatch `agentthursday:unauthorized` (SecretGate
@@ -12,7 +12,7 @@
  *     server addition does not crash older clients
  *
  * No backend contract changes — the response shape is exactly what
- *  §3.1 ships.
+ * an earlier revision §3.1 ships.
  */
 import { authHeaders, clearSecret } from "../auth/secret";
 

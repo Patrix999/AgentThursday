@@ -6,7 +6,7 @@
  * gate tools have something real to look at. Subsequent calls are
  * cheap: a `test -d <baseDir>/.git` short-circuit returns immediately.
  *
- * Auth model ( — token selection):
+ * Auth model (token selection):
  *   - `AGENT_THURSDAY_REPO_URL` overrides the default https URL (defaults to
  *     this project's known public/private GitHub source).
  *   - Token selection priority (highest to lowest):
@@ -33,7 +33,7 @@ const DEFAULT_REPO_URL = "https://github.com/your-org/AgentThursday.git";
 
 export interface RepoCheckoutEnv {
   AGENT_THURSDAY_REPO_URL?: string;
-  /** Narrow-scope PAT specific to agentthursday automations. Highest priority. */
+  /** Narrow-scope PAT specific to AgentThursday automations. Highest priority. */
   AGENT_THURSDAY_GIT_TOKEN?: string;
   /**
    * 189b: fallback to the Cloudflare-wide `GITHUB_TOKEN` secret when

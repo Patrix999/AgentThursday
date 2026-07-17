@@ -1,5 +1,5 @@
 /**
- *  —  Step 9 memory read-path extraction.
+ * M8.9 Step 9 memory read-path extraction.
  *
  * Six memory read-side helpers pulled verbatim from `AgentThursdayAgent`
  * (`src/server.ts` lines ~1492–1529, 2904–2919, 5231–5260, 5287–5310,
@@ -8,8 +8,6 @@
  * — only the location of the calls moved.
  *
  * See:
- *   - ``
- *   - ``
  *
  * Host shape is intentionally narrow — four capabilities only:
  *   - `sql`             — typed template-tag access for the three
@@ -17,7 +15,7 @@
  *                          `memory_knowledge` (R-only, soul-prompt
  *                          injection), `agent_memories` (R-only here;
  *                          write path stays at composition root and
- *                          moves in ), and
+ *                          moves in an earlier revision), and
  *                          `conversation_archive` (R-only).
  *   - `logEvent`        — only `tool.memory.list` is emitted from
  *                          this read scope. Remember/recall/forget
@@ -51,7 +49,7 @@
  * extraction server.ts behavior — the two timestamps are not joined
  * across the boundary.
  *
- *  extends this module with the **write side**
+ * an earlier revision extends this module with the **write side**
  * (`rememberMemoryFree` / `recallMemoryFree` / `forgetMemoryFree`).
  * Those helpers take a narrower `MemoryWriteHost` ({ sql, logEvent })
  * since they don't need message/conversation accessors. The
@@ -86,7 +84,7 @@ export interface MemoryReadHost {
 }
 
 /**
- *  — narrow write host. The three write callables
+ * narrow write host. The three write callables
  * (`rememberMemory` / `recallMemory` / `forgetMemory`) only ever touch
  * `agent_memories` via `sql` and emit `tool.memory.{remember,recall,forget}`
  * via `logEvent`. Kept deliberately separate from `MemoryReadHost` so
@@ -99,8 +97,8 @@ export interface MemoryWriteHost {
   logEvent: (type: string, payload: unknown) => void;
 }
 
-// ──  — readKnowledge ─────────────────────────────────────────
-//  — bounded read. SOUL+knowledge is injected via
+// ── readKnowledge ─────────────────────────────────────────
+// bounded read. SOUL+knowledge is injected via
 // `withContext("soul")` on every model invocation, so an unbounded
 // memory_knowledge table grows linearly into every prompt + into
 // the DO isolate's working set. Hard cap rows + total characters
@@ -139,8 +137,8 @@ export function readKnowledgeFree(host: MemoryReadHost): string {
   return out;
 }
 
-// ──  — getMemoryLayers ───────────────────────────────────────
-//  — bounded read.
+// ── getMemoryLayers ───────────────────────────────────────
+// bounded read.
 // /api/memory pulls this on every refresh; an unbounded scan over a
 // long-lived knowledge table is one of the queries the DO isolate
 // memory limit can trip. Cap rows + content preview keep the surface
@@ -156,7 +154,7 @@ export function getMemoryLayersFree(host: MemoryReadHost): { soul: string; knowl
   return { soul: SOUL, knowledge, lastMessage: host.getLastAssistantText() };
 }
 
-// ──  — listMemoriesEntries ───────────────────────────────────
+// ── listMemoriesEntries ───────────────────────────────────
 export function listMemoriesEntriesFree(host: MemoryReadHost, input: { type?: MemoryType; activeOnly?: boolean; limit?: number }): { items: MemoryEntry[] } {
   const limit = Math.min(Math.max(1, Math.floor(input.limit ?? 20)), 100);
   const activeOnly = input.activeOnly !== false; // default true
@@ -187,7 +185,7 @@ export function listMemoriesEntriesFree(host: MemoryReadHost, input: { type?: Me
   return { items };
 }
 
-// ──  — listMemoryCandidates ──────────────────────────────────
+// ── listMemoryCandidates ──────────────────────────────────
 /**
  * read-only memory candidate inspect.
  *
@@ -223,7 +221,7 @@ export function listMemoryCandidatesFree(host: MemoryReadHost, input?: { limit?:
   }
 }
 
-// ──  — _buildMemoryCandidatesV1 ──────────────────────────────
+// ── _buildMemoryCandidatesV1 ──────────────────────────────
 export function buildMemoryCandidatesV1Free(host: MemoryReadHost, cap: number): MemoryCandidateInspectItem[] {
   const generatedAt = Date.now();
   // Pull a bounded window of archive chunks. Most-recent first so
@@ -311,7 +309,7 @@ export function buildMemoryCandidatesV1Free(host: MemoryReadHost, cap: number): 
     }
   }
 
-  //  — broader test-harness / verifier noise filter.
+  // broader test-harness / verifier noise filter.
   // The first 154a build let `task` candidates surface from
   // verifier-rerun questions ("...那一步是不是有立即 ack（156g1
   // 的关键判据）...") because the explicit-remember regex was too
@@ -324,13 +322,13 @@ export function buildMemoryCandidatesV1Free(host: MemoryReadHost, cap: number): 
     if (/\b(?:runtime\s+smoke|test\s+harness|case[- ]driven)\b/i.test(t)) return true;
     if (/\bStory\s+[A-Z]\b/.test(t)) return true;
     if (/\bCard\s+\d/.test(t)) return true;
-    // operator /  /  /  测试侧的判定词
+    // the operator / agentP / agentQ / agentD 测试侧的判定词
     if (/(?:验收|关键判据|后端证据|用例|跑测|测试用例|测试套件)/.test(t)) return true;
     if (/\b(?:PASS|FAIL|N-A|N\/A)\b/.test(t)) return true;
     // 系统/路由/调度专用词典（dialog-noise typical of small-c orchestration）
     if (/(?:summaryStream|recentOutbox|routeSummary|debugTrace|recentToolEvents|lastAssistantSummary|conversation_archive|context_active|Story\s)/i.test(t)) return true;
-    // mention to operators ( / operator / channel admins) — mass-distributed ops messages, not user memory intent
-    if (/<@!?(?:100000000000000001|100000000000000002|100000000000000003)>/.test(t)) return true;
+    // mention to operators (agentP / the operator / channel admins) — mass-distributed ops messages, not user memory intent
+    if (/<@!?(?:100000000000000003|100000000000000001|100000000000000002)>/.test(t)) return true;
     // Code fences / jq / curl / shell heredoc — debug protocol, not memory
     if (/```[\s\S]{4,}```|`(?:curl|jq|grep|wrangler|npm)\b/i.test(t)) return true;
     if (/\bcurl\s+-[sS]?\b|\bjq\s+['"]/.test(t)) return true;
@@ -348,9 +346,9 @@ export function buildMemoryCandidatesV1Free(host: MemoryReadHost, cap: number): 
     const t = text.trim();
     if (t.length < 6 || t.length > 800) return null;
 
-    //  — try explicit-remember extraction FIRST. The
+    // try explicit-remember extraction FIRST. The
     // archived `text` for a real Discord user prompt usually starts
-    // with `<@_id>` (the bot mention). 154a1 demanded `[\n.!?]`
+    // with `<@agentD_id>` (the bot mention). 154a1 demanded `[\n.!?]`
     // immediately before `帮我记` AND ran `isCandidateNoise(t)` over
     // the whole row first, so any verifier-flavored neighbor token
     // in the same archived chunk killed the legit slot. Now: allow
@@ -458,7 +456,7 @@ export function buildMemoryCandidatesV1Free(host: MemoryReadHost, cap: number): 
   return items.slice(0, cap);
 }
 
-// ──  — getMemorySnapshot ─────────────────────────────────────
+// ── getMemorySnapshot ─────────────────────────────────────
 export function getMemorySnapshotFree(host: MemoryReadHost): MemorySnapshot {
   type CountRow = { type: string; n: number };
   const counts = host.sql<CountRow>`SELECT type, COUNT(*) as n FROM agent_memories WHERE active = 1 GROUP BY type`;
@@ -480,17 +478,91 @@ export function getMemorySnapshotFree(host: MemoryReadHost): MemorySnapshot {
   };
   return {
     counts: { ...byType, inactive },
-    recentFacts: recent("fact", 3),
-    recentInstructions: recent("instruction", 3),
+    recentFacts: recent("fact", 10),
+    recentInstructions: recent("instruction", 10),
     recentEvents: recent("event", 5),
     recentTasks: recent("task", 5),
   };
 }
 
-// ──  — rememberMemory ───────────────────────────────────────
-// Agent Memory v1. See
+/**
+ * SQL-backed memory layers (L2 compaction / L4 knowledge /
+ * L5 checkpoints+review_notes) for one agent DO, feeding the 6-layer
+ * observability endpoint. L1 (SOUL) is resolved by the `getMemoryLayers`
+ * @callable (async); L3 reuses `getMemorySnapshotFree`; L6 + candidates are
+ * registry-side. Each block is read independently and fails soft to a marker so
+ * one bad table can't 500 the whole diagnostic.
+ */
+export interface MemoryLayersSql {
+  knowledge: { rowCount: number; keys: string[] } | { error: string };
+  checkpoints: { count: number; recent: Array<{ key: string; createdAt: number }> } | { error: string };
+  reviewNotes: { count: number; recent: Array<{ source: string; createdAt: number }> } | { error: string };
+  compaction:
+    | {
+        contextHistoryCount: number;
+        hygieneRuns: Array<{
+          trigger: string;
+          decision: string;
+          reason: string | null;
+          beforeCount: number;
+          afterCount: number | null;
+          createdAt: number;
+        }>;
+        // disambiguate a genuine 0 from "this agent never compacted".
+        // Context hygiene fires only on a context reset / newContext; normally
+        // dispatched agents never reset, so 0/[] is expected, not a fault.
+        status: "never_compacted" | "active";
+      }
+    | { error: string };
+}
+
+export function getMemoryLayersSqlFree(host: MemoryReadHost): MemoryLayersSql {
+  const soft = <T>(fn: () => T): T | { error: string } => {
+    try {
+      return fn();
+    } catch (e) {
+      return { error: e instanceof Error ? e.message.slice(0, 120) : String(e).slice(0, 120) };
+    }
+  };
+  return {
+    knowledge: soft(() => {
+      const total = Number((host.sql<{ n: number }>`SELECT COUNT(*) AS n FROM memory_knowledge`)[0]?.n ?? 0);
+      const keys = host.sql<{ key: string }>`SELECT key FROM memory_knowledge ORDER BY key LIMIT 100`.map(r => r.key);
+      return { rowCount: total, keys };
+    }),
+    checkpoints: soft(() => {
+      const count = Number((host.sql<{ n: number }>`SELECT COUNT(*) AS n FROM checkpoints`)[0]?.n ?? 0);
+      const recent = host.sql<{ key: string; created_at: number }>`SELECT key, created_at FROM checkpoints ORDER BY created_at DESC LIMIT 5`
+        .map(r => ({ key: r.key, createdAt: r.created_at }));
+      return { count, recent };
+    }),
+    reviewNotes: soft(() => {
+      const count = Number((host.sql<{ n: number }>`SELECT COUNT(*) AS n FROM review_notes`)[0]?.n ?? 0);
+      const recent = host.sql<{ source: string; created_at: number }>`SELECT source, created_at FROM review_notes ORDER BY created_at DESC LIMIT 5`
+        .map(r => ({ source: r.source, createdAt: r.created_at }));
+      return { count, recent };
+    }),
+    compaction: soft(() => {
+      const contextHistoryCount = Number((host.sql<{ n: number }>`SELECT COUNT(*) AS n FROM context_history`)[0]?.n ?? 0);
+      const hygieneRuns = host.sql<{
+        trigger: string; decision: string; reason: string | null;
+        before_message_count: number; after_message_count: number | null; created_at: number;
+      }>`SELECT trigger, decision, reason, before_message_count, after_message_count, created_at
+         FROM context_hygiene_runs ORDER BY created_at DESC LIMIT 5`
+        .map(r => ({
+          trigger: r.trigger, decision: r.decision, reason: r.reason,
+          beforeCount: r.before_message_count, afterCount: r.after_message_count, createdAt: r.created_at,
+        }));
+      const status: "never_compacted" | "active" = contextHistoryCount === 0 && hygieneRuns.length === 0 ? "never_compacted" : "active";
+      return { contextHistoryCount, hygieneRuns, status };
+    }),
+  };
+}
+
+// ── rememberMemory ───────────────────────────────────────
+// Agent Memory v1. See docs/design/agent-memory-v1.md.
 // Profile boundary = the host DO. Body extracted verbatim from
-// `AgentThursdayAgent.rememberMemory` (server.ts pre-). SQL strings,
+// `AgentThursdayAgent.rememberMemory` (server.ts pre-Card-298). SQL strings,
 // event name, payload keys, supersede semantics unchanged.
 export function rememberMemoryFree(
   host: MemoryWriteHost,
@@ -539,7 +611,7 @@ export function rememberMemoryFree(
   return { id, type: input.type, supersededId };
 }
 
-// ──  — recallMemory ─────────────────────────────────────────
+// ── recallMemory ─────────────────────────────────────────
 // Three-channel scoring: exact key match (1.0) / per-token LIKE on
 // content (0.4 + recency boost) / recency-only fallback (0.2). Limit
 // clamped to [1, 20]. Body extracted verbatim from server.ts.
@@ -621,7 +693,7 @@ export function recallMemoryFree(
   return { matches };
 }
 
-// ──  — forgetMemory ─────────────────────────────────────────
+// ── forgetMemory ─────────────────────────────────────────
 // Soft-delete: sets `active = 0`, never physical delete. Three
 // branches: not-found / already-inactive / active soft-delete. Body
 // extracted verbatim from server.ts.
@@ -641,4 +713,348 @@ export function forgetMemoryFree(
   host.sql`UPDATE agent_memories SET active = 0, updated_at = ${Date.now()} WHERE id = ${input.id}`;
   host.logEvent("tool.memory.forget", { id: input.id, ok: true, reason: (input.reason ?? "").slice(0, 200) });
   return { ok: true, id: input.id };
+}
+
+// ── adoption fix: LLM extraction + consolidation ─────────────
+// Probe (2026-06-25) showed agent_memories empty everywhere: agents don't call
+// `remember`, and the keyword candidate generator finds nothing in real dialog.
+// So we extract durable memory from the conversation with an LLM (≈ MiMo /dream)
+// and promote it (confidence-gated, dedup, operator-first, ledgered).
+
+export interface ExtractedMemory {
+  type: string;
+  content: string;
+  confidence: number;
+  reason: string;
+  /**
+   * index into the EXISTING-memory list (as numbered in the
+   * extraction prompt) that this new memory UPDATES / CONTRADICTS / REPLACES.
+   * `null`/absent → a fresh memory. When set, consolidation supersedes
+   * (soft-deletes) the referenced existing memory and is exempt from the
+   * dedup drop (a contradiction is cosine-close to what it replaces).
+   */
+  supersedes?: number | null;
+  /**
+   * provenance for a promoted candidate. Default (absent) →
+   * `"llm-extracted"` (this agent's own dialog). A subagent insight ingested
+   * into the parent is tagged `"subagent:<agent-id>"` so promoted collective
+   * memory is attributable and the source is never lost.
+   */
+  source?: string;
+}
+
+/** Prompt for the durable-memory extractor. The LLM call itself happens in the
+ *  agent (`getModel()`); this stays pure for testability. */
+export function buildMemoryExtractionPrompt(dialog: string, existing: string[], nowIso?: string): string {
+  // number the existing memories so a new memory can reference the
+  // one it supersedes by [index]; the consolidator resolves the index back to a
+  // row id and soft-deletes it.
+  const existingBlock = existing.length > 0 ? existing.slice(0, 30).map((e, i) => `[${i}] ${e}`).join("\n") : "(none yet)";
+  return [
+    "Task: read the conversation and extract DURABLE memory worth keeping across future sessions.",
+    "Respond with ONLY a JSON array — no prose, no explanation, no markdown fences.",
+    "Schema: [{\"type\":\"fact\"|\"instruction\"|\"preference\",\"content\":\"...\",\"confidence\":0.0-1.0,\"reason\":\"...\",\"supersedes\":<int|null>}]",
+    ...(nowIso ? ["", `Today's date is ${nowIso}. Only include a date in \`content\` if you are certain of it; if unsure, omit the date or use a relative phrase — do NOT guess a specific date.`] : []),
+    "",
+    "What to extract (be generous — most real conversations contain several):",
+    "- fact: a stable truth about the user, the project, people, ids, conventions, decisions, or environment.",
+    "- instruction: a standing rule / how the user wants things done (\"always X\", \"never Y\", \"must go through Z\").",
+    "- preference: a stated like/dislike or default choice.",
+    "What to SKIP: one-off task requests, greetings, ephemeral status, and anything already true in EXISTING memory.",
+    "`content` must be self-contained (readable without the conversation) and under 200 chars.",
+    "`supersedes`: if this memory UPDATES or CONTRADICTS an existing one (e.g. a changed id / decision / default), set it to that existing item's [index] number so the stale one is replaced. Use this ONLY for genuine changes — a mere rephrasing of a still-true fact you SKIP instead. Omit or use null for brand-new memories.",
+    "",
+    "Example output:",
+    '[{"type":"fact","content":"The project is AgentThursday, a Cloudflare-Workers multi-agent platform.","confidence":0.9,"reason":"stated project identity","supersedes":null},',
+    ' {"type":"fact","content":"the operator\'s source id is now usrc-7tx49jad (was a long UUID).","confidence":0.9,"reason":"id changed this session","supersedes":3}]',
+    "If truly nothing qualifies, respond exactly: []",
+    "",
+    "EXISTING memory (numbered; do not repeat a still-true one — only reference via supersedes when it changed):",
+    existingBlock,
+    "",
+    "CONVERSATION (most recent first):",
+    dialog,
+    "",
+    "JSON array:",
+  ].join("\n");
+}
+
+/** Parse the extractor's raw output into candidates. Distinguishes a parse
+ *  failure (unusable output) from a genuine "nothing to extract" so a
+ *  `promoted:0` ledger entry is diagnosable. */
+export function parseMemoryExtraction(raw: string): {
+  parseStatus: "ok" | "parse_failed" | "empty";
+  candidates: ExtractedMemory[];
+} {
+  if (!raw || raw.trim().length === 0) return { parseStatus: "empty", candidates: [] };
+  let s = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  const start = s.indexOf("[");
+  const end = s.lastIndexOf("]");
+  if (start < 0 || end < 0 || end < start) return { parseStatus: "parse_failed", candidates: [] };
+  try {
+    const arr = JSON.parse(s.slice(start, end + 1)) as unknown;
+    if (!Array.isArray(arr)) return { parseStatus: "parse_failed", candidates: [] };
+    const candidates: ExtractedMemory[] = arr
+      .filter((x): x is Record<string, unknown> => !!x && typeof x === "object" && typeof (x as Record<string, unknown>).content === "string")
+      .map((x) => ({
+        type: String(x.type ?? "fact"),
+        content: String(x.content).slice(0, 280).trim(),
+        confidence: typeof x.confidence === "number" ? Math.max(0, Math.min(1, x.confidence)) : 0.5,
+        reason: String(x.reason ?? "").slice(0, 200),
+        // supersedes: a non-negative integer index, else null.
+        supersedes: typeof x.supersedes === "number" && Number.isInteger(x.supersedes) && x.supersedes >= 0 ? x.supersedes : null,
+      }))
+      .filter((c) => c.content.length > 0);
+    return { parseStatus: candidates.length === 0 ? "empty" : "ok", candidates };
+  } catch {
+    return { parseStatus: "parse_failed", candidates: [] };
+  }
+}
+
+function _normMem(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, " ").trim();
+}
+function _tokenJaccard(a: string, b: string): number {
+  const ta = new Set(a.split(" ").filter((t) => t.length > 1));
+  const tb = new Set(b.split(" ").filter((t) => t.length > 1));
+  if (ta.size === 0 || tb.size === 0) return 0;
+  let inter = 0;
+  for (const t of ta) if (tb.has(t)) inter++;
+  return inter / (ta.size + tb.size - inter);
+}
+// an earlier revision follow-up — relatedness gate for the supersede guard. The old
+// `jaccard >= 0.1` was defeated by a single shared high-frequency token (a
+// shared "pat"/"the" passed it), so a mis-flagged cross-dimension supersede
+// could soft-delete a good memory. Count shared SIGNIFICANT tokens (stop-words
+// filtered) and require >= 2, so one incidental overlap no longer authorises a
+// delete. Independent of `_tokenJaccard` (which `isDup` also uses).
+const _SUPERSEDE_STOP_TOKENS = new Set([
+  "the", "a", "an", "is", "are", "was", "were", "to", "of", "in", "on", "for",
+  "and", "or", "it", "this", "that", "with", "as", "at", "by", "be", "now",
+  "not", "no", "use", "uses", "used", "has", "have", "had", "its", "their",
+]);
+function _sharedSignificantTokenCount(a: string, b: string): number {
+  const sig = (s: string): Set<string> =>
+    new Set(s.split(" ").filter((t) => t.length > 1 && !_SUPERSEDE_STOP_TOKENS.has(t)));
+  const ta = sig(a);
+  const tb = sig(b);
+  let n = 0;
+  for (const t of ta) if (tb.has(t)) n++;
+  return n;
+}
+
+export interface ConsolidationLedgerEntry {
+  run_id: string;
+  agent_id: string;
+  mode: "write" | "dry_run";
+  model: string | null;
+  source_chunks: number;
+  extracted: number;
+  promoted: number;
+  skipped_dup: number;
+  below_threshold: number;
+  parse_status: string;
+  promoted_memory_ids: number[];
+  created_at: number;
+  // contradiction pruning: how many existing memories were
+  // soft-deleted because a promoted candidate flagged them as superseded, and
+  // their ids. (Persisted to the event_log, not a new table column.)
+  superseded: number;
+  superseded_memory_ids: number[];
+  would_promote?: Array<{ type: string; content: string; confidence: number }>;
+}
+
+/** Dedup vs existing active memories, promote ≥ threshold (write mode) or preview
+ *  (dry_run), write the ledger. Returns the ledger entry. */
+export function consolidateMemoriesFree(
+  host: MemoryWriteHost,
+  opts: {
+    agentId: string;
+    mode: "write" | "dry_run";
+    model: string | null;
+    sourceChunks: number;
+    parseStatus: string;
+    candidates: ExtractedMemory[];
+    threshold?: number;
+    // the active existing memories WITH ids, in the SAME order they
+    // were numbered in the extraction prompt, so a candidate's `supersedes`
+    // index resolves to a real row id. Omitted → falls back to a content-only
+    // query (no supersede resolution; legacy behavior for callers/tests).
+    existingRefs?: Array<{ id: number; content: string }>;
+  },
+): ConsolidationLedgerEntry {
+  const threshold = opts.threshold ?? 0.8;
+  const refs = opts.existingRefs
+    ?? host.sql<{ id: number; content: string }>`SELECT id, content FROM agent_memories WHERE active = 1 ORDER BY id`;
+  const existing = refs.map((r) => _normMem(r.content));
+  const isDup = (c: string): boolean => {
+    const lc = _normMem(c);
+    return existing.some((e) => e.includes(lc) || lc.includes(e) || _tokenJaccard(e, lc) >= 0.7);
+  };
+  let promoted = 0;
+  let skippedDup = 0;
+  let belowThreshold = 0;
+  let superseded = 0;
+  const promotedIds: number[] = [];
+  const supersededIds: number[] = [];
+  const wouldPromote: Array<{ type: string; content: string; confidence: number }> = [];
+  for (const c of opts.candidates) {
+    if (c.confidence < threshold) { belowThreshold++; continue; }
+    // resolve a flagged supersede index to a real row id. A
+    // superseding candidate is an intentional UPDATE, so it bypasses the dup
+    // check (a contradiction is lexically/semantically close to what it replaces).
+    const supIdx = typeof c.supersedes === "number" ? c.supersedes : null;
+    let supTargetId = supIdx !== null && supIdx >= 0 && supIdx < refs.length ? refs[supIdx].id : null;
+    // an earlier revision (+ follow-up) — guard a mis-pointed supersede. A small extractor
+    // model can emit an index at an UNRELATED memory, which would silently
+    // soft-delete a good one. Require >= 2 shared SIGNIFICANT tokens (stop-words
+    // filtered) between the update and what it claims to replace — a single
+    // incidental overlap ("pat"/"the") no longer authorises a delete. If too
+    // low, promote as fresh and leave the old active.
+    if (supTargetId !== null && supIdx !== null) {
+      const shared = _sharedSignificantTokenCount(_normMem(c.content), _normMem(refs[supIdx].content));
+      if (shared < 2) {
+        host.logEvent("memory.consolidation.supersede_rejected", { reason: "insufficient_relatedness", index: supIdx, shared_tokens: shared });
+        supTargetId = null;
+      }
+    }
+    if (supTargetId === null && isDup(c.content)) { skippedDup++; continue; }
+    const memType: MemoryType = c.type === "instruction" || c.type === "preference" ? "instruction" : "fact";
+    if (opts.mode === "write") {
+      const r = rememberMemoryFree(host, {
+        type: memType, content: c.content, confidence: c.confidence, source: c.source ?? "llm-extracted",
+        ...(supTargetId !== null ? { supersedesId: supTargetId } : {}),
+      });
+      promotedIds.push(r.id);
+      if (r.supersededId !== null) { supersededIds.push(r.supersededId); superseded++; }
+      existing.push(_normMem(c.content)); // intra-run dedup
+      promoted++;
+    } else {
+      wouldPromote.push({ type: memType, content: c.content, confidence: c.confidence });
+    }
+  }
+  const run_id = `mcr-${crypto.randomUUID().slice(0, 12)}`;
+  const created_at = Date.now();
+  host.sql`
+    INSERT INTO memory_consolidation_runs
+      (run_id, agent_id, mode, model, source_chunks, extracted, promoted, skipped_dup, below_threshold, parse_status, promoted_memory_ids, created_at)
+    VALUES (${run_id}, ${opts.agentId}, ${opts.mode}, ${opts.model}, ${opts.sourceChunks}, ${opts.candidates.length}, ${promoted}, ${skippedDup}, ${belowThreshold}, ${opts.parseStatus}, ${JSON.stringify(promotedIds)}, ${created_at})
+  `;
+  host.logEvent("memory.consolidation.run", { run_id, agent_id: opts.agentId, mode: opts.mode, promoted, superseded, superseded_ids: supersededIds, extracted: opts.candidates.length, parse_status: opts.parseStatus });
+  return {
+    run_id, agent_id: opts.agentId, mode: opts.mode, model: opts.model,
+    source_chunks: opts.sourceChunks, extracted: opts.candidates.length, promoted,
+    skipped_dup: skippedDup, below_threshold: belowThreshold, parse_status: opts.parseStatus,
+    promoted_memory_ids: promotedIds, created_at,
+    superseded, superseded_memory_ids: supersededIds,
+    ...(opts.mode === "dry_run" ? { would_promote: wouldPromote } : {}),
+  };
+}
+
+/** Most-recent consolidation runs for an agent (for the Memory Layers panel). */
+export function listConsolidationRunsFree(host: MemoryReadHost, agentId: string, limit = 5): ConsolidationLedgerEntry[] {
+  try {
+    const rows = host.sql<{
+      run_id: string; agent_id: string; mode: string; model: string | null;
+      source_chunks: number; extracted: number; promoted: number; skipped_dup: number;
+      below_threshold: number; parse_status: string; promoted_memory_ids: string | null; created_at: number;
+    }>`SELECT * FROM memory_consolidation_runs WHERE agent_id = ${agentId} ORDER BY created_at DESC LIMIT ${limit}`;
+    return rows.map((r) => ({
+      run_id: r.run_id, agent_id: r.agent_id, mode: r.mode as "write" | "dry_run", model: r.model,
+      source_chunks: r.source_chunks, extracted: r.extracted, promoted: r.promoted,
+      skipped_dup: r.skipped_dup, below_threshold: r.below_threshold, parse_status: r.parse_status,
+      promoted_memory_ids: r.promoted_memory_ids ? (JSON.parse(r.promoted_memory_ids) as number[]) : [],
+      created_at: r.created_at,
+      // supersede counts are emitted to the event_log, not stored on
+      // this (long-lived) table, so historical rows report 0/[] here.
+      superseded: 0, superseded_memory_ids: [],
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// ── M9.4 — semantic dedup (consolidation idempotency) ────────────────────────
+// Lexical dedup (substring/jaccard) misses LLM re-phrasings of the same fact, so
+// re-running consolidation kept promoting near-duplicates. Embed candidates +
+// existing memories (env.AI bge), and drop a candidate that's cosine-close to any
+// existing memory. The embedding call is async (lives in the @callable); these
+// helpers stay pure.
+
+export function cosineSim(a: number[], b: number[]): number {
+  const n = Math.min(a.length, b.length);
+  if (n === 0) return 0;
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < n; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+  if (na === 0 || nb === 0) return 0;
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
+/** Parse a Workers AI bge embedding response into row vectors. Handles the
+ *  `{ data: number[][] }` shape (and `{ result: { data } }`). */
+export function parseEmbeddings(resp: unknown): number[][] {
+  const o = resp as Record<string, unknown> | undefined;
+  const data = (o?.data ?? (o?.result as Record<string, unknown> | undefined)?.data) as unknown;
+  if (!Array.isArray(data)) return [];
+  return data.map((row) => (Array.isArray(row) ? (row as number[]) : []));
+}
+
+/** Drop candidates whose embedding is cosine-≥ `threshold` to any existing
+ *  memory embedding. Returns survivors + how many were dropped as semantic dups. */
+export function semanticDedupFilter(
+  candidates: ExtractedMemory[],
+  candVecs: number[][],
+  existingVecs: number[][],
+  threshold = 0.86,
+): { survivors: ExtractedMemory[]; droppedSemantic: number } {
+  if (candVecs.length !== candidates.length || existingVecs.length === 0) {
+    return { survivors: candidates, droppedSemantic: 0 };
+  }
+  const survivors: ExtractedMemory[] = [];
+  const keptVecs: number[][] = [];
+  let dropped = 0;
+  for (let i = 0; i < candidates.length; i++) {
+    const v = candVecs[i];
+    const dupVsExisting = existingVecs.some((e) => cosineSim(v, e) >= threshold);
+    const dupVsKept = keptVecs.some((e) => cosineSim(v, e) >= threshold); // intra-batch
+    if (dupVsExisting || dupVsKept) { dropped++; continue; }
+    survivors.push(candidates[i]);
+    keptVecs.push(v);
+  }
+  return { survivors, droppedSemantic: dropped };
+}
+
+/**
+ * M9.4 — semantic recall ranking. `rows[i]` aligns with `rowVecs[i]` (the agent
+ * embeds [query, ...row contents] in one bge-m3 batch). Score = max(key-exact 1.0,
+ * cosine-scaled). The agent falls back to lexical `recallMemoryFree` if embedding
+ * fails. Pure for testability.
+ */
+export function rankMemoriesSemanticFree(
+  rows: Array<{ id: number; type: string; key: string | null; content: string; created_at: number }>,
+  queryVec: number[],
+  rowVecs: number[][],
+  query: string,
+  limit: number,
+): MemoryRecallMatch[] {
+  const q = query.trim().toLowerCase();
+  const scored = rows.map((r, i) => {
+    const sim = cosineSim(queryVec, rowVecs[i] ?? []);
+    const keyExact = r.key && r.key.trim().toLowerCase() === q ? 1.0 : 0;
+    // Map cosine → recall score: a strong semantic match (≥0.6) ranks near a
+    // keyword hit; below ~0.3 is treated as weak.
+    const semScore = sim >= 0.3 ? 0.25 + sim * 0.7 : sim * 0.5;
+    return { r, score: Math.max(keyExact, semScore) };
+  });
+  return scored
+    .sort((a, b) => b.score - a.score || b.r.created_at - a.r.created_at)
+    .slice(0, limit)
+    .map(({ r, score }) => ({
+      id: r.id,
+      type: r.type as MemoryType,
+      key: r.key,
+      content: r.content,
+      score: Math.round(score * 1000) / 1000,
+      createdAt: r.created_at,
+    }));
 }

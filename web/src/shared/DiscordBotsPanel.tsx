@@ -10,7 +10,7 @@ interface DiscordBotRow {
 }
 
 /**
- *  — BYO Discord bot panel. Token is validated server-side
+ * BYO Discord bot panel. Token is validated server-side
  * against Discord on save (bot id + username derived automatically)
  * and is write-only afterwards (list shows the last-4 hint).
  */
@@ -92,7 +92,7 @@ export function DiscordBotsPanel() {
             type="text"
             value={channelsRaw}
             onChange={(e) => setChannelsRaw(e.target.value)}
-            placeholder="100000000000000005, …"
+            placeholder="100000000000000006, …"
             className="mt-1 block w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-200 font-mono"
           />
         </label>

@@ -1,4 +1,4 @@
-//  — pure module-level constants + a SQL-row type moved from
+// pure module-level constants + a SQL-row type moved from
 // `src/server.ts` (pre-edit lines 183, 418-441, 456-457, 464-465,
 // 480-481, 509, 512-518). Byte-equivalent: literal values preserved
 // exactly; only the leading `const`/`type` keyword loses the `export`-less
@@ -11,7 +11,7 @@
 // removing ~50 LoC of literals from the entry module.
 import type { CliSession } from "../types";
 
-//   — fresh context id budget cap (chars/4 surrogate)
+// M7.7v3 fresh context id budget cap (chars/4 surrogate)
 // used by `storedCompactionView` in `./contextHelpers`.
 export const COMPACTION_SUMMARY_PREVIEW_BUDGET = 600;
 
@@ -43,6 +43,14 @@ export const KNOWN_TOOL_NAMES: readonly string[] = [
   "content_search",
   // agent-facing conversation archive search.
   "conversation_search",
+  // 2026-06-19 — global workspace file share (replaces fyimd).
+  "share_file",
+  "list_shared_files",
+  "read_shared_file",
+  // self-scheduling (recurring prompts to oneself).
+  "schedule_create",
+  "schedule_list",
+  "schedule_cancel",
 ];
 
 // fixed estimates for tool schema + framing overhead
@@ -51,15 +59,15 @@ export const KNOWN_TOOL_NAMES: readonly string[] = [
 export const ESTIMATED_TOOLS_OVERHEAD_TOKENS = 3_000;
 export const ESTIMATED_OTHER_OVERHEAD_TOKENS = 500;
 
-//  — source-read budget harness v1. Mirrored in
+// source-read budget harness v1. Mirrored in
 // `docs/skillsets/software-dev.0.1.0.yaml` `source_read_policy`; the
-// smoke (`scripts/-source-read-budget-smoke.ts`) asserts both
+// smoke (`scripts/card247-source-read-budget-smoke.ts`) asserts both
 // sides match so the YAML cannot silently drift. Warning-only: large or
 // truncated reads emit `read_budget.warning` but the read is not blocked.
 export const SOURCE_READ_DEFAULT_MAX_BYTES = 8192;
 export const SOURCE_READ_LARGE_THRESHOLD_BYTES = 15360;
 
-//  §A — bounded chars/4 estimate of dialog tokens from persisted
+// an earlier revision §A — bounded chars/4 estimate of dialog tokens from persisted
 // messages. Used as a fallback when runtime token usage is unavailable
 // (DO cold start / post-deploy reset wipes `_sessionTok`/`_taskTok`).
 // Bounded:

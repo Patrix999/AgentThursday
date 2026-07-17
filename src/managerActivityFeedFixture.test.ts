@@ -1,5 +1,5 @@
 /**
- *  — Manager Activity Feed smoke fixture.
+ * Manager Activity Feed smoke fixture.
  *
  * Mirrors the take1.1 production manager-fanout shape:
  *   - one `manager.agent_list` dispatch/result pair (count=2)
@@ -12,7 +12,7 @@
  * The fixture is exported as `MANAGER_FANOUT_FIXTURE_TAKE_1_1` so
  * future regression checks can reuse the same row sequence.
  *
- * Required assertions ( §Required 2 / §Acceptance):
+ * Required assertions (an earlier revision §Required 2 / §Acceptance):
  *   - Every manager.* row becomes a `tool.lifecycle` intent (not
  *     `generic.tool_event`) — this is the REGRESSION GUARD. If the
  *     lifecycle mapper or its event_type allowlist regresses, the
@@ -126,7 +126,7 @@ function byEvent(
 describe("Manager Activity Feed fixture (take1.1 fanout)", () => {
   it("every manager.* row maps to tool.lifecycle, not generic.tool_event", () => {
     const intents = buildActionUiIntents(MANAGER_FANOUT_FIXTURE_TAKE_1_1);
-    //  — dispatch rows pair into their result/error rows, so
+    // dispatch rows pair into their result/error rows, so
     // the feed shows one item per ACTION: list pair + msg pair ×2 +
     // unpaired error (agent-gamma had no dispatch in fixture) = 4.
     assert.equal(intents.length, 4);
@@ -147,7 +147,7 @@ describe("Manager Activity Feed fixture (take1.1 fanout)", () => {
   it("sequence matches expected (paired: list, msg×2, error)", () => {
     const intents = buildActionUiIntents(MANAGER_FANOUT_FIXTURE_TAKE_1_1);
     const eventTypes = intents.map((i) => i.sourceEventType);
-    //  — paired feed: each surviving row is the action's
+    // paired feed: each surviving row is the action's
     // terminal phase, annotated with lifecycle status/duration.
     assert.deepEqual(eventTypes, [
       "tool.manager.agent_list.result",

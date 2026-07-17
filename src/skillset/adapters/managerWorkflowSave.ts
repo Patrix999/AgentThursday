@@ -1,5 +1,5 @@
 /**
- *  — adapter for `manager.workflow_save`. Persist a validated
+ * adapter for `manager.workflow_save`. Persist a validated
  * workflow descriptor under a kebab-case name (version increments on
  * re-save). Prompts may carry `{{args.key}}` placeholders resolved at
  * run-named time.

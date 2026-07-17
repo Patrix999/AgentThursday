@@ -1,5 +1,5 @@
 /**
- *  —  artifactOps extraction.
+ * M8.9 artifactOps extraction.
  *
  * Three artifact-share callable bodies moved verbatim from
  * `AgentThursdayAgent` (`src/server.ts:4489-4783`). No validation policy,
@@ -26,7 +26,6 @@
  * or DO ctx directly.
  *
  * See:
- *   - ``
  *   - `src/artifactShare.ts` (validation rules + envelope schema)
  */
 

@@ -1,5 +1,5 @@
 /**
- *  — tests for the pure merge panel state derivation.
+ * tests for the pure merge panel state derivation.
  *
  * Covers the panel acceptance criteria (idle / loading / error /
  * not_found / no_merge / merged + malformed-latest + truncation).

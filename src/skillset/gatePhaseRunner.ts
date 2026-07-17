@@ -93,7 +93,7 @@ export async function runPhasedGate(args: {
   startedAt: number;
   umbrellaTimeoutS: number;
   phases: ReadonlyArray<{ phase: GatePhase; command: string; timeout_s: number }>;
-  //  — scoped typecheck evidence. When present, surfaced in the
+  // scoped typecheck evidence. When present, surfaced in the
   // result so the gate output is auditable: which scopes drove the
   // selection, and which phases were skipped (and why) by the fast path.
   typecheckScope?: {

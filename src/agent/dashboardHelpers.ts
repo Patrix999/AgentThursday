@@ -1,8 +1,8 @@
-//  — dashboard composition helper moved from `src/server.ts`
+// dashboard composition helper moved from `src/server.ts`
 // (pre-edit lines 633-656). `Env` is declared globally in
 // `worker-configuration.d.ts`; no import needed.
 
-//  — narrow each field independently. Reading
+// narrow each field independently. Reading
 // `env.VERSION_METADATA` could in principle yield a binding that
 // doesn't match the documented `{ id, tag, timestamp }` shape (e.g.
 // future runtime changes, mocked dev shim, or a typo'd binding). The

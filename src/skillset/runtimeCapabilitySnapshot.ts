@@ -1,5 +1,5 @@
 /**
- *  — Skillset runtime capability snapshot derivation.
+ * Skillset runtime capability snapshot derivation.
  *
  * Pure read-only derivation: maps the existing inspect/runtime payloads
  * (`/api/inspect/skillset/detail`, `/api/inspect/skillset/tools`,

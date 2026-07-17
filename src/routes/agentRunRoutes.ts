@@ -1,13 +1,14 @@
 import { z } from "zod";
 import { json } from "../httpUtil";
 import { createAgentRun, type AgentRunOpsHost } from "../agent/agentRunOps";
+import type { RequestIdentity } from "../agent/requestIdentity";
 
 /**
- *  — `POST /api/agent-runs` mints a workflow instance.
- *  — `GET /api/agent-runs/:id` returns the durable run row
+ * `POST /api/agent-runs` mints a workflow instance.
+ * `GET /api/agent-runs/:id` returns the durable run row
  *            from the registry DO, optionally merged with the
  *            workflow backplane status.
- *  — `POST /api/agent-runs/:id/events` is the sendEvent
+ * `POST /api/agent-runs/:id/events` is the sendEvent
  *            ingress for resuming a workflow paused on
  *            `step.waitForEvent("user-reply", ...)`. Event-type
  *            vocabulary is locked to `"user-reply"` for now (D-6);
@@ -19,7 +20,7 @@ import { createAgentRun, type AgentRunOpsHost } from "../agent/agentRunOps";
  * the next route family.
  *
  * Route prefix `/api/agent-runs` is new — no shadowing risk against
- * 's `/api/agent-profiles` (different exact prefix; the
+ * an earlier revision's `/api/agent-profiles` (different exact prefix; the
  * pathname.startsWith check is the same module pattern).
  */
 
@@ -49,6 +50,12 @@ export interface AgentRunRoutesDeps {
    * surfaced as 5xx on failure since it's the route's primary action).
    */
   workflowInstance: (id: string) => Promise<WorkflowInstanceLike>;
+  /**
+   * gateway-verified tenant identity (admin when header absent).
+   * `/api/agent-runs` is the user-facing "activities" surface (decision ④), so
+   * every read/list/create/events branch scopes by this identity.
+   */
+  identity: RequestIdentity;
 }
 
 export async function handleAgentRunRoutes(
@@ -57,7 +64,7 @@ export async function handleAgentRunRoutes(
   deps: AgentRunRoutesDeps,
 ): Promise<Response | null> {
   const { pathname } = url;
-  if (!pathname.startsWith(ROUTE_PREFIX)) return null;
+  if (!pathname.startsWith(ROUTE_PREFIX) && pathname !== "/api/agent-activity") return null;
 
   if (pathname === ROUTE_PREFIX && request.method === "POST") {
     let raw: unknown;
@@ -76,11 +83,19 @@ export async function handleAgentRunRoutes(
     const result = await createAgentRun(deps.host, {
       profile_id: parsed.data.profile_id,
       input: parsed.data.input ?? null,
-    });
-    return json(result, 201);
+    }, deps.identity);
+    // a scoped caller who doesn't own the target agent gets the
+    // same not_found as a nonexistent agent (no existence leak).
+    if (!result.ok) {
+      return json({ code: result.code, message: result.message }, 404);
+    }
+    return json(
+      { run_id: result.run_id, workflow_instance_id: result.workflow_instance_id, status: result.status },
+      201,
+    );
   }
 
-  //  — `GET /api/agent-runs` list. Optional `?profile_id=<id>`
+  // `GET /api/agent-runs` list. Optional `?profile_id=<id>`
   // and `?limit=<n>` (clamped server-side in the SQL helper).
   if (pathname === ROUTE_PREFIX && request.method === "GET") {
     const profileIdParam = url.searchParams.get("profile_id");
@@ -98,14 +113,33 @@ export async function handleAgentRunRoutes(
       limit = n;
     }
     const registry = await deps.host.getRegistryStub();
-    const runs = await registry.listAgentRuns({ profile_id: profileId, limit });
+    const runs = await registry.listAgentRuns({ profile_id: profileId, limit }, deps.identity);
     return json({ runs }, 200);
+  }
+
+  // Activity feed (model A) — owner-scoped dispatched sub-tasks from the
+  // an earlier revision workflow_agent ledger. Distinct from `/api/agent-runs` (which only
+  // has durable AgentRunWorkflow rows); this is what the conversation page's
+  // Activity panel reads so chat/dispatch work is actually visible.
+  if (pathname === "/api/agent-activity" && request.method === "GET") {
+    const limitParam = url.searchParams.get("limit");
+    let limit: number | undefined;
+    if (limitParam !== null) {
+      const n = Number(limitParam);
+      if (!Number.isFinite(n) || n <= 0) {
+        return json({ code: "invalid_limit", message: "limit must be a positive integer" }, 400);
+      }
+      limit = n;
+    }
+    const registry = await deps.host.getRegistryStub();
+    const activity = await registry.listAgentActivity({ limit }, deps.identity);
+    return json({ activity }, 200);
   }
 
   if (pathname.startsWith(`${ROUTE_PREFIX}/`)) {
     const tail = pathname.slice(ROUTE_PREFIX.length + 1);
 
-    // POST /api/agent-runs/<id>/events  — sendEvent ingress ()
+    // POST /api/agent-runs/<id>/events  — sendEvent ingress 
     if (request.method === "POST" && tail.endsWith(EVENTS_SUFFIX)) {
       const runId = tail.slice(0, -EVENTS_SUFFIX.length);
       if (!runId || runId.includes("/")) {
@@ -132,7 +166,9 @@ export async function handleAgentRunRoutes(
         );
       }
       const registry = await deps.host.getRegistryStub();
-      const run = await registry.readAgentRun(runId);
+      // scoped to the caller: a cross-tenant run reads as not_found,
+      // so a scoped user cannot send events into another tenant's paused run.
+      const run = await registry.readAgentRun(runId, deps.identity);
       if (!run) {
         return json({ code: "not_found", message: `agent_run not found: ${runId}` }, 404);
       }
@@ -182,14 +218,15 @@ export async function handleAgentRunRoutes(
       return json({ run_id: runId, accepted: true }, 202);
     }
 
-    // GET /api/agent-runs/<id>  — row + workflow status ()
+    // GET /api/agent-runs/<id>  — row + workflow status 
     if (request.method === "GET") {
       const runId = tail;
       if (!runId || runId.includes("/")) {
         return json({ code: "invalid_run_id", message: "expected /api/agent-runs/<id>" }, 400);
       }
       const registry = await deps.host.getRegistryStub();
-      const run = await registry.readAgentRun(runId);
+      // scoped read: a cross-tenant run is not_found for this caller.
+      const run = await registry.readAgentRun(runId, deps.identity);
       if (!run) {
         return json({ code: "not_found", message: `agent_run not found: ${runId}` }, 404);
       }

@@ -33,7 +33,7 @@ const TONE_BG: Record<SegmentTone, string> = {
 };
 
 /**
- *  /i/j — context indicator rail.
+ * M7.9 an earlier revision/i/j — context indicator rail.
  *
  *   - Full height represents the model's max context window (when known).
  *   - Used area is drawn from the bottom: system overhead, dialog
@@ -69,7 +69,7 @@ export function ContextRail() {
     return buildFallbackSegments(data);
   }, [data, budget, inBudgetMode]);
 
-  //  — hover card position tracks the segment / threshold
+  // hover card position tracks the segment / threshold
   // line center (relative to the rail container) so the card opens
   // next to what the user pointed at, not pinned at the top. The
   // top is clamped against the rail's height in HoverCard so it
@@ -344,7 +344,7 @@ function HoverCard({
   segments: Segment[];
   onMouseLeave: () => void;
 }) {
-  //  — clamp top against the rail container's height so the
+  // clamp top against the rail container's height so the
   // card stays within view near the rail's ends. We approximate the
   // rail height via the card's offsetParent (the rail container) on
   // first render. Card height is roughly 200-300px depending on body
@@ -421,7 +421,7 @@ function HeadroomBody({
   const used = budget.usedTokens;
   const headroom = (max !== null && used !== null) ? Math.max(0, max - used) : null;
   const dialogTok = budget.visibleDialogTokens;
-  //  — show inline percent for thresholds so operator can read
+  // show inline percent for thresholds so the operator can read
   // "24K (18.75%)" instead of mentally computing why the danger line
   // looks low against a 128K fallback window.
   const fmtThreshold = (n: number | null): string => {
@@ -529,7 +529,7 @@ function ThresholdBody({
   const pct = (tokens !== null && modelMax !== null && modelMax > 0)
     ? (tokens / modelMax) * 100
     : null;
-  //  — three-layer threshold copy. Soft is hint-only; hard
+  // three-layer threshold copy. Soft is hint-only; hard
   // is the hygiene loop's actual trigger; danger is the red line that
   // leaves headroom for tool traces / output / framework overhead.
   const title = kind === "soft"
@@ -542,8 +542,8 @@ function ThresholdBody({
     : kind === "auto"
       ? "Main hygiene loop trigger — auto compact runs once total used tokens cross this line."
       : "Strong warning — keep buffer for tool traces, hidden framework overhead, and the model's own output above this line.";
-  //  — explicit annotation about the percent-of-window
-  // calculation. operator questioned why the danger line sits low; the
+  // explicit annotation about the percent-of-window
+  // calculation. the operator questioned why the danger line sits low; the
   // answer is `24K / 128K = 18.75%` against the fallback window. The
   // tooltip now shows the fraction inline + says "(of fallback
   // window)" or "(of estimated window)" so the math is transparent

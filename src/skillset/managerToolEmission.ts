@@ -1,5 +1,5 @@
 /**
- *  — manager tool emission enrichment.
+ * manager tool emission enrichment.
  *
  * `agentDynamicTools.ts` emits a thin `{tool, status}` payload for
  * every dispatched skill tool. For known `manager.*` tool ids we

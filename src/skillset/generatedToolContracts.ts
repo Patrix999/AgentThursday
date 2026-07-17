@@ -3,7 +3,7 @@
 // Regenerate via: npm run tools:generate
 // CI guard:        npm run tools:check
 //
-//   — yaml → tool contract codegen.
+// an earlier revision M8.8 — yaml → tool contract codegen.
 // Output is unioned over the hand-written CONTRACTS array in
 // contractRegistry.ts at module load; duplicate tool_ids throw.
 
@@ -15,7 +15,7 @@ import type { ToolContract } from "./contractRegistry";
 export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
   ({
     "tool_id": "admin.smoke",
-    "description": "跑一个 allowlisted harmless admin smoke case，对真实 admin endpoint 做端到端验证； 不直接接触 AGENT_THURSDAY_SHARED_SECRET（由 adapter 边界注入），返回结构化 evidence。 case_id=sandbox-exec-printf 走 sandbox HTTP path； case_id=remember-ack-empty-fallback 走 in-process helper； 新增四个 cliStubProbe case_id（context-active-inspect-smoke / context-lifecycle-noop-smoke / compaction-plan-dry-run-smoke / archive-inspect-smoke）走 AgentThursdayAgent stub @callable，验证  Step 6（Cards 281–286）context/archive/compaction free function 抽取的行为保留； 新增 case_id=cli-status-dashboard-shape-smoke，走 adapter-side requireSecret 注入 + getDashboardCore 调用 + buildDashboardSectionFree 组合，返回 dashboard 六个 top-level key 的 presence booleans + outbox/patch-apply 的 kind 判别 + drift flag 名称白名单 + version 字段 presence。所有 case 都是 read-only 或 documented no-op；不会修改消息、archive、active pointer，不会触发 destructive lifecycle 操作。缺 env binding（Sandbox / AgentThursdayAgent / Secret）或 stub 方法抛错时回 `blocked`，不抛 503/500。",
+    "description": "跑一个 allowlisted harmless admin smoke case，对真实 admin endpoint 做端到端验证；agentD 不直接接触 AGENT_THURSDAY_SHARED_SECRET（由 adapter 边界注入），返回结构化 evidence。an earlier revision case_id=sandbox-exec-printf 走 sandbox HTTP path；an earlier revision case_id=remember-ack-empty-fallback 走 in-process helper；an earlier revision 新增四个 cliStubProbe case_id（context-active-inspect-smoke / context-lifecycle-noop-smoke / compaction-plan-dry-run-smoke / archive-inspect-smoke）走 AgentThursdayAgent stub @callable，验证 M8.9 Step 6（an earlier revision–286）context/archive/compaction free function 抽取的行为保留；an earlier revision 新增 case_id=cli-status-dashboard-shape-smoke，走 adapter-side requireSecret 注入 + getDashboardCore 调用 + buildDashboardSectionFree 组合，返回 dashboard 六个 top-level key 的 presence booleans + outbox/patch-apply 的 kind 判别 + drift flag 名称白名单 + version 字段 presence。所有 case 都是 read-only 或 documented no-op；不会修改消息、archive、active pointer，不会触发 destructive lifecycle 操作。缺 env binding（Sandbox / AgentThursdayAgent / Secret）或 stub 方法抛错时回 `blocked`，不抛 503/500。",
     "dispatch_path": {
       "surface": "fetch_path",
       "identifier": "/api/dispatch/admin/smoke"
@@ -34,7 +34,7 @@ export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
             "archive-inspect-smoke",
             "cli-status-dashboard-shape-smoke"
           ],
-          "description": "允许的 smoke case id；闭合 enum。v1 (/279e) 提供 sandbox-exec-printf / remember-ack-empty-fallback； 新增四个 AgentThursdayAgent stub 探针 (context-active-inspect-smoke / context-lifecycle-noop-smoke / compaction-plan-dry-run-smoke / archive-inspect-smoke)，验证  Step 6 free function 抽取的行为保留； 新增 cli-status-dashboard-shape-smoke，给 directed validation agent 一个安全的 /cli/status 等价 dashboard shape 探针（仅 read-only composition，不跑 sweepStaleDraftEnvelopes，不返回 raw payload）。"
+          "description": "允许的 smoke case id；闭合 enum。v1  提供 sandbox-exec-printf / remember-ack-empty-fallback；an earlier revision 新增四个 AgentThursdayAgent stub 探针 (context-active-inspect-smoke / context-lifecycle-noop-smoke / compaction-plan-dry-run-smoke / archive-inspect-smoke)，验证 M8.9 Step 6 free function 抽取的行为保留；an earlier revision 新增 cli-status-dashboard-shape-smoke，给 directed validation agent 一个安全的 /cli/status 等价 dashboard shape 探针（仅 read-only composition，不跑 sweepStaleDraftEnvelopes，不返回 raw payload）。"
         }
       },
       "required": [
@@ -59,7 +59,7 @@ export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
         },
         "response": {
           "type": "object",
-          "description": "Closed shape depends on case_id.\nsandbox-exec-printf → { stdout, stderr, exit_code, success,\n                         timed_out, sandbox_id, timeout_seconds }\nremember-ack-empty-fallback → { final_reply, fallback_applied }\nCard 287 cliStubProbe cases (context-active-inspect-smoke /\n                              context-lifecycle-noop-smoke /\n                              compaction-plan-dry-run-smoke /\n                              archive-inspect-smoke) → see\nper-case fields below; counts + boolean flags only, never raw\nmessage text, prompts, summaries, previews, query strings, or\ntraceIds.\nCard 303 cli-status-dashboard-shape-smoke → {\n  current_task_present, latest_envelope_present,\n  latest_outbox_present, patch_apply_outbox_present,\n  drift_flags_present, version_present, latest_outbox_kind,\n  patch_apply_outbox_kind, drift_flag_count, drift_flag_names,\n  version_fields_present }; presence booleans + closed-enum\nkinds + drift-flag whitelist names only. Raw outbox row,\npatch-apply payload, envelope id, marker, and shared secret\nare never returned.",
+          "description": "Closed shape depends on case_id.\nsandbox-exec-printf → { stdout, stderr, exit_code, success,\n                         timed_out, sandbox_id, timeout_seconds }\nremember-ack-empty-fallback → { final_reply, fallback_applied }\nan earlier revision cliStubProbe cases (context-active-inspect-smoke /\n                              context-lifecycle-noop-smoke /\n                              compaction-plan-dry-run-smoke /\n                              archive-inspect-smoke) → see\nper-case fields below; counts + boolean flags only, never raw\nmessage text, prompts, summaries, previews, query strings, or\ntraceIds.\nan earlier revision cli-status-dashboard-shape-smoke → {\n  current_task_present, latest_envelope_present,\n  latest_outbox_present, patch_apply_outbox_present,\n  drift_flags_present, version_present, latest_outbox_kind,\n  patch_apply_outbox_kind, drift_flag_count, drift_flag_names,\n  version_fields_present }; presence booleans + closed-enum\nkinds + drift-flag whitelist names only. Raw outbox row,\npatch-apply payload, envelope id, marker, and shared secret\nare never returned.",
           "properties": {
             "stdout": {
               "type": "string"
@@ -84,147 +84,147 @@ export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
             },
             "final_reply": {
               "type": "string",
-              "description": " — visible reply yielded by applyRememberAckFallback"
+              "description": "visible reply yielded by applyRememberAckFallback"
             },
             "fallback_applied": {
               "type": "boolean",
-              "description": " — whether the predicate triggered the ack replacement"
+              "description": "whether the predicate triggered the ack replacement"
             },
             "context_id_present": {
               "type": "boolean",
-              "description": " context-active-inspect-smoke — registry.getActiveContextId() returned a non-empty contextId"
+              "description": "an earlier revision context-active-inspect-smoke — registry.getActiveContextId() returned a non-empty contextId"
             },
             "total_message_count": {
               "type": "integer",
-              "description": " context-active-inspect-smoke / compaction-plan-dry-run-smoke — snapshot total message count"
+              "description": "an earlier revision context-active-inspect-smoke / compaction-plan-dry-run-smoke — snapshot total message count"
             },
             "visible_messages_count": {
               "type": "integer",
-              "description": " context-active-inspect-smoke — inspect.visibleMessages.length"
+              "description": "an earlier revision context-active-inspect-smoke — inspect.visibleMessages.length"
             },
             "by_role_user": {
               "type": "integer",
-              "description": " context-active-inspect-smoke"
+              "description": "an earlier revision context-active-inspect-smoke"
             },
             "by_role_assistant": {
               "type": "integer",
-              "description": " context-active-inspect-smoke"
+              "description": "an earlier revision context-active-inspect-smoke"
             },
             "by_role_system": {
               "type": "integer",
-              "description": " context-active-inspect-smoke"
+              "description": "an earlier revision context-active-inspect-smoke"
             },
             "has_context_budget": {
               "type": "boolean",
-              "description": " context-active-inspect-smoke — inspect.contextBudget object present"
+              "description": "an earlier revision context-active-inspect-smoke — inspect.contextBudget object present"
             },
             "sanitized_at": {
               "type": "integer",
-              "description": " context-active-inspect-smoke — inspect.sanitizedAt epoch ms"
+              "description": "an earlier revision context-active-inspect-smoke — inspect.sanitizedAt epoch ms"
             },
             "previous_context_id_present": {
               "type": "boolean",
-              "description": " context-lifecycle-noop-smoke — switchContext returned a non-empty previousContextId"
+              "description": "an earlier revision context-lifecycle-noop-smoke — switchContext returned a non-empty previousContextId"
             },
             "new_context_id_present": {
               "type": "boolean",
-              "description": " context-lifecycle-noop-smoke"
+              "description": "an earlier revision context-lifecycle-noop-smoke"
             },
             "previous_equals_new": {
               "type": "boolean",
-              "description": " context-lifecycle-noop-smoke — true means the no-op branch was hit"
+              "description": "an earlier revision context-lifecycle-noop-smoke — true means the no-op branch was hit"
             },
             "activated_at": {
               "type": "integer",
-              "description": " context-lifecycle-noop-smoke — switchContext result activatedAt"
+              "description": "an earlier revision context-lifecycle-noop-smoke — switchContext result activatedAt"
             },
             "plan_id_present": {
               "type": "boolean",
-              "description": " compaction-plan-dry-run-smoke — compactPlan returned a planId"
+              "description": "an earlier revision compaction-plan-dry-run-smoke — compactPlan returned a planId"
             },
             "visible_start_index": {
               "type": "integer",
-              "description": " compaction-plan-dry-run-smoke — snapshot.visibleStartIndex"
+              "description": "an earlier revision compaction-plan-dry-run-smoke — snapshot.visibleStartIndex"
             },
             "ranges_count": {
               "type": "integer",
-              "description": " compaction-plan-dry-run-smoke — plan.ranges.length (no previews exposed)"
+              "description": "an earlier revision compaction-plan-dry-run-smoke — plan.ranges.length (no previews exposed)"
             },
             "rejected_count": {
               "type": "integer",
-              "description": " compaction-plan-dry-run-smoke — plan.rejected.length"
+              "description": "an earlier revision compaction-plan-dry-run-smoke — plan.rejected.length"
             },
             "preserved_count": {
               "type": "integer",
-              "description": " compaction-plan-dry-run-smoke — plan.preserved.length"
+              "description": "an earlier revision compaction-plan-dry-run-smoke — plan.preserved.length"
             },
             "before_messages": {
               "type": "integer",
-              "description": " compaction-plan-dry-run-smoke — plan.pressure.beforeMessages"
+              "description": "an earlier revision compaction-plan-dry-run-smoke — plan.pressure.beforeMessages"
             },
             "estimated_after_messages": {
               "type": "integer",
-              "description": " compaction-plan-dry-run-smoke — plan.pressure.estimatedAfterMessages"
+              "description": "an earlier revision compaction-plan-dry-run-smoke — plan.pressure.estimatedAfterMessages"
             },
             "archive_chunk_total": {
               "type": "integer",
-              "description": " archive-inspect-smoke — totals.archiveChunkTotal"
+              "description": "an earlier revision archive-inspect-smoke — totals.archiveChunkTotal"
             },
             "archive_context_count": {
               "type": "integer",
-              "description": " archive-inspect-smoke"
+              "description": "an earlier revision archive-inspect-smoke"
             },
             "flush_total": {
               "type": "integer",
-              "description": " archive-inspect-smoke"
+              "description": "an earlier revision archive-inspect-smoke"
             },
             "flush_failed_total": {
               "type": "integer",
-              "description": " archive-inspect-smoke"
+              "description": "an earlier revision archive-inspect-smoke"
             },
             "retrieval_total": {
               "type": "integer",
-              "description": " archive-inspect-smoke"
+              "description": "an earlier revision archive-inspect-smoke"
             },
             "recent_flushes_count": {
               "type": "integer",
-              "description": " archive-inspect-smoke — summary.recentFlushes.length"
+              "description": "an earlier revision archive-inspect-smoke — summary.recentFlushes.length"
             },
             "recent_retrievals_count": {
               "type": "integer",
-              "description": " archive-inspect-smoke"
+              "description": "an earlier revision archive-inspect-smoke"
             },
             "counts_by_context_count": {
               "type": "integer",
-              "description": " archive-inspect-smoke"
+              "description": "an earlier revision archive-inspect-smoke"
             },
             "generated_at": {
               "type": "integer",
-              "description": " archive-inspect-smoke — summary.generatedAt epoch ms"
+              "description": "an earlier revision archive-inspect-smoke — summary.generatedAt epoch ms"
             },
             "current_task_present": {
               "type": "boolean",
-              "description": " cli-status-dashboard-shape-smoke — DashboardSection.current_task present (always true on a healthy compose)"
+              "description": "an earlier revision cli-status-dashboard-shape-smoke — DashboardSection.current_task present (always true on a healthy compose)"
             },
             "latest_envelope_present": {
               "type": "boolean",
-              "description": " cli-status-dashboard-shape-smoke — DashboardSection.latest_envelope !== null"
+              "description": "an earlier revision cli-status-dashboard-shape-smoke — DashboardSection.latest_envelope !== null"
             },
             "latest_outbox_present": {
               "type": "boolean",
-              "description": " cli-status-dashboard-shape-smoke — DashboardSection.latest_outbox is the row object (not \"missing\"/\"unknown\" sentinel)"
+              "description": "an earlier revision cli-status-dashboard-shape-smoke — DashboardSection.latest_outbox is the row object (not \"missing\"/\"unknown\" sentinel)"
             },
             "patch_apply_outbox_present": {
               "type": "boolean",
-              "description": " cli-status-dashboard-shape-smoke — DashboardSection.patch_apply_outbox is the row object (not sentinel)"
+              "description": "an earlier revision cli-status-dashboard-shape-smoke — DashboardSection.patch_apply_outbox is the row object (not sentinel)"
             },
             "drift_flags_present": {
               "type": "boolean",
-              "description": " cli-status-dashboard-shape-smoke — DashboardSection.drift_flags is Array.isArray"
+              "description": "an earlier revision cli-status-dashboard-shape-smoke — DashboardSection.drift_flags is Array.isArray"
             },
             "version_present": {
               "type": "boolean",
-              "description": " cli-status-dashboard-shape-smoke — DashboardSection.version is an object"
+              "description": "an earlier revision cli-status-dashboard-shape-smoke — DashboardSection.version is an object"
             },
             "latest_outbox_kind": {
               "type": "string",
@@ -233,7 +233,7 @@ export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
                 "missing",
                 "unknown"
               ],
-              "description": " cli-status-dashboard-shape-smoke — discriminator for the latest_outbox union; row=object payload, missing=empty rows[], unknown=fail-soft from inspectOutbox throw"
+              "description": "an earlier revision cli-status-dashboard-shape-smoke — discriminator for the latest_outbox union; row=object payload, missing=empty rows[], unknown=fail-soft from inspectOutbox throw"
             },
             "patch_apply_outbox_kind": {
               "type": "string",
@@ -242,22 +242,22 @@ export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
                 "missing",
                 "unknown"
               ],
-              "description": " cli-status-dashboard-shape-smoke — discriminator for the patch_apply_outbox union; unknown=fail-soft from getLatestPatchApplyOutboxSummary throw (also pushes patch_apply_outbox_unknown drift flag)"
+              "description": "an earlier revision cli-status-dashboard-shape-smoke — discriminator for the patch_apply_outbox union; unknown=fail-soft from getLatestPatchApplyOutboxSummary throw (also pushes patch_apply_outbox_unknown drift flag)"
             },
             "drift_flag_count": {
               "type": "integer",
-              "description": " cli-status-dashboard-shape-smoke — dashboard.drift_flags.length (closed whitelist)"
+              "description": "an earlier revision cli-status-dashboard-shape-smoke — dashboard.drift_flags.length (closed whitelist)"
             },
             "drift_flag_names": {
               "type": "array",
               "items": {
                 "type": "string"
               },
-              "description": " cli-status-dashboard-shape-smoke — sorted closed-whitelist drift flag names; never includes any model-derived or free-form string"
+              "description": "an earlier revision cli-status-dashboard-shape-smoke — sorted closed-whitelist drift flag names; never includes any model-derived or free-form string"
             },
             "version_fields_present": {
               "type": "object",
-              "description": " cli-status-dashboard-shape-smoke — per-field presence map for DashboardSection.version (instance_name, service_version, worker_version_id/tag/timestamp).  fail-soft means version_id/tag/timestamp may be false in local dev.",
+              "description": "an earlier revision cli-status-dashboard-shape-smoke — per-field presence map for DashboardSection.version (instance_name, service_version, worker_version_id/tag/timestamp). an earlier revision fail-soft means version_id/tag/timestamp may be false in local dev.",
               "properties": {
                 "instance_name": {
                   "type": "boolean"
@@ -280,7 +280,7 @@ export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
         },
         "evidence": {
           "type": "object",
-          "description": "Closed shape depends on case_id.\nsandbox-exec-printf → { stdout_bytes, stderr_bytes,\n                         truncated_stdout, truncated_stderr,\n                         redaction_applied }\nremember-ack-empty-fallback → { input_was_empty, ack_present,\n                                 final_reply_equals_ack }\nCard 287 cliStubProbe cases → { free_fn_path_exercised,\n                                 destructive_mutation:false,\n                                 <case-specific structural keys> }\nCard 303 cli-status-dashboard-shape-smoke → { dashboard_top_keys,\n                                               free_fn_path_exercised,\n                                               destructive_mutation:false }\nThe `free_fn_path_exercised` list names the free functions whose\nDO @callable / route-layer composer was invoked. The\n`destructive_mutation` flag is always `false` for /303\ncases by construction (no message clear, no archive write, no\nactive-pointer change, no compaction apply, and  also\ndoes not run the lazy `sweepStaleDraftEnvelopes` the real\n/cli/status fires).",
+          "description": "Closed shape depends on case_id.\nsandbox-exec-printf → { stdout_bytes, stderr_bytes,\n                         truncated_stdout, truncated_stderr,\n                         redaction_applied }\nremember-ack-empty-fallback → { input_was_empty, ack_present,\n                                 final_reply_equals_ack }\nan earlier revision cliStubProbe cases → { free_fn_path_exercised,\n                                 destructive_mutation:false,\n                                 <case-specific structural keys> }\nan earlier revision cli-status-dashboard-shape-smoke → { dashboard_top_keys,\n                                               free_fn_path_exercised,\n                                               destructive_mutation:false }\nThe `free_fn_path_exercised` list names the free functions whose\nDO @callable / route-layer composer was invoked. The\n`destructive_mutation` flag is always `false` for an earlier revision\ncases by construction (no message clear, no archive write, no\nactive-pointer change, no compaction apply, and an earlier revision also\ndoes not run the lazy `sweepStaleDraftEnvelopes` the real\n/cli/status fires).",
           "properties": {
             "stdout_bytes": {
               "type": "integer"
@@ -299,65 +299,65 @@ export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
             },
             "input_was_empty": {
               "type": "boolean",
-              "description": " — fixture replyText.length === 0"
+              "description": "fixture replyText.length === 0"
             },
             "ack_present": {
               "type": "boolean",
-              "description": " — fixture rememberAck is non-empty"
+              "description": "fixture rememberAck is non-empty"
             },
             "final_reply_equals_ack": {
               "type": "boolean",
-              "description": " — final_reply === rememberAck (PASS evidence)"
+              "description": "final_reply === rememberAck (PASS evidence)"
             },
             "free_fn_path_exercised": {
               "type": "array",
               "items": {
                 "type": "string"
               },
-              "description": " — names of Step 6 free functions invoked via @callable delegate"
+              "description": "names of Step 6 free functions invoked via @callable delegate"
             },
             "destructive_mutation": {
               "type": "boolean",
-              "description": " — always false; the probes never mutate message/archive/pointer state"
+              "description": "always false; the probes never mutate message/archive/pointer state"
             },
             "inspect_top_keys": {
               "type": "array",
               "items": {
                 "type": "string"
               },
-              "description": " context-active-inspect-smoke — sorted top-level keys returned by inspectContext (shape evidence; not values)"
+              "description": "an earlier revision context-active-inspect-smoke — sorted top-level keys returned by inspectContext (shape evidence; not values)"
             },
             "switch_was_noop": {
               "type": "boolean",
-              "description": " context-lifecycle-noop-smoke — kind:\"noop\" branch confirmed (previousContextId === newContextId)"
+              "description": "an earlier revision context-lifecycle-noop-smoke — kind:\"noop\" branch confirmed (previousContextId === newContextId)"
             },
             "rejected_reasons": {
               "type": "array",
               "items": {
                 "type": "string"
               },
-              "description": " compaction-plan-dry-run-smoke — sorted closed-enum reasons; `detail` strings (which could carry message ids) are NOT exposed"
+              "description": "an earlier revision compaction-plan-dry-run-smoke — sorted closed-enum reasons; `detail` strings (which could carry message ids) are NOT exposed"
             },
             "plan_strategy_keys": {
               "type": "array",
               "items": {
                 "type": "string"
               },
-              "description": " compaction-plan-dry-run-smoke — sorted strategy field names (shape evidence; not values)"
+              "description": "an earlier revision compaction-plan-dry-run-smoke — sorted strategy field names (shape evidence; not values)"
             },
             "summary_top_keys": {
               "type": "array",
               "items": {
                 "type": "string"
               },
-              "description": " archive-inspect-smoke — sorted top-level keys returned by getArchiveInspectSummary"
+              "description": "an earlier revision archive-inspect-smoke — sorted top-level keys returned by getArchiveInspectSummary"
             },
             "dashboard_top_keys": {
               "type": "array",
               "items": {
                 "type": "string"
               },
-              "description": " cli-status-dashboard-shape-smoke — sorted top-level keys returned by buildDashboardSectionFree (shape evidence; the closed key set is current_task / latest_envelope / latest_outbox / patch_apply_outbox / drift_flags / version)"
+              "description": "an earlier revision cli-status-dashboard-shape-smoke — sorted top-level keys returned by buildDashboardSectionFree (shape evidence; the closed key set is current_task / latest_envelope / latest_outbox / patch_apply_outbox / drift_flags / version)"
             }
           }
         },
@@ -710,9 +710,9 @@ export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
         "sourceAgent": {
           "type": "string",
           "enum": [
-            "",
-            "",
-            "",
+            "agentD",
+            "agentC",
+            "agentP",
             "verifier"
           ]
         },
@@ -867,99 +867,6 @@ export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
       }
     ],
     "implemented": true
-  }) as unknown as ToolContract,
-  ({
-    "tool_id": "localdoc.convert_text",
-    "description": "Convert markdown content into a LocalDoc hosted page. Returns non-sensitive evidence (id / url / markdownUrl / status); never returns the api key.",
-    "dispatch_path": {
-      "surface": "fetch_path",
-      "identifier": "/api/dispatch/localdoc/convert_text"
-    },
-    "input_schema": {
-      "type": "object",
-      "properties": {
-        "title": {
-          "type": "string"
-        },
-        "content": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "content"
-      ]
-    },
-    "output_schema": {
-      "type": "object",
-      "properties": {
-        "status": {
-          "enum": [
-            "ok",
-            "blocked",
-            "failed"
-          ]
-        },
-        "id": {
-          "type": "string"
-        },
-        "url": {
-          "type": "string"
-        },
-        "markdownUrl": {
-          "type": "string"
-        },
-        "http_status": {
-          "type": "integer"
-        },
-        "reason": {
-          "type": "string"
-        },
-        "error_message": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "status"
-      ]
-    },
-    "side_effects": [
-      "network_call"
-    ],
-    "idempotency_key": {
-      "shape": "inputs_hash",
-      "fields": [
-        "title",
-        "content"
-      ]
-    },
-    "dry_run_supported": false,
-    "tier": 3,
-    "emit_events": [
-      {
-        "name": "tool.localdoc.convert_text.dispatch",
-        "when": "dispatch"
-      },
-      {
-        "name": "tool.localdoc.convert_text.result",
-        "when": "result"
-      },
-      {
-        "name": "tool.localdoc.convert_text.error",
-        "when": "error"
-      }
-    ],
-    "required_evidence": [
-      {
-        "field": "execution.tool_call",
-        "required": true
-      },
-      {
-        "field": "evidence.network_response_status",
-        "required": true
-      }
-    ],
-    "implemented": true,
-    "env_binding": "LOCALDOC_API_KEY"
   }) as unknown as ToolContract,
   ({
     "tool_id": "manager.agent_create",
@@ -1217,7 +1124,7 @@ export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
   }) as unknown as ToolContract,
   ({
     "tool_id": "manager.agent_message",
-    "description": "Send a work message to a specific cloud agent by agent_id. Routes through the per-agent DO (agent-centric /355). Returns structured evidence with target agent_id, task_id, conversation_id, and either visible reply text (status \"replied\") or accepted/failed status. Never falls back to a global active agent.",
+    "description": "Send a work message to a specific cloud agent by agent_id. Routes through the per-agent DO (agent-centric an earlier revision). Returns structured evidence with target agent_id, task_id, conversation_id, and either visible reply text (status \"replied\") or accepted/failed status. Never falls back to a global active agent.",
     "dispatch_path": {
       "surface": "fetch_path",
       "identifier": "/api/dispatch/manager/agent_message"
@@ -1241,7 +1148,7 @@ export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
         },
         "task_context": {
           "type": "object",
-          "description": " / ADR §5 — optional structured TaskContext. When present, the manager\nrecords the full object on the `manager.agent_message.sent` event payload and\nthe subagent's first-turn user message receives a `<task-context>...</task-context>`\nfenced JSON block. `objective` is authoritative over conflicting prose; the\noriginal `text` is preserved verbatim. Limits: title ≤100, objective ≤500,\nverification_hint ≤500.\n\nCard 363 current-manager fallback — when the calling manager has an in-flight\n`submitManagerTask` round:\n  - if `parent_task_id` is missing/null, the adapter fills it with the\n    current outer `manager_task_id` (= registry `event_log.trace_id` and\n    the `GET /api/manager/tasks/:task_id` task_id) so subagent dispatches\n    inherit the canonical id by default.\n  - if `source_agent_id` is missing, the adapter fills it with the calling\n    manager's `agent_id`.\n  - explicit non-empty values are NEVER overridden — pass an explicit\n    `parent_task_id` to dispatch under a different parent (e.g. cross-chain\n    or testing).\nThe merged `task_context` is then strict-revalidated against the canonical\nschema; an unfilled `id`/`title`/`objective` surfaces as\n`status:\"failed\" reason:\"invalid_input\"` rather than a silent drop.",
+          "description": "an earlier revision / ADR §5 — optional structured TaskContext. When present, the manager\nrecords the full object on the `manager.agent_message.sent` event payload and\nthe subagent's first-turn user message receives a `<task-context>...</task-context>`\nfenced JSON block. `objective` is authoritative over conflicting prose; the\noriginal `text` is preserved verbatim. Limits: title ≤100, objective ≤500,\nverification_hint ≤500.\n\nan earlier revision current-manager fallback — when the calling manager has an in-flight\n`submitManagerTask` round:\n  - if `parent_task_id` is missing/null, the adapter fills it with the\n    current outer `manager_task_id` (= registry `event_log.trace_id` and\n    the `GET /api/manager/tasks/:task_id` task_id) so subagent dispatches\n    inherit the canonical id by default.\n  - if `source_agent_id` is missing, the adapter fills it with the calling\n    manager's `agent_id`.\n  - explicit non-empty values are NEVER overridden — pass an explicit\n    `parent_task_id` to dispatch under a different parent (e.g. cross-chain\n    or testing).\nThe merged `task_context` is then strict-revalidated against the canonical\nschema; an unfilled `id`/`title`/`objective` surfaces as\n`status:\"failed\" reason:\"invalid_input\"` rather than a silent drop.",
           "properties": {
             "id": {
               "type": "string"
@@ -1356,7 +1263,7 @@ export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
         },
         "envelope_id": {
           "type": "string",
-          "description": "/355 envelope id when the loop completed."
+          "description": "an earlier revision envelope id when the loop completed."
         },
         "reply": {
           "type": "string",
@@ -1574,6 +1481,317 @@ export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
       },
       {
         "field": "evidence.agent_id",
+        "required": true
+      }
+    ],
+    "implemented": true
+  }) as unknown as ToolContract,
+  ({
+    "tool_id": "manager.schedule_cancel",
+    "description": "Cancel (delete) a recurring schedule by schedule_id (from manager.schedule_list or manager.schedule_create). Only schedules owned by your owner are reachable.",
+    "dispatch_path": {
+      "surface": "fetch_path",
+      "identifier": "/api/dispatch/manager/schedule_cancel"
+    },
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "schedule_id": {
+          "type": "string",
+          "description": "The schedule id to delete."
+        }
+      },
+      "required": [
+        "schedule_id"
+      ]
+    },
+    "output_schema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "deleted": {
+          "type": "string"
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ]
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    },
+    "side_effects": [
+      "local_state"
+    ],
+    "dry_run_supported": false,
+    "tier": 2,
+    "emit_events": [
+      {
+        "name": "tool.manager.schedule_cancel.dispatch",
+        "when": "dispatch"
+      },
+      {
+        "name": "tool.manager.schedule_cancel.result",
+        "when": "result"
+      }
+    ],
+    "required_evidence": [
+      {
+        "field": "execution.tool_call",
+        "required": true
+      }
+    ],
+    "implemented": true
+  }) as unknown as ToolContract,
+  ({
+    "tool_id": "manager.schedule_create",
+    "description": "Create a RECURRING schedule for an agent you own (agent_id required — for yourself use the base schedule_create). kind=interval needs interval_hours (min 0.25); kind=daily/weekly need at_hour/at_minute in the USER'S local time plus utc_offset_minutes (ask the user their timezone if unknown; UTC+8 = 480) and weekly needs weekday (0=Sunday). Returns the stored schedule with next_run_at (UTC) — echo it back so the user can verify.",
+    "dispatch_path": {
+      "surface": "fetch_path",
+      "identifier": "/api/dispatch/manager/schedule_create"
+    },
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "agent_id": {
+          "type": "string",
+          "description": "Target agent id (must belong to your owner; e.g. a subagent you created)."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "interval",
+            "daily",
+            "weekly"
+          ]
+        },
+        "prompt": {
+          "type": "string",
+          "description": "What the agent should do each time the schedule fires."
+        },
+        "interval_hours": {
+          "type": "number",
+          "minimum": 0.25,
+          "description": "Required for kind=interval. Hours between runs (0.25 = 15 minutes, the platform minimum)."
+        },
+        "at_hour": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 23,
+          "description": "Hour in the USER'S local time (required for daily/weekly)."
+        },
+        "at_minute": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 59
+        },
+        "weekday": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6,
+          "description": "0=Sunday, in the user's local time (required for weekly)."
+        },
+        "utc_offset_minutes": {
+          "type": "integer",
+          "minimum": -840,
+          "maximum": 840,
+          "description": "User's UTC offset in minutes (UTC+8 → 480). Required for daily/weekly."
+        }
+      },
+      "required": [
+        "agent_id",
+        "kind",
+        "prompt"
+      ]
+    },
+    "output_schema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "schedule": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "agent_id": {
+              "type": "string"
+            },
+            "schedule_kind": {
+              "type": "string"
+            },
+            "next_run_at": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "agent_id",
+            "schedule_kind",
+            "next_run_at"
+          ]
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ]
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    },
+    "side_effects": [
+      "local_state"
+    ],
+    "dry_run_supported": false,
+    "tier": 2,
+    "emit_events": [
+      {
+        "name": "tool.manager.schedule_create.dispatch",
+        "when": "dispatch"
+      },
+      {
+        "name": "tool.manager.schedule_create.result",
+        "when": "result"
+      }
+    ],
+    "required_evidence": [
+      {
+        "field": "execution.tool_call",
+        "required": true
+      }
+    ],
+    "implemented": true
+  }) as unknown as ToolContract,
+  ({
+    "tool_id": "manager.schedule_list",
+    "description": "List recurring schedules across agents you own (optionally filter by agent_id). Returns id, agent_id, cadence fields, prompt, enabled, next_run_at, last_status. Use before creating duplicates or to find a schedule_id to cancel.",
+    "dispatch_path": {
+      "surface": "fetch_path",
+      "identifier": "/api/dispatch/manager/schedule_list"
+    },
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "agent_id": {
+          "type": "string",
+          "description": "When provided, restrict to this agent's schedules."
+        }
+      },
+      "required": []
+    },
+    "output_schema": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "schedules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "agent_id": {
+                "type": "string"
+              },
+              "schedule_kind": {
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "enabled": {
+                "type": "integer"
+              },
+              "next_run_at": {
+                "type": "string"
+              },
+              "last_status": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "agent_id",
+              "schedule_kind",
+              "next_run_at"
+            ]
+          }
+        },
+        "count": {
+          "type": "integer"
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ]
+        }
+      },
+      "required": [
+        "ok"
+      ]
+    },
+    "side_effects": [
+      "local_state"
+    ],
+    "dry_run_supported": false,
+    "tier": 1,
+    "emit_events": [
+      {
+        "name": "tool.manager.schedule_list.dispatch",
+        "when": "dispatch"
+      },
+      {
+        "name": "tool.manager.schedule_list.result",
+        "when": "result"
+      }
+    ],
+    "required_evidence": [
+      {
+        "field": "execution.tool_call",
         "required": true
       }
     ],
@@ -2257,7 +2475,7 @@ export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
   }) as unknown as ToolContract,
   ({
     "tool_id": "manager.task_complete",
-    "description": "Emit a `manager.task.completed` event recording the manager's structured completion report for a parent task (verdict, summary, optional evidence/next_step/card_ref). Coexists with `manager.task.replied`; does NOT change  status derivation. `completion_verdict=success` requires a prior `manager.task.merged` row for the same parent_task_id unless `allow_without_merge=true` plus a non-empty `allow_without_merge_reason` is supplied. `manager_agent_id` is derived from the calling agent_id; not accepted from input. `summary` is bounded at 2000 UTF-8 bytes.",
+    "description": "Emit a `manager.task.completed` event recording the manager's structured completion report for a parent task (verdict, summary, optional evidence/next_step/card_ref). Coexists with `manager.task.replied`; does NOT change an earlier revision status derivation. `completion_verdict=success` requires a prior `manager.task.merged` row for the same parent_task_id unless `allow_without_merge=true` plus a non-empty `allow_without_merge_reason` is supplied. `manager_agent_id` is derived from the calling agent_id; not accepted from input. `summary` is bounded at 2000 UTF-8 bytes.",
     "dispatch_path": {
       "surface": "fetch_path",
       "identifier": "/api/dispatch/manager/task_complete"
@@ -2318,7 +2536,7 @@ export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
             },
             "path": {
               "type": "string",
-              "description": "Optional kanban path (e.g. \"\"). Non-empty when provided."
+              "description": "Optional kanban path (e.g. \"docs/kanban/377-....md.done.verified\"). Non-empty when provided."
             }
           },
           "required": [
@@ -2424,7 +2642,7 @@ export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
   }) as unknown as ToolContract,
   ({
     "tool_id": "manager.task_merge",
-    "description": "Emit an audit-grade `manager.task.merged` event for a parent manager task. Records structured `subagent_task_refs` (task_id, agent_id, summary_id, verdict) plus the manager's overall `merge_verdict`. Permission boundary, each summary_id must belong to a `manager.subagent.summary` row addressed to the calling manager. Coexists with `manager.task.replied`; does NOT change  status derivation. Zero-ref merges are legal ONLY with `merge_verdict=partial` or `merge_verdict=failed` (); zero-ref + `success` is rejected as `validation_failed`.",
+    "description": "Emit an audit-grade `manager.task.merged` event for a parent manager task. Records structured `subagent_task_refs` (task_id, agent_id, summary_id, verdict) plus the manager's overall `merge_verdict`. Permission boundary, each summary_id must belong to a `manager.subagent.summary` row addressed to the calling manager. Coexists with `manager.task.replied`; does NOT change an earlier revision status derivation. Zero-ref merges are legal ONLY with `merge_verdict=partial` or `merge_verdict=failed` ; zero-ref + `success` is rejected as `validation_failed`.",
     "dispatch_path": {
       "surface": "fetch_path",
       "identifier": "/api/dispatch/manager/task_merge"
@@ -2438,7 +2656,7 @@ export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
         },
         "subagent_task_refs": {
           "type": "array",
-          "description": "One entry per subagent summary the manager is merging. Empty array is permitted as an audit-only zero-ref merge, but ONLY with `merge_verdict=partial` or `merge_verdict=failed` (); zero-ref + `merge_verdict=success` is rejected as `validation_failed`.",
+          "description": "One entry per subagent summary the manager is merging. Empty array is permitted as an audit-only zero-ref merge, but ONLY with `merge_verdict=partial` or `merge_verdict=failed` ; zero-ref + `merge_verdict=success` is rejected as `validation_failed`.",
           "items": {
             "type": "object",
             "properties": {
@@ -2452,7 +2670,7 @@ export const GENERATED_TOOL_CONTRACTS: ToolContract[] = [
               },
               "summary_id": {
                 "type": "string",
-                "description": "v1 semantic — equals the subagent's `task_id`. Will become the underlying `event_log.id` row when  lands."
+                "description": "v1 semantic — equals the subagent's `task_id`. Will become the underlying `event_log.id` row when an earlier revision lands."
               },
               "verdict": {
                 "type": "string",

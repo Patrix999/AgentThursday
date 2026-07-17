@@ -1,5 +1,5 @@
 /**
- *  —  Step 9 dashboard core extraction.
+ * M8.9 Step 9 dashboard core extraction.
  *
  * `getDashboardCoreFree` is the body of `AgentThursdayAgent.getDashboardCore`
  * lifted verbatim from `src/server.ts` (pre-extraction lines
@@ -7,9 +7,6 @@
  * in `server.ts`; the RPC surface is unchanged.
  *
  * See:
- *   - ``
- *   - ``
- *   - ``
  *
  * Host shape is intentionally narrow — eight capabilities only, and
  * **never** `AgentThursdayAgent` itself (verifier AC 5 bullet 3):
@@ -62,7 +59,7 @@
  *                                              marker-detection
  *                                              behaviour on long
  *                                              replies).
- *   - `hasSealedPassEnvelopeForCurrentTask` —  / 199a newest-
+ *   - `hasSealedPassEnvelopeForCurrentTask` — an earlier revision newest-
  *                                              envelope acceptance
  *                                              check. Drives the
  *                                              `envelopeAccepted` /
@@ -70,7 +67,7 @@
  *                                              the
  *                                              `ready_false_after_handled_fail`
  *                                              drift trigger.
- *   - `isHandledNoToolGateIntentFail`       —  handled-but-
+ *   - `isHandledNoToolGateIntentFail`       — an earlier revision handled-but-
  *                                              failed signal. Drives
  *                                              `handledNoToolFail` and
  *                                              the
@@ -94,10 +91,10 @@
  * Outbox-derived drift flags (`outbox_missing`,
  * `outbox_provider_error`, `patch_apply_outbox_unknown`) are appended
  * inside `buildDashboardSectionFree` further down in this module
- * ( extracted that body from `src/server.ts` as well).
+ * (an earlier revision extracted that body from `src/server.ts` as well).
  *
  * `AgentThursdayAgent` is never imported here (AC 5 bullet 3); smoke
- * `-dashboard-core-extraction-smoke.ts` verifies the cycle stays
+ * `card300-dashboard-core-extraction-smoke.ts` verifies the cycle stays
  * broken via dynamic import.
  */
 
@@ -203,7 +200,7 @@ export function getDashboardCoreFree(host: DashboardCoreHost): DashboardCore {
 }
 
 /**
- *  —  Step 9 dashboard section extraction.
+ * M8.9 Step 9 dashboard section extraction.
  *
  * `buildDashboardSectionFree` is the body of the top-level
  * `buildDashboardSection(env, core)` lifted verbatim from `src/server.ts`
@@ -245,7 +242,7 @@ export function getDashboardCoreFree(host: DashboardCoreHost): DashboardCore {
  *
  * `AgentThursdayAgent` / `Env` / `getAgentByName` are never referenced here
  * (AC 6 bullet 4); smoke
- * `-dashboard-section-extraction-smoke.ts` verifies the module
+ * `card301-dashboard-section-extraction-smoke.ts` verifies the module
  * does not export `AgentThursdayAgent`.
  */
 
@@ -339,7 +336,7 @@ export async function buildDashboardSectionFree(
     }
   }
 
-  //  — patch-apply outbox summary is envelope-independent
+  // patch-apply outbox summary is envelope-independent
   // (apply evidence persists across envelope/task scope). Always
   // attempt the cross-DO read; fail-soft to "unknown" + drift flag.
   try {

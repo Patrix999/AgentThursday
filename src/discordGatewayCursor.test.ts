@@ -1,10 +1,10 @@
 /**
- *  — `decideCursorAdvance` regression tests.
+ * `decideCursorAdvance` regression tests.
  *
  * Pure helper, no DO / partyserver / cloudflare:workers chain — runs
  * directly under `node --import tsx --test`.
  *
- * Coverage of the cursor-safety contract from  §1:
+ * Coverage of the cursor-safety contract from an earlier revision §1:
  *   - all delivered → cursor advances to last id
  *   - filtered messages don't block cursor (otherwise self-echo loops)
  *   - failure mid-stream → advance to last successful id only
@@ -36,7 +36,7 @@ function failure(reason: string, status?: number): ForwardOutcome {
     : { ok: false, reason };
 }
 
-describe(" decideCursorAdvance", () => {
+describe("an earlier revision decideCursorAdvance", () => {
   it("advances to last id when all messages deliver", async () => {
     const messages: FakeMessage[] = [{ id: "1" }, { id: "2" }, { id: "3" }];
     const result = await decideCursorAdvance(messages, async () => delivered());

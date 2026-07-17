@@ -1,18 +1,17 @@
-//  Step 10/11 — helper-only extraction of submitTask() phases A-S.
+// M8.9 Step 10/11 — helper-only extraction of submitTask() phases A-S.
 // Pure deciders/builders; no DO/this/IO access. Composition lives in
 // server.ts `submitTask()`; this module is the byte-equivalent decision
 // surface that submitTask() consults at each phase boundary.
 //
-//  preflight (``)
 // maps submitTask() into 19 phases A-S. Helpers landed via:
-//   -  (phase A — resume-intent short-circuit) `decideResumeShortCircuit`
-//   -  (phase B/C — task identity + turn-scope reset)
+//   - an earlier revision (phase A — resume-intent short-circuit) `decideResumeShortCircuit`
+//   - an earlier revision (phase B/C — task identity + turn-scope reset)
 //       `decideTaskIdentity`, `buildTurnScopeResetPatch`
-//   -  (seal options derivation) `deriveSubmitTaskSealOpts`
-//   -  (phase R reply assembly chain) `applyReplyAssemblyChain`
-//   -  (phase Q prompt-intent guards)
+//   - an earlier revision (seal options derivation) `deriveSubmitTaskSealOpts`
+//   - an earlier revision (phase R reply assembly chain) `applyReplyAssemblyChain`
+//   - an earlier revision (phase Q prompt-intent guards)
 //       `buildPromptIntentGuardDecision`, `buildVisibleReplySafetyDecision`
-//   -  (phase S gate-intent autodispatch plan)
+//   - an earlier revision (phase S gate-intent autodispatch plan)
 //       `buildGateIntentAutodispatchPlan`
 //
 // What this module owns now (exported decision/build helpers):
@@ -26,10 +25,10 @@
 //   7. `buildVisibleReplySafetyDecision` — visible-reply pre-finalize safety.
 //   8. `buildGateIntentAutodispatchPlan` — phase S; gate-intent triggered autodispatch.
 //
-// What stays in server.ts (per /305 preflight):
+// What stays in server.ts (per an earlier revision preflight):
 //   - `submitTask()` composition: orchestrates all helpers, owns saveMessages,
 //     envelope CRUD calls, dispatch, `_currentTask*` state mutation, audit events.
-//   - `_finalizeTaskTurn` and reply finalization (per  preflight verdict).
+//   - `_finalizeTaskTurn` and reply finalization (per an earlier revision preflight verdict).
 //   - DO-bound RPC handlers and CF Agents `@callable()` surfaces.
 //
 // Byte-equivalent contracts preserved across helpers:
@@ -108,10 +107,10 @@ export function decideResumeShortCircuit(
   return { paused: false, isExplicitResume };
 }
 
-//  Step 10  — helper-only extraction of submitTask() phase B
+// M8.9 Step 10 helper-only extraction of submitTask() phase B
 // (task identity decision) and phase C (turn-scope state reset).
 //
-// Phase B byte-equivalent contract ( §Behavior contracts):
+// Phase B byte-equivalent contract (an earlier revision §Behavior contracts):
 //   - `source`: `task === dogfoodTask ? "dogfood" : "human"`.
 //   - `isResubmit`: `!!(prevTaskObj && prevTaskObj.title === display.slice(0, 120))`.
 //   - `taskObject` three branches:
@@ -166,7 +165,7 @@ export function decideTaskIdentity(input: TaskIdentityInput): TaskIdentityDecisi
 // Phase C byte-equivalent contract:
 //   - Exactly three slots reset; no more, no fewer.
 //   - `supplierSignals`: fresh `emptySupplierTaskSignals()` (NOT a shared
-//     reference —  collector mutates `.steps` and `.streamTruncatedSeen`).
+//     reference — an earlier revision collector mutates `.steps` and `.streamTruncatedSeen`).
 //   - `truthfulnessVerdict`: `{ violationSeen: false, category: null }`.
 //   - `rememberAck`: `null`.
 //
@@ -188,12 +187,12 @@ export function buildTurnScopeResetPatch(): TurnScopeResetPatch {
   };
 }
 
-//  Step 10  — helper-only extraction of submitTask() phase S
+// M8.9 Step 10 helper-only extraction of submitTask() phase S
 // finally-block seal derivation. Computes the read-only-safe 6-flag AND,
 // dispatch counts, and `_finalizeTaskTurn` opts. Pure: no `this`/IO/await.
 //
-// Byte-equivalent contract ( §Behavior contracts):
-//   - `wrappedDispatchCount = wrappedToolIds.length` (NOT deduped —
+// Byte-equivalent contract (an earlier revision §Behavior contracts):
+//   - `wrappedDispatchCount = wrappedToolIds.length` (NOT deduped — an earlier revision
 //     counts every dispatch including duplicate ids).
 //   - `totalSupplierToolCalls = sum(supplierSignals.steps[*].toolCallCount)`.
 //   - `promptMutationIntentNoExecution =
@@ -241,7 +240,7 @@ export interface SealOptsDecision {
     readIntentObserved: boolean;
     mutationIntentObservedUnwrapped: boolean;
     mutationIntentNoExecution: boolean;
-    //  C — mutation-tools-expected flag forwarded to seal(). True
+    // an earlier revision C — mutation-tools-expected flag forwarded to seal(). True
     // whenever the prompt's mutation intent fired; the stronger
     // `missing_mutation_evidence` reason then fires whenever no
     // `repo.write` / `repo.patch` call landed in the execution ring.
@@ -283,17 +282,17 @@ export function deriveSubmitTaskSealOpts(input: SealOptsInput): SealOptsDecision
   };
 }
 
-//  Step 11  — phase H reply assembly chain helper. Sequences
+// M8.9 Step 11 phase H reply assembly chain helper. Sequences
 // the three reply-mutating steps that run between raw model output and
 // the user-visible reply:
 //
-//   1. truthfulness gate    ( + 108a — claim-vs-event check; may
+//   1. truthfulness gate    (an earlier revision + 108a — claim-vs-event check; may
 //                             also set _currentTaskTruthfulnessVerdict as a
 //                             side effect inside the host callback)
-//   2. supplier degradation marker ( — prepend ⚠️ when the
+//   2. supplier degradation marker (prepend ⚠️ when the
 //                             per-turn supplier signal collector reports
 //                             degradation)
-//   3. remember-ack fallback  ( — when reply is empty/whitespace
+//   3. remember-ack fallback  (when reply is empty/whitespace
 //                             and a `remember` ack is present, surface
 //                             the ack as the visible reply)
 //
@@ -339,9 +338,9 @@ export function applyReplyAssemblyChain(
   };
 }
 
-//  Step 11  — prompt-side intent guard decision helper.
-// Combines  (gate-intent reply finalization guard),
-//  (read-intent detection), and  (mutation-intent
+// M8.9 Step 11 prompt-side intent guard decision helper.
+// Combines an earlier revision (gate-intent reply finalization guard),
+// an earlier revision (read-intent detection), and an earlier revision (mutation-intent
 // detection) into a single decision builder. Output is a decision
 // record + a deferred-event list; orchestrator owns logEvent, outer
 // fail-soft catch, outer seal flag assignment, and replyText
@@ -363,9 +362,9 @@ export function applyReplyAssemblyChain(
 //     a thrown gate detector caused the whole guard block to fail
 //     soft, leaving all three flags at their default false).
 //   - dispatchedToolIds = Array.from(new Set(wrappedToolIds)) — does
-//     NOT sort (matches  source; sort happens only for the
-//     phase-S seal opts via  helper).
-//   - : warning is only prepended when
+//     NOT sort (matches an earlier revision source; sort happens only for the
+//     phase-S seal opts via an earlier revision helper).
+//   - an earlier revision: warning is only prepended when
 //     `replyMakesGatePassClaim(replyText)` is true; otherwise the
 //     warning_suppressed event is emitted instead and replyText is
 //     untouched.
@@ -448,13 +447,13 @@ export function buildPromptIntentGuardDecision(
   let promptMutationIntentDetectedForSeal = false;
   let promptMutationIntentMatchedPatterns: string[] = [];
 
-  //  — gate-intent detection. Throw here propagates so the
+  // gate-intent detection. Throw here propagates so the
   // orchestrator's outer catch swallows everything (matching pre-
   // extraction behavior).
   const gateIntent = input.detectGateIntent(input.display);
   promptGateIntentDetectedForSeal = gateIntent.detected;
 
-  //  — read-intent (independent of gate; sibling fail-soft).
+  // read-intent (independent of gate; sibling fail-soft).
   try {
     const readIntent = input.detectReadIntent(input.display);
     promptReadIntentDetectedForSeal = readIntent.detected;
@@ -469,7 +468,7 @@ export function buildPromptIntentGuardDecision(
     }
   } catch { /* fail-soft: read-intent regex glitch */ }
 
-  //  — mutation-intent (independent of gate and read).
+  // mutation-intent (independent of gate and read).
   try {
     const mutationIntent = input.detectMutationIntent(input.display);
     promptMutationIntentDetectedForSeal = mutationIntent.detected;
@@ -489,7 +488,7 @@ export function buildPromptIntentGuardDecision(
     const dispatched = Array.from(new Set(input.wrappedToolIds));
     const sat = input.checkGateIntentSatisfied(gateIntent, dispatched);
     if (!sat.satisfied) {
-      //  — only prepend the warning when the reply actually
+      // only prepend the warning when the reply actually
       // claims the gate passed without dispatch. Otherwise emit
       // warning_suppressed and leave replyText alone.
       if (input.replyMakesGatePassClaim(replyText)) {
@@ -546,9 +545,9 @@ export function buildPromptIntentGuardDecision(
   };
 }
 
-//  Step 11  — visible reply safety helper.
+// M8.9 Step 11 visible reply safety helper.
 //
-// Extracts the /e visible-recovery override and the
+// Extracts the an earlier revision/e visible-recovery override and the an earlier revision
 // unwrapped-mutation prepend from submitTask() into one pure decision.
 // Helper returns the final `replyText`, the `mutationIntentObservedUnwrapped`
 // flag (consumed downstream by `deriveSubmitTaskSealOpts`), and a list of
@@ -556,7 +555,7 @@ export function buildPromptIntentGuardDecision(
 // `this.logEvent(...)` call in its own fail-soft try/catch (mirrors
 // pre-extraction per-emit isolation).
 //
-// Byte-equivalent contracts ( §Behavior contracts):
+// Byte-equivalent contracts (an earlier revision §Behavior contracts):
 //   - 295b/e visible override
 //       * `totalToolCallsForOverride = supplierSignals.steps.reduce(
 //           (n, s) => n + s.toolCallCount, 0)`
@@ -756,13 +755,13 @@ export function buildVisibleReplySafetyDecision(
   };
 }
 
-//  Step 12  —  pre-finalize positive gate-intent
+// M8.9 Step 12 an earlier revision pre-finalize positive gate-intent
 // autodispatch guard. Helper-only decision/plan extraction. Orchestrator
 // retains all host-owned side effects:
 //   - outer try/catch + `tool.gate_intent.guard.error` log
 //   - `this.logEvent(...)` for every event
 //   - `await this.devShellGateRun({ target })`
-//   - `await recordGateExecution(...)` +  pinned envelope/task
+//   - `await recordGateExecution(...)` + an earlier revision pinned envelope/task
 //     capture before the long await
 //   - `_currentTaskWrappedToolIds` / `_pinnedWrappedToolIdsByTask`
 //     mutation, `tool.gate_intent.autodispatch.pinned_attribution`,
@@ -770,12 +769,12 @@ export function buildVisibleReplySafetyDecision(
 //   - `tool.gate_intent.autodispatch.success` / `.error`
 //   - final replyText note assignment
 //
-// Byte-equivalent contracts ( §Behavior contracts):
+// Byte-equivalent contracts (an earlier revision §Behavior contracts):
 //   - Detection source remains `display`.
 //   - `detectGateIntent(display)` throw propagates so the orchestrator's
 //     outer catch logs `tool.gate_intent.guard.error`.
 //   - `dispatched = Array.from(new Set(wrappedToolIds))` — dedupe only,
-//     NOT sorted (matches  source).
+//     NOT sorted (matches an earlier revision source).
 //   - `checkGateIntentSatisfied(intent, dispatched)` semantics unchanged.
 //   - If `sat.satisfied` → `kind: "none"`, no events, replyText untouched.
 //   - Skip branches (each emit guard.skipped FIRST, then any extra event):
@@ -892,8 +891,7 @@ export function buildGateIntentAutodispatchPlan(
   } = input;
   let replyText = input.replyText;
 
-  // detectGateIntent throw propagates to orchestrator outer catch (
-  // precedent). The orchestrator logs `tool.gate_intent.guard.error` there.
+  // detectGateIntent throw propagates to orchestrator outer catch . The orchestrator logs `tool.gate_intent.guard.error` there.
   const promptIntent = detectGateIntent(display);
   if (!promptIntent.detected) {
     return { kind: "none", replyText, events: [] };
@@ -1007,8 +1005,7 @@ export function buildGateIntentAutodispatchPlan(
   };
 }
 
-// ──  — dangling-intent detection ────────────────────────────
-// RCA  (task-mq7rv2gt):
+// ── dangling-intent detection ────────────────────────────
 // a reply that ANNOUNCES an action ("我来访问…：" / "let me …:") while
 // the whole task dispatched zero wrapped tools is a silent
 // fake-complete — the channel sees the announcement, the task is
@@ -1058,8 +1055,8 @@ export function renderDanglingIntentNote(): string {
   return "（系统注记：本回复宣布了行动但未调用任何工具，任务未实际执行——请重试或细化指令。）";
 }
 
-// ──  — per-turn inference step cap ──────────────────────────
-// Think SDK defaults `maxSteps` to 10 and agentthursday never overrode it; 381
+// ── per-turn inference step cap ──────────────────────────
+// Think SDK defaults `maxSteps` to 10 and AgentThursday never overrode it; 381
 // attempt #3 (task-5fe8f9df) hit exactly 10 steps with EVERY step
 // finishing `tool-calls` — the model was cut off mid-work and the turn
 // ended with an empty visible reply. Real software-dev turns need

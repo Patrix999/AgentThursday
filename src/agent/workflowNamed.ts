@@ -1,5 +1,5 @@
 /**
- *  — named workflow helpers (pure).
+ * named workflow helpers (pure).
  *
  * A saved workflow descriptor can carry `{{args.key}}` placeholders in
  * its agent prompts; `substituteWorkflowArgs` resolves them at
@@ -26,7 +26,7 @@ export interface SubstituteArgsResult {
  * Walks `phases[].agents[].prompt` strings replacing `{{args.key}}`
  * with `args[key]`. Returns `{ok:false, missing}` listing every
  * placeholder key with no corresponding arg. Non-string / absent
- * structure is passed through untouched — the  validator runs
+ * structure is passed through untouched — the an earlier revision validator runs
  * AFTER substitution and owns shape errors.
  */
 export function substituteWorkflowArgs(
@@ -101,13 +101,13 @@ export function summarizeDescriptorRow(
   };
 }
 
-// ──  — executor phase-result piping ─────────────────────────
+// ── executor phase-result piping ─────────────────────────
 // A descriptor prompt may reference earlier phases' outputs with
-// `{{<phase_id>.result}}` (observed organically in 's
+// `{{<phase_id>.result}}` (observed organically in agentD's
 // agent-ops-manual-v2 descriptor before the capability existed). The
 // executor substitutes the joined full replies of that phase at
 // dispatch time. Injection is byte-capped (UTF-8, not string.length —
-// multi-byte lesson from ) so a verbose phase can't blow the
+// multi-byte lesson from an earlier revision) so a verbose phase can't blow the
 // downstream prompt past the known ~18KB manager-loop cliff with
 // margin.
 
